@@ -44,6 +44,12 @@ service cloud.firestore {
         || data[field] is number;
     }
 
+    function validOptionalTimestamp(data, field) {
+      return !(field in data)
+        || data[field] == null
+        || data[field] is timestamp;
+    }
+
     function validWalkerStatus(data) {
       return data.get('status', '') in [
         'in_progress',
@@ -54,6 +60,15 @@ service cloud.firestore {
         'suspended',
         'inactive',
         'left'
+      ];
+    }
+
+    function validWalkerVerificationStatus(data) {
+      return data.get('verificationStatus', '') in [
+        'pending',
+        'verified',
+        'rejected',
+        'correction_required'
       ];
     }
 
@@ -70,13 +85,96 @@ service cloud.firestore {
         ).data.get('isApproved', false) == true;
     }
 
-    function validWalkerVerificationStatus(data) {
-      return data.get('verificationStatus', '') in [
-        'pending',
-        'verified',
-        'rejected',
-        'correction_required'
-      ];
+    // =====================================================
+    // ADMIN WALKER DECISION VALIDATION
+    // =====================================================
+
+    function validAdminWalkerDecision() {
+      let d = request.resource.data;
+
+      return validWalkerStatus(d)
+        && validWalkerVerificationStatus(d)
+        && d.get('isApproved', false) is bool
+        && d.get('isActive', false) is bool
+
+        // Approval
+        && (
+          d.status != 'approved'
+          || (
+            d.verificationStatus == 'verified'
+            && d.isApproved == true
+            && d.isActive == true
+          )
+        )
+
+        // Rejection
+        && (
+          d.status != 'rejected'
+          || (
+            d.verificationStatus == 'rejected'
+            && d.isApproved == false
+            && d.isActive == false
+          )
+        )
+
+        // Request correction
+        && (
+          d.status != 'correction_required'
+          || (
+            d.verificationStatus == 'correction_required'
+            && d.isApproved == false
+            && d.isActive == false
+          )
+        )
+
+        // Suspension: approval remains, but access is disabled.
+        && (
+          d.status != 'suspended'
+          || (
+            d.verificationStatus == 'verified'
+            && d.isApproved == true
+            && d.isActive == false
+          )
+        )
+
+        // Unapproved application states
+        && (
+          d.status != 'in_progress'
+          || (
+            d.isApproved == false
+            && d.isActive == false
+          )
+        )
+
+        && (
+          d.status != 'under_review'
+          || (
+            d.isApproved == false
+            && d.isActive == false
+          )
+        )
+
+        // Inactive and left accounts cannot remain active.
+        && (
+          d.status != 'inactive'
+          || d.isActive == false
+        )
+
+        && (
+          d.status != 'left'
+          || d.isActive == false
+        );
+    }
+
+    function validWalkerDecisionReason() {
+      let d = request.resource.data;
+
+      return !('decisionReason' in d)
+        || d.decisionReason == null
+        || (
+          d.decisionReason is string
+          && d.decisionReason.size() <= 1000
+        );
     }
 
     // =====================================================
@@ -397,7 +495,10 @@ service cloud.firestore {
 
     match /walkers/{walkerUid} {
 
-      // Walker may read their own profile.
+      // NOTE:
+      // This retains the existing public-read behavior for active,
+      // approved walkers. Sensitive fields should eventually be
+      // moved into a private document before changing this access.
       allow get: if isOwner(walkerUid)
         || isAdmin()
         || (
@@ -408,8 +509,7 @@ service cloud.firestore {
 
       allow list: if isAdmin();
 
-      // Create a draft profile.
-      // This requires the app to send status=in_progress.
+      // Walker draft creation
       allow create: if isOwner(walkerUid)
         && request.resource.data.keys().hasAll([
           'userId',
@@ -480,8 +580,8 @@ service cloud.firestore {
         && validOptionalString(request.resource.data, 'email')
         && validOptionalString(request.resource.data, 'gender');
 
-      // Ordinary profile/onboarding updates.
-      // Walker cannot modify approval fields or status.
+      // Walker profile/onboarding update.
+      // Approval and verification fields remain admin-controlled.
       allow update: if isOwner(walkerUid)
         && request.resource.data.diff(resource.data)
           .affectedKeys()
@@ -534,8 +634,7 @@ service cloud.firestore {
           || request.resource.data.dateOfBirth is timestamp
         );
 
-      // Final application submission.
-      // This does not approve or activate the walker.
+      // Initial application submission.
       allow update: if isOwner(walkerUid)
         && resource.data.get('applicationSubmitted', false) == false
         && request.resource.data.get('applicationSubmitted', false) == true
@@ -555,7 +654,8 @@ service cloud.firestore {
         && request.resource.data.submittedAt == request.time
         && request.resource.data.updatedAt == request.time;
 
-      // Admin controls approval and account status.
+      // Admin decision: approval, rejection, correction, suspension,
+      // reactivation, or other permitted status changes.
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data)
           .affectedKeys()
@@ -565,12 +665,18 @@ service cloud.firestore {
             'isActive',
             'isApproved',
             'verificationStatus',
-            'updatedAt'
+            'updatedAt',
+            'decisionReason',
+            'decisionBy',
+            'decisionAt'
           ])
-        && validWalkerStatus(request.resource.data)
-        && validWalkerVerificationStatus(request.resource.data)
-        && request.resource.data.get('isApproved', false) is bool
-        && request.resource.data.get('isActive', false) is bool;
+        && validAdminWalkerDecision()
+        && validWalkerDecisionReason()
+        && (
+          !('decisionBy' in request.resource.data)
+          || request.resource.data.decisionBy == request.auth.uid
+        )
+        && validOptionalTimestamp(request.resource.data, 'decisionAt');
 
       allow delete: if false;
     }
@@ -779,7 +885,7 @@ service cloud.firestore {
           && isApprovedWalker()
         );
 
-      // Customer cancellation/review updates only.
+      // Customer cancellation and review updates.
       allow update: if signedIn()
         && resource.data.customerId == request.auth.uid
         && (
@@ -810,7 +916,7 @@ service cloud.firestore {
           )
         );
 
-      // Admin updates.
+      // Admin booking updates.
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data)
           .affectedKeys()
@@ -831,7 +937,7 @@ service cloud.firestore {
             'planStatus'
           ]);
 
-      // Approved assigned walker updates walk progress.
+      // Assigned approved walker progress updates.
       allow update: if isApprovedWalker()
         && resource.data.walkerId == request.auth.uid
         && request.resource.data.diff(resource.data)
@@ -951,8 +1057,52 @@ service cloud.firestore {
     // =====================================================
 
     match /audit_logs/{logId} {
-      allow read: if isAdmin();
-      allow create, update, delete: if false;
+
+      allow get, list: if isAdmin();
+
+      // Admin can create a decision/activity record.
+      // The application must write the corresponding record.
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasAll([
+          'actorUid',
+          'action',
+          'targetType',
+          'targetId',
+          'createdAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'actorUid',
+          'actorRole',
+          'action',
+          'targetType',
+          'targetId',
+          'reason',
+          'beforeStatus',
+          'afterStatus',
+          'createdAt',
+          'metadata'
+        ])
+        && request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.get('actorRole', 'super_admin') == 'super_admin'
+        && request.resource.data.action is string
+        && request.resource.data.action in [
+          'walker_approved',
+          'walker_rejected',
+          'walker_correction_requested',
+          'walker_suspended',
+          'walker_reactivated',
+          'walker_document_replaced',
+          'walker_profile_updated'
+        ]
+        && request.resource.data.targetType == 'walker'
+        && request.resource.data.targetId is string
+        && request.resource.data.targetId.size() > 0
+        && request.resource.data.createdAt == request.time
+        && validOptionalString(request.resource.data, 'reason')
+        && validOptionalString(request.resource.data, 'beforeStatus')
+        && validOptionalString(request.resource.data, 'afterStatus');
+
+      allow update, delete: if false;
     }
 
     // =====================================================
