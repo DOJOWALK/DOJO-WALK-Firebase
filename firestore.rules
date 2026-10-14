@@ -30,6 +30,10 @@ service cloud.firestore {
       return value is timestamp;
     }
 
+    function validCreatedAt() {
+      return request.resource.data.createdAt == request.time;
+    }
+
     function validOptionalString(data, field) {
       return !(field in data) || data[field] is string;
     }
@@ -50,6 +54,19 @@ service cloud.firestore {
       ];
     }
 
+    function isApprovedWalker() {
+      return signedIn()
+        && exists(
+          /databases/$(database)/documents/walkers/$(request.auth.uid)
+        )
+        && get(
+          /databases/$(database)/documents/walkers/$(request.auth.uid)
+        ).data.get('isActive', false) == true
+        && get(
+          /databases/$(database)/documents/walkers/$(request.auth.uid)
+        ).data.get('isApproved', false) == true;
+    }
+
     // =====================================================
     // ADMIN USERS
     // =====================================================
@@ -57,7 +74,10 @@ service cloud.firestore {
     match /admin_users/{adminUid} {
 
       allow get: if signedIn()
-        && (request.auth.uid == adminUid || isAdmin());
+        && (
+          request.auth.uid == adminUid
+          || isAdmin()
+        );
 
       allow list: if isAdmin();
 
@@ -375,7 +395,6 @@ service cloud.firestore {
 
       allow list: if isAdmin();
 
-      // Initial application.
       allow create: if isOwner(walkerUid)
         && request.resource.data.keys().hasOnly([
           'userId',
@@ -424,7 +443,6 @@ service cloud.firestore {
           || request.resource.data.userId == walkerUid
         );
 
-      // Partner profile/onboarding updates.
       allow update: if isOwner(walkerUid)
         && request.resource.data.diff(resource.data)
           .affectedKeys()
@@ -466,7 +484,6 @@ service cloud.firestore {
           || request.resource.data.userId == walkerUid
         );
 
-      // Admin approval.
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data)
           .affectedKeys()
@@ -577,7 +594,7 @@ service cloud.firestore {
       && request.resource.data.status == 'pending'
       && request.resource.data.walkerId == null
       && request.resource.data.cancelRequest == null
-      && request.resource.data.createdAt is timestamp
+      && validCreatedAt()
       && request.resource.data.walkCount is int
       && request.resource.data.walkCount >= 1
       && request.resource.data.walkCount <= 3
@@ -658,15 +675,7 @@ service cloud.firestore {
         || (
           signedIn()
           && resource.data.walkerId == request.auth.uid
-          && exists(
-            /databases/$(database)/documents/walkers/$(request.auth.uid)
-          )
-          && get(
-            /databases/$(database)/documents/walkers/$(request.auth.uid)
-          ).data.get('isActive', false) == true
-          && get(
-            /databases/$(database)/documents/walkers/$(request.auth.uid)
-          ).data.get('isApproved', false) == true
+          && isApprovedWalker()
         );
 
       // Customer cancellation/review updates only.
@@ -722,17 +731,8 @@ service cloud.firestore {
           ]);
 
       // Approved assigned walker updates walk progress.
-      allow update: if signedIn()
+      allow update: if isApprovedWalker()
         && resource.data.walkerId == request.auth.uid
-        && exists(
-          /databases/$(database)/documents/walkers/$(request.auth.uid)
-        )
-        && get(
-          /databases/$(database)/documents/walkers/$(request.auth.uid)
-        ).data.get('isActive', false) == true
-        && get(
-          /databases/$(database)/documents/walkers/$(request.auth.uid)
-        ).data.get('isApproved', false) == true
         && request.resource.data.diff(resource.data)
           .affectedKeys()
           .hasOnly([
@@ -787,7 +787,7 @@ service cloud.firestore {
         && request.resource.data.rating >= 1
         && request.resource.data.rating <= 5
         && request.resource.data.review is string
-        && request.resource.data.createdAt is timestamp;
+        && request.resource.data.createdAt == request.time;
 
       allow update, delete: if isAdmin();
     }
@@ -823,6 +823,7 @@ service cloud.firestore {
     // =====================================================
 
     match /coupons/{couponId} {
+
       allow get, list: if isAdmin()
         || resource.data.get('isActive', false) == true;
 
