@@ -1,1 +1,824 @@
+rules_version = '2';
 
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =====================================================
+    // COMMON HELPERS
+    // =====================================================
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function adminPath() {
+      return /databases/$(database)/documents/admin_users/$(request.auth.uid);
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(adminPath())
+        && get(adminPath()).data.get('isActive', false) == true
+        && get(adminPath()).data.get('role', '') == 'super_admin';
+    }
+
+    function validTimestamp(value) {
+      return value is timestamp;
+    }
+
+    function validOptionalString(data, field) {
+      return !(field in data) || data[field] is string;
+    }
+
+    function validOptionalNumber(data, field) {
+      return !(field in data)
+        || data[field] == null
+        || data[field] is number;
+    }
+
+    function validWalkerStatus(data) {
+      return data.get('status', '') in [
+        'under_review',
+        'approved',
+        'rejected',
+        'suspended',
+        'inactive'
+      ];
+    }
+
+    // =====================================================
+    // ADMIN USERS
+    // =====================================================
+
+    match /admin_users/{adminUid} {
+
+      allow get: if signedIn()
+        && (request.auth.uid == adminUid || isAdmin());
+
+      allow list: if isAdmin();
+
+      allow create, delete: if false;
+
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'name',
+            'email',
+            'role',
+            'isActive',
+            'updatedAt'
+          ])
+        && request.resource.data.get('role', '') in [
+          'super_admin',
+          'admin',
+          'support'
+        ]
+        && request.resource.data.isActive is bool;
+    }
+
+    // =====================================================
+    // CUSTOMER USERS
+    // =====================================================
+
+    match /users/{userId} {
+
+      allow get: if isOwner(userId) || isAdmin();
+
+      allow list: if isAdmin();
+
+      allow create: if isOwner(userId)
+        && request.resource.data.keys().hasOnly([
+          'name',
+          'phoneNumber',
+          'email',
+          'role',
+          'dateOfBirth',
+          'dob',
+          'age',
+          'photoUrl',
+          'profileImage',
+          'createdAt',
+          'updatedAt',
+          'language',
+          'notificationEnabled'
+        ])
+        && request.resource.data.get('role', 'customer') == 'customer'
+        && validOptionalString(request.resource.data, 'name')
+        && validOptionalString(request.resource.data, 'phoneNumber')
+        && validOptionalString(request.resource.data, 'email')
+        && validOptionalString(request.resource.data, 'language')
+        && validOptionalString(request.resource.data, 'photoUrl')
+        && validOptionalString(request.resource.data, 'profileImage');
+
+      allow update: if isOwner(userId)
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'name',
+            'phoneNumber',
+            'email',
+            'dateOfBirth',
+            'dob',
+            'age',
+            'photoUrl',
+            'profileImage',
+            'updatedAt',
+            'language',
+            'notificationEnabled'
+          ])
+        && request.resource.data.get('role', 'customer') == 'customer';
+
+      allow delete: if false;
+
+      // PETS
+      match /pets/{petId} {
+
+        allow get, list: if isOwner(userId) || isAdmin();
+
+        allow create: if isOwner(userId)
+          && request.resource.data.keys().hasAll([
+            'name',
+            'gender',
+            'age',
+            'breed',
+            'size',
+            'behaviour',
+            'specialCare',
+            'notes',
+            'createdAt',
+            'updatedAt'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'name',
+            'gender',
+            'age',
+            'breed',
+            'size',
+            'behaviour',
+            'specialCare',
+            'notes',
+            'dob',
+            'weight',
+            'photoUrl',
+            'createdAt',
+            'updatedAt'
+          ])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.gender is string
+          && request.resource.data.age is string
+          && request.resource.data.breed is string
+          && request.resource.data.size is string
+          && request.resource.data.behaviour is list
+          && request.resource.data.specialCare is list
+          && request.resource.data.notes is string
+          && validTimestamp(request.resource.data.createdAt)
+          && validTimestamp(request.resource.data.updatedAt)
+          && validOptionalString(request.resource.data, 'dob')
+          && validOptionalNumber(request.resource.data, 'weight')
+          && validOptionalString(request.resource.data, 'photoUrl');
+
+        allow update: if isOwner(userId)
+          && request.resource.data.keys().hasAll([
+            'name',
+            'gender',
+            'age',
+            'breed',
+            'size',
+            'behaviour',
+            'specialCare',
+            'notes',
+            'createdAt',
+            'updatedAt'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'name',
+            'gender',
+            'age',
+            'breed',
+            'size',
+            'behaviour',
+            'specialCare',
+            'notes',
+            'dob',
+            'weight',
+            'photoUrl',
+            'createdAt',
+            'updatedAt'
+          ])
+          && request.resource.data.name is string
+          && request.resource.data.gender is string
+          && request.resource.data.age is string
+          && request.resource.data.breed is string
+          && request.resource.data.size is string
+          && request.resource.data.behaviour is list
+          && request.resource.data.specialCare is list
+          && request.resource.data.notes is string
+          && request.resource.data.createdAt == resource.data.createdAt
+          && validTimestamp(request.resource.data.updatedAt)
+          && validOptionalString(request.resource.data, 'dob')
+          && validOptionalNumber(request.resource.data, 'weight')
+          && validOptionalString(request.resource.data, 'photoUrl');
+
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      // SAVED ADDRESSES
+      match /addresses/{addressId} {
+
+        allow get, list: if isOwner(userId) || isAdmin();
+
+        allow create: if isOwner(userId)
+          && request.resource.data.keys().hasAll([
+            'label',
+            'flatHouse',
+            'buildingSociety',
+            'area',
+            'landmark',
+            'city',
+            'pincode',
+            'pickupInstructions',
+            'latitude',
+            'longitude',
+            'isDefault',
+            'createdAt',
+            'updatedAt'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'label',
+            'flatHouse',
+            'buildingSociety',
+            'area',
+            'landmark',
+            'city',
+            'pincode',
+            'pickupInstructions',
+            'latitude',
+            'longitude',
+            'isDefault',
+            'createdAt',
+            'updatedAt'
+          ])
+          && request.resource.data.label is string
+          && request.resource.data.flatHouse is string
+          && request.resource.data.buildingSociety is string
+          && request.resource.data.area is string
+          && request.resource.data.landmark is string
+          && request.resource.data.city is string
+          && request.resource.data.pincode is string
+          && request.resource.data.pickupInstructions is string
+          && request.resource.data.isDefault is bool
+          && validOptionalNumber(request.resource.data, 'latitude')
+          && validOptionalNumber(request.resource.data, 'longitude')
+          && validTimestamp(request.resource.data.createdAt)
+          && validTimestamp(request.resource.data.updatedAt);
+
+        allow update: if isOwner(userId)
+          && request.resource.data.keys().hasOnly([
+            'label',
+            'flatHouse',
+            'buildingSociety',
+            'area',
+            'landmark',
+            'city',
+            'pincode',
+            'pickupInstructions',
+            'latitude',
+            'longitude',
+            'isDefault',
+            'createdAt',
+            'updatedAt'
+          ])
+          && request.resource.data.label is string
+          && request.resource.data.flatHouse is string
+          && request.resource.data.buildingSociety is string
+          && request.resource.data.area is string
+          && request.resource.data.landmark is string
+          && request.resource.data.city is string
+          && request.resource.data.pincode is string
+          && request.resource.data.pickupInstructions is string
+          && request.resource.data.isDefault is bool
+          && validOptionalNumber(request.resource.data, 'latitude')
+          && validOptionalNumber(request.resource.data, 'longitude')
+          && request.resource.data.createdAt == resource.data.createdAt
+          && validTimestamp(request.resource.data.updatedAt);
+
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      // PICKUP ADDRESSES
+      match /pickup_addresses/{addressId} {
+
+        allow get, list: if isOwner(userId) || isAdmin();
+
+        allow create, update: if isOwner(userId)
+          && request.resource.data.keys().hasOnly([
+            'label',
+            'address',
+            'flatHouse',
+            'buildingSociety',
+            'area',
+            'landmark',
+            'city',
+            'pincode',
+            'pickupInstructions',
+            'latitude',
+            'longitude',
+            'isDefault',
+            'createdAt',
+            'updatedAt'
+          ])
+          && request.resource.data.label is string
+          && request.resource.data.isDefault is bool
+          && validOptionalString(request.resource.data, 'address')
+          && validOptionalString(request.resource.data, 'flatHouse')
+          && validOptionalString(request.resource.data, 'buildingSociety')
+          && validOptionalString(request.resource.data, 'area')
+          && validOptionalString(request.resource.data, 'landmark')
+          && validOptionalString(request.resource.data, 'city')
+          && validOptionalString(request.resource.data, 'pincode')
+          && validOptionalString(request.resource.data, 'pickupInstructions')
+          && validOptionalNumber(request.resource.data, 'latitude')
+          && validOptionalNumber(request.resource.data, 'longitude');
+
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    // =====================================================
+    // WALKERS
+    // =====================================================
+
+    match /walkers/{walkerUid} {
+
+      allow get: if isOwner(walkerUid)
+        || isAdmin()
+        || (
+          signedIn()
+          && resource.data.get('isActive', false) == true
+          && resource.data.get('isApproved', false) == true
+        );
+
+      allow list: if isAdmin();
+
+      // Initial application only.
+      // Keep this allow-list aligned with Partner onboarding writes.
+      allow create: if isOwner(walkerUid)
+        && request.resource.data.keys().hasOnly([
+          'userId',
+          'fullName',
+          'name',
+          'phone',
+          'phoneNumber',
+          'email',
+          'gender',
+          'dateOfBirth',
+          'city',
+          'state',
+          'area',
+          'zoneName',
+          'zoneNames',
+          'zones',
+          'travelMode',
+          'currentAddress',
+          'kyc',
+          'status',
+          'isActive',
+          'isApproved',
+          'verificationStatus',
+          'createdAt',
+          'updatedAt',
+          'submittedAt',
+          'walkerId',
+          'services',
+          'rating',
+          'availability',
+          'address',
+          'photoUrl',
+          'profileImage',
+          'documents',
+          'fcmToken',
+          'deviceTokens',
+          'bankDetails',
+          'emergencyContact'
+        ])
+        && request.resource.data.get('status', '') == 'under_review'
+        && request.resource.data.get('isActive', true) == false
+        && request.resource.data.get('isApproved', true) == false
+        && request.resource.data.get('verificationStatus', '') == 'pending'
+        && (
+          !('userId' in request.resource.data)
+          || request.resource.data.userId == walkerUid
+        );
+
+      // Partner can update profile/onboarding data.
+      // Partner cannot change approval or activation flags.
+      allow update: if isOwner(walkerUid)
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'userId',
+            'fullName',
+            'name',
+            'phone',
+            'phoneNumber',
+            'email',
+            'gender',
+            'dateOfBirth',
+            'city',
+            'state',
+            'area',
+            'zoneName',
+            'zoneNames',
+            'zones',
+            'travelMode',
+            'currentAddress',
+            'kyc',
+            'updatedAt',
+            'createdAt',
+            'submittedAt',
+            'services',
+            'rating',
+            'availability',
+            'address',
+            'photoUrl',
+            'profileImage',
+            'documents',
+            'fcmToken',
+            'deviceTokens',
+            'bankDetails',
+            'emergencyContact'
+          ])
+        && (
+          !('userId' in request.resource.data)
+          || request.resource.data.userId == walkerUid
+        );
+
+      // Admin approves/rejects; activation remains a separate decision.
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'walkerId',
+            'status',
+            'isActive',
+            'isApproved',
+            'verificationStatus',
+            'updatedAt'
+          ])
+        && validWalkerStatus(request.resource.data)
+        && request.resource.data.get('verificationStatus', '') in [
+          'pending',
+          'verified',
+          'rejected'
+        ]
+        && request.resource.data.isApproved is bool
+        && request.resource.data.isActive is bool;
+
+      allow delete: if false;
+    }
+
+    // =====================================================
+    // BOOKINGS
+    // =====================================================
+
+    function validBookingBase() {
+      return request.resource.data.keys().hasAll([
+        'bookingId',
+        'customerId',
+        'walkType',
+        'bookingPlan',
+        'serviceType',
+        'serviceName',
+        'petName',
+        'dogId',
+        'petDetails',
+        'pickupAddressId',
+        'pickupAddress',
+        'scheduledAt',
+        'duration',
+        'preferredTime',
+        'status',
+        'walkerId',
+        'cancelRequest',
+        'createdAt',
+        'walkCount',
+        'walkSchedules'
+      ])
+      && request.resource.data.keys().hasOnly([
+        'bookingId',
+        'customerId',
+        'walkType',
+        'bookingPlan',
+        'serviceType',
+        'serviceName',
+        'petName',
+        'dogId',
+        'petDetails',
+        'pickupAddressId',
+        'pickupAddress',
+        'scheduledAt',
+        'duration',
+        'preferredTime',
+        'status',
+        'walkerId',
+        'cancelRequest',
+        'createdAt',
+        'walkCount',
+        'walkSchedules',
+        'frequency',
+        'walksPerWeek',
+        'walksPerDay',
+        'planStatus'
+      ])
+      && request.resource.data.bookingId == bookingId
+      && request.resource.data.customerId == request.auth.uid
+      && request.resource.data.walkType == 'scheduled'
+      && request.resource.data.bookingPlan in [
+        'one_time',
+        'regular',
+        'customize'
+      ]
+      && request.resource.data.serviceType in [
+        'temporary_walk',
+        'regular_walk',
+        'custom_walk'
+      ]
+      && request.resource.data.serviceName is string
+      && request.resource.data.petName is string
+      && request.resource.data.dogId is string
+      && request.resource.data.petDetails is map
+      && request.resource.data.pickupAddressId is string
+      && request.resource.data.pickupAddress is map
+      && request.resource.data.scheduledAt is timestamp
+      && request.resource.data.duration is string
+      && request.resource.data.preferredTime is string
+      && request.resource.data.status == 'pending'
+      && request.resource.data.walkerId == null
+      && request.resource.data.cancelRequest == null
+      && request.resource.data.createdAt is timestamp
+      && request.resource.data.walkCount is int
+      && request.resource.data.walkCount >= 1
+      && request.resource.data.walkCount <= 3
+      && request.resource.data.walkSchedules is list
+      && request.resource.data.walkSchedules.size()
+        == request.resource.data.walkCount;
+    }
+
+    function validOneTimeBooking() {
+      return request.resource.data.bookingPlan == 'one_time'
+        && request.resource.data.serviceType == 'temporary_walk'
+        && request.resource.data.walkCount == 1
+        && !('frequency' in request.resource.data)
+        && !('walksPerWeek' in request.resource.data)
+        && !('walksPerDay' in request.resource.data)
+        && !('planStatus' in request.resource.data);
+    }
+
+    function validRegularBooking() {
+      return request.resource.data.bookingPlan == 'regular'
+        && request.resource.data.serviceType == 'regular_walk'
+        && request.resource.data.frequency == 'daily'
+        && request.resource.data.walksPerWeek == 7
+        && request.resource.data.walksPerDay is int
+        && request.resource.data.walksPerDay >= 1
+        && request.resource.data.walksPerDay <= 3
+        && request.resource.data.walkCount
+          == request.resource.data.walksPerDay
+        && request.resource.data.planStatus == 'active';
+    }
+
+    function validCustomBooking() {
+      return request.resource.data.bookingPlan == 'customize'
+        && request.resource.data.serviceType == 'custom_walk'
+        && request.resource.data.walksPerDay is int
+        && request.resource.data.walksPerDay >= 1
+        && request.resource.data.walksPerDay <= 3
+        && request.resource.data.walkCount
+          == request.resource.data.walksPerDay
+        && !('frequency' in request.resource.data)
+        && !('walksPerWeek' in request.resource.data)
+        && !('planStatus' in request.resource.data);
+    }
+
+    match /bookings/{bookingId} {
+
+      allow create: if signedIn()
+        && validBookingBase()
+        && (
+          validOneTimeBooking()
+          || validRegularBooking()
+          || validCustomBooking()
+        );
+
+      allow get, list: if isAdmin()
+        || (
+          signedIn()
+          && resource.data.customerId == request.auth.uid
+        )
+        || (
+          signedIn()
+          && resource.data.walkerId == request.auth.uid
+          && exists(
+            /databases/$(database)/documents/walkers/$(request.auth.uid)
+          )
+          && get(
+            /databases/$(database)/documents/walkers/$(request.auth.uid)
+          ).data.get('isActive', false) == true
+          && get(
+            /databases/$(database)/documents/walkers/$(request.auth.uid)
+          ).data.get('isApproved', false) == true
+        );
+
+      allow update: if signedIn()
+        && resource.data.customerId == request.auth.uid
+        && (
+          (
+            resource.data.status in [
+              'pending',
+              'confirmed',
+              'assigned'
+            ]
+            && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly(['cancelRequest', 'updatedAt'])
+          )
+          ||
+          (
+            resource.data.status == 'completed'
+            && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'rating',
+                'review',
+                'reviewedAt',
+                'updatedAt'
+              ])
+          )
+        );
+
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'status',
+            'walkerId',
+            'updatedAt',
+            'assignedAt',
+            'startedAt',
+            'completedAt',
+            'cancelRequest',
+            'adminNotes',
+            'price',
+            'totalPrice',
+            'paymentStatus',
+            'paymentId',
+            'walkSchedules',
+            'planStatus'
+          ]);
+
+      allow update: if signedIn()
+        && resource.data.walkerId == request.auth.uid
+        && exists(
+          /databases/$(database)/documents/walkers/$(request.auth.uid)
+        )
+        && get(
+          /databases/$(database)/documents/walkers/$(request.auth.uid)
+        ).data.get('isActive', false) == true
+        && get(
+          /databases/$(database)/documents/walkers/$(request.auth.uid)
+        ).data.get('isApproved', false) == true
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'status',
+            'updatedAt',
+            'startedAt',
+            'completedAt',
+            'walkSchedules',
+            'walkNotes',
+            'peeCount',
+            'poopCount',
+            'distance',
+            'durationActual'
+          ]);
+
+      allow delete: if isAdmin();
+    }
+
+    // =====================================================
+    // WALK REQUESTS
+    // =====================================================
+
+    match /walk_requests/{requestId} {
+      allow read, write: if false;
+    }
+
+    // =====================================================
+    // WALKER REVIEWS
+    // =====================================================
+
+    match /walker_reviews/{reviewId} {
+
+      allow get, list: if isAdmin()
+        || (
+          signedIn()
+          && resource.data.customerId == request.auth.uid
+        );
+
+      allow create: if signedIn()
+        && request.resource.data.customerId == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'bookingId',
+          'customerId',
+          'walkerId',
+          'rating',
+          'review',
+          'createdAt'
+        ])
+        && request.resource.data.bookingId is string
+        && request.resource.data.walkerId is string
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5
+        && request.resource.data.review is string
+        && request.resource.data.createdAt is timestamp;
+
+      allow update, delete: if isAdmin();
+    }
+
+    // =====================================================
+    // ZONES
+    // =====================================================
+
+    match /zones/{zoneId} {
+      allow get, list: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // =====================================================
+    // CUSTOMERS COLLECTION
+    // =====================================================
+
+    match /customers/{customerId} {
+
+      allow get: if isAdmin()
+        || (
+          signedIn()
+          && resource.data.uid == request.auth.uid
+        );
+
+      allow list: if isAdmin();
+
+      allow create, update, delete: if isAdmin();
+    }
+
+    // =====================================================
+    // COUPONS
+    // =====================================================
+
+    match /coupons/{couponId} {
+      allow get, list: if isAdmin()
+        || resource.data.get('isActive', false) == true;
+
+      allow create, update, delete: if isAdmin();
+    }
+
+    // =====================================================
+    // PAYMENTS
+    // =====================================================
+
+    match /payments/{paymentId} {
+
+      allow get, list: if isAdmin()
+        || (
+          signedIn()
+          && resource.data.customerId == request.auth.uid
+        );
+
+      allow create, update, delete: if isAdmin();
+    }
+
+    // =====================================================
+    // AUDIT LOGS
+    // =====================================================
+
+    match /audit_logs/{logId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    // =====================================================
+    // DEFAULT DENY
+    // =====================================================
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
