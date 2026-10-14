@@ -511,7 +511,8 @@ service cloud.firestore {
     // BOOKING VALIDATION HELPERS
     // =====================================================
 
-    function validBookingBase() {
+    // FIX: bookingId is now passed into this function.
+    function validBookingBase(bookingId) {
       return request.resource.data.keys().hasAll([
         'bookingId',
         'customerId',
@@ -555,15 +556,11 @@ service cloud.firestore {
         'createdAt',
         'walkCount',
         'walkSchedules',
-
-        // Regular plan fields
         'frequency',
         'walksPerWeek',
         'walksPerDay',
         'planStatus',
         'dailyWalkTemplate',
-
-        // Choose Dates fields
         'selectedDates',
         'dateSchedules'
       ])
@@ -659,8 +656,9 @@ service cloud.firestore {
 
     match /bookings/{bookingId} {
 
+      // FIX: pass the document path's bookingId to the validator.
       allow create: if signedIn()
-        && validBookingBase()
+        && validBookingBase(bookingId)
         && (
           validOneTimeBooking()
           || validRegularBooking()
