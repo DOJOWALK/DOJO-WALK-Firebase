@@ -135,7 +135,10 @@ service cloud.firestore {
 
       allow delete: if false;
 
+      // ===================================================
       // PETS
+      // ===================================================
+
       match /pets/{petId} {
 
         allow get, list: if isOwner(userId) || isAdmin();
@@ -228,7 +231,10 @@ service cloud.firestore {
         allow delete: if isOwner(userId) || isAdmin();
       }
 
+      // ===================================================
       // SAVED ADDRESSES
+      // ===================================================
+
       match /addresses/{addressId} {
 
         allow get, list: if isOwner(userId) || isAdmin();
@@ -311,7 +317,10 @@ service cloud.firestore {
         allow delete: if isOwner(userId) || isAdmin();
       }
 
+      // ===================================================
       // PICKUP ADDRESSES
+      // ===================================================
+
       match /pickup_addresses/{addressId} {
 
         allow get, list: if isOwner(userId) || isAdmin();
@@ -366,8 +375,7 @@ service cloud.firestore {
 
       allow list: if isAdmin();
 
-      // Initial application only.
-      // Keep this allow-list aligned with Partner onboarding writes.
+      // Initial application.
       allow create: if isOwner(walkerUid)
         && request.resource.data.keys().hasOnly([
           'userId',
@@ -416,8 +424,7 @@ service cloud.firestore {
           || request.resource.data.userId == walkerUid
         );
 
-      // Partner can update profile/onboarding data.
-      // Partner cannot change approval or activation flags.
+      // Partner profile/onboarding updates.
       allow update: if isOwner(walkerUid)
         && request.resource.data.diff(resource.data)
           .affectedKeys()
@@ -459,7 +466,7 @@ service cloud.firestore {
           || request.resource.data.userId == walkerUid
         );
 
-      // Admin approves/rejects; activation remains a separate decision.
+      // Admin approval.
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data)
           .affectedKeys()
@@ -484,7 +491,7 @@ service cloud.firestore {
     }
 
     // =====================================================
-    // BOOKINGS
+    // BOOKING VALIDATION HELPERS
     // =====================================================
 
     function validBookingBase() {
@@ -531,10 +538,17 @@ service cloud.firestore {
         'createdAt',
         'walkCount',
         'walkSchedules',
+
+        // Regular plan fields
         'frequency',
         'walksPerWeek',
         'walksPerDay',
-        'planStatus'
+        'planStatus',
+        'dailyWalkTemplate',
+
+        // Choose Dates fields
+        'selectedDates',
+        'dateSchedules'
       ])
       && request.resource.data.bookingId == bookingId
       && request.resource.data.customerId == request.auth.uid
@@ -552,8 +566,10 @@ service cloud.firestore {
       && request.resource.data.serviceName is string
       && request.resource.data.petName is string
       && request.resource.data.dogId is string
+      && request.resource.data.dogId.size() > 0
       && request.resource.data.petDetails is map
       && request.resource.data.pickupAddressId is string
+      && request.resource.data.pickupAddressId.size() > 0
       && request.resource.data.pickupAddress is map
       && request.resource.data.scheduledAt is timestamp
       && request.resource.data.duration is string
@@ -577,7 +593,10 @@ service cloud.firestore {
         && !('frequency' in request.resource.data)
         && !('walksPerWeek' in request.resource.data)
         && !('walksPerDay' in request.resource.data)
-        && !('planStatus' in request.resource.data);
+        && !('planStatus' in request.resource.data)
+        && !('dailyWalkTemplate' in request.resource.data)
+        && !('selectedDates' in request.resource.data)
+        && !('dateSchedules' in request.resource.data);
     }
 
     function validRegularBooking() {
@@ -590,7 +609,12 @@ service cloud.firestore {
         && request.resource.data.walksPerDay <= 3
         && request.resource.data.walkCount
           == request.resource.data.walksPerDay
-        && request.resource.data.planStatus == 'active';
+        && request.resource.data.planStatus == 'pending_confirmation'
+        && request.resource.data.dailyWalkTemplate is list
+        && request.resource.data.dailyWalkTemplate.size()
+          == request.resource.data.walkCount
+        && !('selectedDates' in request.resource.data)
+        && !('dateSchedules' in request.resource.data);
     }
 
     function validCustomBooking() {
@@ -603,8 +627,18 @@ service cloud.firestore {
           == request.resource.data.walksPerDay
         && !('frequency' in request.resource.data)
         && !('walksPerWeek' in request.resource.data)
-        && !('planStatus' in request.resource.data);
+        && !('planStatus' in request.resource.data)
+        && !('dailyWalkTemplate' in request.resource.data)
+        && request.resource.data.selectedDates is list
+        && request.resource.data.selectedDates.size() > 0
+        && request.resource.data.dateSchedules is list
+        && request.resource.data.dateSchedules.size()
+          == request.resource.data.selectedDates.size();
     }
+
+    // =====================================================
+    // BOOKINGS
+    // =====================================================
 
     match /bookings/{bookingId} {
 
@@ -635,6 +669,7 @@ service cloud.firestore {
           ).data.get('isApproved', false) == true
         );
 
+      // Customer cancellation/review updates only.
       allow update: if signedIn()
         && resource.data.customerId == request.auth.uid
         && (
@@ -646,7 +681,10 @@ service cloud.firestore {
             ]
             && request.resource.data.diff(resource.data)
               .affectedKeys()
-              .hasOnly(['cancelRequest', 'updatedAt'])
+              .hasOnly([
+                'cancelRequest',
+                'updatedAt'
+              ])
           )
           ||
           (
@@ -662,6 +700,7 @@ service cloud.firestore {
           )
         );
 
+      // Admin updates.
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data)
           .affectedKeys()
@@ -682,6 +721,7 @@ service cloud.firestore {
             'planStatus'
           ]);
 
+      // Approved assigned walker updates walk progress.
       allow update: if signedIn()
         && resource.data.walkerId == request.auth.uid
         && exists(
