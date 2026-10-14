@@ -9,6 +9,7 @@ on:
       - "firebase.json"
       - ".firebaserc"
       - ".github/workflows/deploy-firestore-rules.yml"
+
   workflow_dispatch:
 
 permissions:
@@ -36,7 +37,7 @@ jobs:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
           if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
-            echo "Missing FIREBASE_SERVICE_ACCOUNT GitHub Secret."
+            echo "Missing FIREBASE_SERVICE_ACCOUNT secret"
             exit 1
           fi
 
