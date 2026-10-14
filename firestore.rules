@@ -385,6 +385,7 @@ service cloud.firestore {
 
     match /walkers/{walkerUid} {
 
+      // Walker may read their own document, even before approval.
       allow get: if isOwner(walkerUid)
         || isAdmin()
         || (
@@ -393,9 +394,23 @@ service cloud.firestore {
           && resource.data.get('isApproved', false) == true
         );
 
+      // Only admins may list the full walker collection.
       allow list: if isAdmin();
 
+      // Create an initial profile for the authenticated walker.
       allow create: if isOwner(walkerUid)
+        && request.resource.data.keys().hasAll([
+          'userId',
+          'fullName',
+          'phone',
+          'dateOfBirth',
+          'status',
+          'isActive',
+          'isApproved',
+          'verificationStatus',
+          'createdAt',
+          'updatedAt'
+        ])
         && request.resource.data.keys().hasOnly([
           'userId',
           'fullName',
@@ -434,15 +449,24 @@ service cloud.firestore {
           'bankDetails',
           'emergencyContact'
         ])
-        && request.resource.data.get('status', '') == 'under_review'
-        && request.resource.data.get('isActive', true) == false
-        && request.resource.data.get('isApproved', true) == false
-        && request.resource.data.get('verificationStatus', '') == 'pending'
-        && (
-          !('userId' in request.resource.data)
-          || request.resource.data.userId == walkerUid
-        );
+        && request.resource.data.userId == walkerUid
+        && request.resource.data.fullName is string
+        && request.resource.data.fullName.size() >= 3
+        && request.resource.data.fullName.size() <= 80
+        && request.resource.data.phone is string
+        && request.resource.data.dateOfBirth is timestamp
+        && request.resource.data.dateOfBirth <= request.time
+        && request.resource.data.status == 'under_review'
+        && request.resource.data.isActive == false
+        && request.resource.data.isApproved == false
+        && request.resource.data.verificationStatus == 'pending'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && validOptionalString(request.resource.data, 'email')
+        && validOptionalString(request.resource.data, 'gender');
 
+      // Walker may update their own permitted profile fields.
+      // Approval fields cannot be changed by the walker.
       allow update: if isOwner(walkerUid)
         && request.resource.data.diff(resource.data)
           .affectedKeys()
@@ -482,8 +506,18 @@ service cloud.firestore {
         && (
           !('userId' in request.resource.data)
           || request.resource.data.userId == walkerUid
+        )
+        && validOptionalString(request.resource.data, 'fullName')
+        && validOptionalString(request.resource.data, 'email')
+        && validOptionalString(request.resource.data, 'gender')
+        && validOptionalString(request.resource.data, 'phone')
+        && validOptionalString(request.resource.data, 'phoneNumber')
+        && (
+          !('dateOfBirth' in request.resource.data)
+          || request.resource.data.dateOfBirth is timestamp
         );
 
+      // Admin-only approval and status changes.
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data)
           .affectedKeys()
@@ -511,7 +545,6 @@ service cloud.firestore {
     // BOOKING VALIDATION HELPERS
     // =====================================================
 
-    // FIX: bookingId is now passed into this function.
     function validBookingBase(bookingId) {
       return request.resource.data.keys().hasAll([
         'bookingId',
@@ -656,7 +689,6 @@ service cloud.firestore {
 
     match /bookings/{bookingId} {
 
-      // FIX: pass the document path's bookingId to the validator.
       allow create: if signedIn()
         && validBookingBase(bookingId)
         && (
