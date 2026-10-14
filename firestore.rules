@@ -46,11 +46,14 @@ service cloud.firestore {
 
     function validWalkerStatus(data) {
       return data.get('status', '') in [
+        'in_progress',
         'under_review',
         'approved',
         'rejected',
+        'correction_required',
         'suspended',
-        'inactive'
+        'inactive',
+        'left'
       ];
     }
 
@@ -65,6 +68,15 @@ service cloud.firestore {
         && get(
           /databases/$(database)/documents/walkers/$(request.auth.uid)
         ).data.get('isApproved', false) == true;
+    }
+
+    function validWalkerVerificationStatus(data) {
+      return data.get('verificationStatus', '') in [
+        'pending',
+        'verified',
+        'rejected',
+        'correction_required'
+      ];
     }
 
     // =====================================================
@@ -385,7 +397,7 @@ service cloud.firestore {
 
     match /walkers/{walkerUid} {
 
-      // Walker may read their own document, even before approval.
+      // Walker may read their own profile.
       allow get: if isOwner(walkerUid)
         || isAdmin()
         || (
@@ -394,10 +406,10 @@ service cloud.firestore {
           && resource.data.get('isApproved', false) == true
         );
 
-      // Only admins may list the full walker collection.
       allow list: if isAdmin();
 
-      // Create an initial profile for the authenticated walker.
+      // Create a draft profile.
+      // This requires the app to send status=in_progress.
       allow create: if isOwner(walkerUid)
         && request.resource.data.keys().hasAll([
           'userId',
@@ -436,6 +448,8 @@ service cloud.firestore {
           'createdAt',
           'updatedAt',
           'submittedAt',
+          'onboardingStep',
+          'applicationSubmitted',
           'walkerId',
           'services',
           'rating',
@@ -456,17 +470,18 @@ service cloud.firestore {
         && request.resource.data.phone is string
         && request.resource.data.dateOfBirth is timestamp
         && request.resource.data.dateOfBirth <= request.time
-        && request.resource.data.status == 'under_review'
+        && request.resource.data.status == 'in_progress'
         && request.resource.data.isActive == false
         && request.resource.data.isApproved == false
         && request.resource.data.verificationStatus == 'pending'
+        && request.resource.data.get('applicationSubmitted', false) == false
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time
         && validOptionalString(request.resource.data, 'email')
         && validOptionalString(request.resource.data, 'gender');
 
-      // Walker may update their own permitted profile fields.
-      // Approval fields cannot be changed by the walker.
+      // Ordinary profile/onboarding updates.
+      // Walker cannot modify approval fields or status.
       allow update: if isOwner(walkerUid)
         && request.resource.data.diff(resource.data)
           .affectedKeys()
@@ -491,8 +506,9 @@ service cloud.firestore {
             'updatedAt',
             'createdAt',
             'submittedAt',
+            'onboardingStep',
+            'applicationSubmitted',
             'services',
-            'rating',
             'availability',
             'address',
             'photoUrl',
@@ -503,10 +519,11 @@ service cloud.firestore {
             'bankDetails',
             'emergencyContact'
           ])
-        && (
-          !('userId' in request.resource.data)
-          || request.resource.data.userId == walkerUid
-        )
+        && request.resource.data.get('userId', walkerUid) == walkerUid
+        && request.resource.data.get('status', '') == resource.data.get('status', '')
+        && request.resource.data.get('isActive', false) == resource.data.get('isActive', false)
+        && request.resource.data.get('isApproved', false) == resource.data.get('isApproved', false)
+        && request.resource.data.get('verificationStatus', '') == resource.data.get('verificationStatus', '')
         && validOptionalString(request.resource.data, 'fullName')
         && validOptionalString(request.resource.data, 'email')
         && validOptionalString(request.resource.data, 'gender')
@@ -517,7 +534,28 @@ service cloud.firestore {
           || request.resource.data.dateOfBirth is timestamp
         );
 
-      // Admin-only approval and status changes.
+      // Final application submission.
+      // This does not approve or activate the walker.
+      allow update: if isOwner(walkerUid)
+        && resource.data.get('applicationSubmitted', false) == false
+        && request.resource.data.get('applicationSubmitted', false) == true
+        && request.resource.data.get('status', '') == 'under_review'
+        && request.resource.data.get('isActive', false) == false
+        && request.resource.data.get('isApproved', false) == false
+        && request.resource.data.get('verificationStatus', '') == 'pending'
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'status',
+            'applicationSubmitted',
+            'submittedAt',
+            'updatedAt',
+            'onboardingStep'
+          ])
+        && request.resource.data.submittedAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      // Admin controls approval and account status.
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data)
           .affectedKeys()
@@ -530,15 +568,52 @@ service cloud.firestore {
             'updatedAt'
           ])
         && validWalkerStatus(request.resource.data)
-        && request.resource.data.get('verificationStatus', '') in [
-          'pending',
-          'verified',
-          'rejected'
-        ]
-        && request.resource.data.isApproved is bool
-        && request.resource.data.isActive is bool;
+        && validWalkerVerificationStatus(request.resource.data)
+        && request.resource.data.get('isApproved', false) is bool
+        && request.resource.data.get('isActive', false) is bool;
 
       allow delete: if false;
+    }
+
+    // =====================================================
+    // SUPPORT REQUESTS
+    // =====================================================
+
+    match /support_requests/{requestId} {
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'userId',
+          'walkerId',
+          'category',
+          'message',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.walkerId == request.auth.uid
+        && request.resource.data.category is string
+        && request.resource.data.category in [
+          'Application Status',
+          'KYC Documents',
+          'Personal Details',
+          'Other'
+        ]
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0
+        && request.resource.data.message.size() <= 1000
+        && request.resource.data.status == 'open'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      allow get, list: if isAdmin()
+        || (
+          signedIn()
+          && resource.data.userId == request.auth.uid
+        );
+
+      allow update, delete: if isAdmin();
     }
 
     // =====================================================
@@ -654,12 +729,10 @@ service cloud.firestore {
         && request.resource.data.walksPerDay is int
         && request.resource.data.walksPerDay >= 1
         && request.resource.data.walksPerDay <= 3
-        && request.resource.data.walkCount
-          == request.resource.data.walksPerDay
+        && request.resource.data.walkCount == request.resource.data.walksPerDay
         && request.resource.data.planStatus == 'pending_confirmation'
         && request.resource.data.dailyWalkTemplate is list
-        && request.resource.data.dailyWalkTemplate.size()
-          == request.resource.data.walkCount
+        && request.resource.data.dailyWalkTemplate.size() == request.resource.data.walkCount
         && !('selectedDates' in request.resource.data)
         && !('dateSchedules' in request.resource.data);
     }
@@ -670,8 +743,7 @@ service cloud.firestore {
         && request.resource.data.walksPerDay is int
         && request.resource.data.walksPerDay >= 1
         && request.resource.data.walksPerDay <= 3
-        && request.resource.data.walkCount
-          == request.resource.data.walksPerDay
+        && request.resource.data.walkCount == request.resource.data.walksPerDay
         && !('frequency' in request.resource.data)
         && !('walksPerWeek' in request.resource.data)
         && !('planStatus' in request.resource.data)
@@ -679,8 +751,7 @@ service cloud.firestore {
         && request.resource.data.selectedDates is list
         && request.resource.data.selectedDates.size() > 0
         && request.resource.data.dateSchedules is list
-        && request.resource.data.dateSchedules.size()
-          == request.resource.data.selectedDates.size();
+        && request.resource.data.dateSchedules.size() == request.resource.data.selectedDates.size();
     }
 
     // =====================================================
