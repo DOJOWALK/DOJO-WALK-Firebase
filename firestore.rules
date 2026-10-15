@@ -990,6 +990,17 @@ service cloud.firestore {
     // SERVICE LOCATIONS
     // =====================================================
 
+    // Service Location Name Indexes
+    // Access is limited to active super admins.
+    // Actual uniqueness requires matching transactional
+    // index logic in service_location_service.dart.
+    match /service_location_name_indexes/{indexId} {
+
+      allow get, list: if isAdmin();
+
+      allow create, update, delete: if isAdmin();
+    }
+
     // Countries
     match /service_countries/{countryId} {
 
@@ -1261,7 +1272,6 @@ service cloud.firestore {
         && request.resource.data.countryId is string
         && request.resource.data.stateId is string
         && request.resource.data.cityId is string
-        && request.resource.data.areaId is string
         && request.resource.data.name is string
         && request.resource.data.name.size() > 0
         && validOptionalString(request.resource.data, 'pincode')
