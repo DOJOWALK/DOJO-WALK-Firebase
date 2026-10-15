@@ -490,7 +490,7 @@ service cloud.firestore {
     }
 
     // =====================================================
-    // WALKERS
+    // WALKERS — ZONE FIELDS REMOVED
     // =====================================================
 
     match /walkers/{walkerUid} {
@@ -530,9 +530,6 @@ service cloud.firestore {
           'city',
           'state',
           'area',
-          'zoneName',
-          'zoneNames',
-          'zones',
           'travelMode',
           'currentAddress',
           'kyc',
@@ -590,9 +587,6 @@ service cloud.firestore {
             'city',
             'state',
             'area',
-            'zoneName',
-            'zoneNames',
-            'zones',
             'travelMode',
             'currentAddress',
             'kyc',
@@ -987,11 +981,7 @@ service cloud.firestore {
     }
 
     // =====================================================
-    // SERVICE LOCATIONS
-    // =====================================================
-
-    // =====================================================
-    // SERVICE LOCATION BOUNDARIES
+    // SERVICE LOCATION BOUNDARY HELPERS
     // =====================================================
 
     function validBoundaryLocation(data) {
@@ -1023,149 +1013,186 @@ service cloud.firestore {
         && data.sourceReference.size() > 0;
     }
 
-    function validBoundaryCreate() {
-      let d = request.resource.data;
-
-      return isAdmin()
-        && d.keys().hasAll([
-          'locationId',
-          'locationType',
-          'points',
-          'sourceType',
-          'sourceName',
-          'sourceReference',
-          'verificationStatus',
-          'createdAt',
-          'updatedAt'
-        ])
-        && d.keys().hasOnly([
-          'locationId',
-          'locationType',
-          'points',
-          'sourceType',
-          'sourceName',
-          'sourceReference',
-          'verificationStatus',
-          'verifiedBy',
-          'verifiedAt',
-          'verificationNotes',
-          'createdAt',
-          'updatedAt'
-        ])
-        && validBoundaryLocation(d)
-        && validBoundaryPoints(d.points)
-        && validBoundarySource(d)
-        && d.verificationStatus == 'pending'
-        && d.createdAt == request.time
-        && d.updatedAt == request.time
-        && d.get('verifiedBy', null) == null
-        && d.get('verifiedAt', null) == null
-        && d.get('verificationNotes', null) == null;
+    function hasVerifiedBoundary(locationId, locationType, boundaryId) {
+      return boundaryId is string
+        && boundaryId.size() > 0
+        && exists(
+          /databases/$(database)/documents/service_location_boundaries/$(boundaryId)
+        )
+        && get(
+          /databases/$(database)/documents/service_location_boundaries/$(boundaryId)
+        ).data.locationId == locationId
+        && get(
+          /databases/$(database)/documents/service_location_boundaries/$(boundaryId)
+        ).data.locationType == locationType
+        && get(
+          /databases/$(database)/documents/service_location_boundaries/$(boundaryId)
+        ).data.verificationStatus == 'verified'
+        && get(
+          /databases/$(database)/documents/service_location_boundaries/$(boundaryId)
+        ).data.points is list
+        && get(
+          /databases/$(database)/documents/service_location_boundaries/$(boundaryId)
+        ).data.points.size() >= 3
+        && get(
+          /databases/$(database)/documents/service_location_boundaries/$(boundaryId)
+        ).data.sourceName is string
+        && get(
+          /databases/$(database)/documents/service_location_boundaries/$(boundaryId)
+        ).data.sourceName.size() > 0
+        && get(
+          /databases/$(database)/documents/service_location_boundaries/$(boundaryId)
+        ).data.sourceReference is string
+        && get(
+          /databases/$(database)/documents/service_location_boundaries/$(boundaryId)
+        ).data.sourceReference.size() > 0
+        && get(
+          /databases/$(database)/documents/service_location_boundaries/$(boundaryId)
+        ).data.verifiedBy is string
+        && get(
+          /databases/$(database)/documents/service_location_boundaries/$(boundaryId)
+        ).data.verifiedAt is timestamp;
     }
 
-    function validBoundaryDraftUpdate() {
-      let d = request.resource.data;
-
-      return isAdmin()
-        && resource.data.verificationStatus in [
-          'pending',
-          'rejected'
-        ]
-        && d.diff(resource.data).affectedKeys().hasOnly([
-          'points',
-          'sourceType',
-          'sourceName',
-          'sourceReference',
-          'verificationStatus',
-          'verifiedBy',
-          'verifiedAt',
-          'verificationNotes',
-          'updatedAt'
-        ])
-        && validBoundaryLocation(d)
-        && validBoundaryPoints(d.points)
-        && validBoundarySource(d)
-        && d.locationId == resource.data.locationId
-        && d.locationType == resource.data.locationType
-        && d.createdAt == resource.data.createdAt
-        && d.verificationStatus == 'pending'
-        && d.get('verifiedBy', null) == null
-        && d.get('verifiedAt', null) == null
-        && d.get('verificationNotes', null) == null
-        && d.updatedAt == request.time;
-    }
-
-    function validBoundaryVerification() {
-      let d = request.resource.data;
-
-      return isAdmin()
-        && resource.data.verificationStatus == 'pending'
-        && d.verificationStatus == 'verified'
-        && d.diff(resource.data).affectedKeys().hasOnly([
-          'verificationStatus',
-          'verifiedBy',
-          'verifiedAt',
-          'verificationNotes',
-          'updatedAt'
-        ])
-        && validBoundaryLocation(d)
-        && d.locationId == resource.data.locationId
-        && d.locationType == resource.data.locationType
-        && d.points == resource.data.points
-        && d.sourceType == resource.data.sourceType
-        && d.sourceName == resource.data.sourceName
-        && d.sourceReference == resource.data.sourceReference
-        && d.createdAt == resource.data.createdAt
-        && d.verifiedBy == request.auth.uid
-        && d.verifiedAt == request.time
-        && d.verificationNotes is string
-        && d.verificationNotes.size() > 0
-        && d.updatedAt == request.time;
-    }
-
-    function validBoundaryRejection() {
-      let d = request.resource.data;
-
-      return isAdmin()
-        && resource.data.verificationStatus == 'pending'
-        && d.verificationStatus == 'rejected'
-        && d.diff(resource.data).affectedKeys().hasOnly([
-          'verificationStatus',
-          'verifiedBy',
-          'verifiedAt',
-          'verificationNotes',
-          'updatedAt'
-        ])
-        && validBoundaryLocation(d)
-        && d.locationId == resource.data.locationId
-        && d.locationType == resource.data.locationType
-        && d.points == resource.data.points
-        && d.sourceType == resource.data.sourceType
-        && d.sourceName == resource.data.sourceName
-        && d.sourceReference == resource.data.sourceReference
-        && d.createdAt == resource.data.createdAt
-        && d.verifiedBy == request.auth.uid
-        && d.verifiedAt == null
-        && d.verificationNotes is string
-        && d.verificationNotes.size() > 0
-        && d.updatedAt == request.time;
-    }
+    // =====================================================
+    // SERVICE LOCATION BOUNDARIES
+    // =====================================================
 
     match /service_location_boundaries/{boundaryId} {
 
       allow get, list: if isAdmin();
 
-      allow create: if validBoundaryCreate();
+      // Create a pending boundary.
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasAll([
+          'locationId',
+          'locationType',
+          'points',
+          'sourceType',
+          'sourceName',
+          'sourceReference',
+          'verificationStatus',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'locationId',
+          'locationType',
+          'points',
+          'sourceType',
+          'sourceName',
+          'sourceReference',
+          'verificationStatus',
+          'verifiedBy',
+          'verifiedAt',
+          'verificationNotes',
+          'createdAt',
+          'updatedAt'
+        ])
+        && validBoundaryLocation(request.resource.data)
+        && validBoundaryPoints(request.resource.data.points)
+        && validBoundarySource(request.resource.data)
+        && request.resource.data.verificationStatus == 'pending'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.get('verifiedBy', null) == null
+        && request.resource.data.get('verifiedAt', null) == null
+        && request.resource.data.get('verificationNotes', null) == null;
 
-      allow update: if validBoundaryDraftUpdate()
-        || validBoundaryVerification()
-        || validBoundaryRejection();
+      // Edit pending/rejected boundary and send it back to pending.
+      allow update: if isAdmin()
+        && resource.data.verificationStatus in [
+          'pending',
+          'rejected'
+        ]
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'points',
+            'sourceType',
+            'sourceName',
+            'sourceReference',
+            'verificationStatus',
+            'verifiedBy',
+            'verifiedAt',
+            'verificationNotes',
+            'updatedAt'
+          ])
+        && validBoundaryLocation(request.resource.data)
+        && validBoundaryPoints(request.resource.data.points)
+        && validBoundarySource(request.resource.data)
+        && request.resource.data.locationId == resource.data.locationId
+        && request.resource.data.locationType == resource.data.locationType
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.verificationStatus == 'pending'
+        && request.resource.data.get('verifiedBy', null) == null
+        && request.resource.data.get('verifiedAt', null) == null
+        && request.resource.data.get('verificationNotes', null) == null
+        && request.resource.data.updatedAt == request.time;
 
+      // Verify a pending boundary.
+      allow update: if isAdmin()
+        && resource.data.verificationStatus == 'pending'
+        && request.resource.data.verificationStatus == 'verified'
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'verificationStatus',
+            'verifiedBy',
+            'verifiedAt',
+            'verificationNotes',
+            'updatedAt'
+          ])
+        && validBoundaryLocation(request.resource.data)
+        && request.resource.data.locationId == resource.data.locationId
+        && request.resource.data.locationType == resource.data.locationType
+        && request.resource.data.points == resource.data.points
+        && request.resource.data.sourceType == resource.data.sourceType
+        && request.resource.data.sourceName == resource.data.sourceName
+        && request.resource.data.sourceReference == resource.data.sourceReference
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.verifiedBy == request.auth.uid
+        && request.resource.data.verifiedAt == request.time
+        && request.resource.data.verificationNotes is string
+        && request.resource.data.verificationNotes.size() > 0
+        && request.resource.data.updatedAt == request.time;
+
+      // Reject a pending boundary.
+      allow update: if isAdmin()
+        && resource.data.verificationStatus == 'pending'
+        && request.resource.data.verificationStatus == 'rejected'
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'verificationStatus',
+            'verifiedBy',
+            'verifiedAt',
+            'verificationNotes',
+            'updatedAt'
+          ])
+        && validBoundaryLocation(request.resource.data)
+        && request.resource.data.locationId == resource.data.locationId
+        && request.resource.data.locationType == resource.data.locationType
+        && request.resource.data.points == resource.data.points
+        && request.resource.data.sourceType == resource.data.sourceType
+        && request.resource.data.sourceName == resource.data.sourceName
+        && request.resource.data.sourceReference == resource.data.sourceReference
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.verifiedBy == request.auth.uid
+        && request.resource.data.verifiedAt == null
+        && request.resource.data.verificationNotes is string
+        && request.resource.data.verificationNotes.size() > 0
+        && request.resource.data.updatedAt == request.time;
+
+      // A verified boundary cannot be deleted.
       allow delete: if isAdmin()
         && resource.data.verificationStatus != 'verified';
     }
 
-    // Service Location Name Indexes
+    // =====================================================
+    // SERVICE LOCATION NAME INDEXES
+    // =====================================================
+
     match /service_location_name_indexes/{indexId} {
 
       allow get, list: if isAdmin();
@@ -1173,7 +1200,10 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
-    // Countries
+    // =====================================================
+    // SERVICE COUNTRIES
+    // =====================================================
+
     match /service_countries/{countryId} {
 
       allow get, list: if isAdmin();
@@ -1208,7 +1238,10 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // States
+    // =====================================================
+    // SERVICE STATES
+    // =====================================================
+
     match /service_states/{stateId} {
 
       allow get, list: if isAdmin();
@@ -1244,7 +1277,11 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Cities
+    // =====================================================
+    // SERVICE CITIES
+    // Active city requires its own verified polygon boundary.
+    // =====================================================
+
     match /service_cities/{cityId} {
 
       allow get, list: if isAdmin();
@@ -1257,6 +1294,7 @@ service cloud.firestore {
           'boundary',
           'boundarySource',
           'boundaryVerified',
+          'verifiedBoundaryId',
           'isServiceActive',
           'createdAt',
           'updatedAt',
@@ -1267,19 +1305,24 @@ service cloud.firestore {
         && request.resource.data.stateId is string
         && request.resource.data.name is string
         && request.resource.data.name.size() > 0
-        && request.resource.data.boundary is list
-        && request.resource.data.boundarySource is string
-        && request.resource.data.boundaryVerified is bool
         && request.resource.data.isServiceActive is bool
         && (
-          request.resource.data.isServiceActive == false
-          || (
-            request.resource.data.boundaryVerified == true
-            && request.resource.data.boundary.size() >= 3
-          )
+          !('boundary' in request.resource.data)
+          || request.resource.data.boundary is list
         )
+        && validOptionalString(request.resource.data, 'boundarySource')
+        && validOptionalBool(request.resource.data, 'boundaryVerified')
+        && validOptionalString(request.resource.data, 'verifiedBoundaryId')
         && validOptionalString(request.resource.data, 'state')
-        && validOptionalString(request.resource.data, 'country');
+        && validOptionalString(request.resource.data, 'country')
+        && (
+          request.resource.data.isServiceActive == false
+          || hasVerifiedBoundary(
+            cityId,
+            'city',
+            request.resource.data.get('verifiedBoundaryId', '')
+          )
+        );
 
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data)
@@ -1291,6 +1334,7 @@ service cloud.firestore {
             'boundary',
             'boundarySource',
             'boundaryVerified',
+            'verifiedBoundaryId',
             'isServiceActive',
             'updatedAt',
             'state',
@@ -1300,24 +1344,33 @@ service cloud.firestore {
         && request.resource.data.stateId is string
         && request.resource.data.name is string
         && request.resource.data.name.size() > 0
-        && request.resource.data.boundary is list
-        && request.resource.data.boundarySource is string
-        && request.resource.data.boundaryVerified is bool
         && request.resource.data.isServiceActive is bool
         && (
-          request.resource.data.isServiceActive == false
-          || (
-            request.resource.data.boundaryVerified == true
-            && request.resource.data.boundary.size() >= 3
-          )
+          !('boundary' in request.resource.data)
+          || request.resource.data.boundary is list
         )
+        && validOptionalString(request.resource.data, 'boundarySource')
+        && validOptionalBool(request.resource.data, 'boundaryVerified')
+        && validOptionalString(request.resource.data, 'verifiedBoundaryId')
         && validOptionalString(request.resource.data, 'state')
-        && validOptionalString(request.resource.data, 'country');
+        && validOptionalString(request.resource.data, 'country')
+        && (
+          request.resource.data.isServiceActive == false
+          || hasVerifiedBoundary(
+            cityId,
+            'city',
+            request.resource.data.get('verifiedBoundaryId', '')
+          )
+        );
 
       allow delete: if false;
     }
 
-    // Areas
+    // =====================================================
+    // SERVICE AREAS
+    // Active area requires its own verified polygon boundary.
+    // =====================================================
+
     match /service_areas/{areaId} {
 
       allow get, list: if isAdmin();
@@ -1331,6 +1384,7 @@ service cloud.firestore {
           'boundary',
           'boundarySource',
           'boundaryVerified',
+          'verifiedBoundaryId',
           'isServiceActive',
           'createdAt',
           'updatedAt'
@@ -1340,15 +1394,20 @@ service cloud.firestore {
         && request.resource.data.cityId is string
         && request.resource.data.name is string
         && request.resource.data.name.size() > 0
-        && request.resource.data.boundary is list
-        && request.resource.data.boundarySource is string
-        && request.resource.data.boundaryVerified is bool
         && request.resource.data.isServiceActive is bool
         && (
+          !('boundary' in request.resource.data)
+          || request.resource.data.boundary is list
+        )
+        && validOptionalString(request.resource.data, 'boundarySource')
+        && validOptionalBool(request.resource.data, 'boundaryVerified')
+        && validOptionalString(request.resource.data, 'verifiedBoundaryId')
+        && (
           request.resource.data.isServiceActive == false
-          || (
-            request.resource.data.boundaryVerified == true
-            && request.resource.data.boundary.size() >= 3
+          || hasVerifiedBoundary(
+            areaId,
+            'area',
+            request.resource.data.get('verifiedBoundaryId', '')
           )
         );
 
@@ -1363,6 +1422,7 @@ service cloud.firestore {
             'boundary',
             'boundarySource',
             'boundaryVerified',
+            'verifiedBoundaryId',
             'isServiceActive',
             'updatedAt'
           ])
@@ -1371,22 +1431,31 @@ service cloud.firestore {
         && request.resource.data.cityId is string
         && request.resource.data.name is string
         && request.resource.data.name.size() > 0
-        && request.resource.data.boundary is list
-        && request.resource.data.boundarySource is string
-        && request.resource.data.boundaryVerified is bool
         && request.resource.data.isServiceActive is bool
         && (
+          !('boundary' in request.resource.data)
+          || request.resource.data.boundary is list
+        )
+        && validOptionalString(request.resource.data, 'boundarySource')
+        && validOptionalBool(request.resource.data, 'boundaryVerified')
+        && validOptionalString(request.resource.data, 'verifiedBoundaryId')
+        && (
           request.resource.data.isServiceActive == false
-          || (
-            request.resource.data.boundaryVerified == true
-            && request.resource.data.boundary.size() >= 3
+          || hasVerifiedBoundary(
+            areaId,
+            'area',
+            request.resource.data.get('verifiedBoundaryId', '')
           )
         );
 
       allow delete: if false;
     }
 
-    // Localities
+    // =====================================================
+    // SERVICE LOCALITIES
+    // Locality polygon is optional.
+    // =====================================================
+
     match /service_localities/{localityId} {
 
       allow get, list: if isAdmin();
@@ -1413,17 +1482,13 @@ service cloud.firestore {
         && request.resource.data.name is string
         && request.resource.data.name.size() > 0
         && validOptionalString(request.resource.data, 'pincode')
-        && request.resource.data.boundary is list
-        && request.resource.data.boundarySource is string
-        && request.resource.data.boundaryVerified is bool
-        && request.resource.data.isServiceActive is bool
         && (
-          request.resource.data.isServiceActive == false
-          || (
-            request.resource.data.boundaryVerified == true
-            && request.resource.data.boundary.size() >= 3
-          )
-        );
+          !('boundary' in request.resource.data)
+          || request.resource.data.boundary is list
+        )
+        && validOptionalString(request.resource.data, 'boundarySource')
+        && validOptionalBool(request.resource.data, 'boundaryVerified')
+        && request.resource.data.isServiceActive is bool;
 
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data)
@@ -1444,25 +1509,25 @@ service cloud.firestore {
         && request.resource.data.countryId is string
         && request.resource.data.stateId is string
         && request.resource.data.cityId is string
+        && request.resource.data.areaId is string
         && request.resource.data.name is string
         && request.resource.data.name.size() > 0
         && validOptionalString(request.resource.data, 'pincode')
-        && request.resource.data.boundary is list
-        && request.resource.data.boundarySource is string
-        && request.resource.data.boundaryVerified is bool
-        && request.resource.data.isServiceActive is bool
         && (
-          request.resource.data.isServiceActive == false
-          || (
-            request.resource.data.boundaryVerified == true
-            && request.resource.data.boundary.size() >= 3
-          )
-        );
+          !('boundary' in request.resource.data)
+          || request.resource.data.boundary is list
+        )
+        && validOptionalString(request.resource.data, 'boundarySource')
+        && validOptionalBool(request.resource.data, 'boundaryVerified')
+        && request.resource.data.isServiceActive is bool;
 
       allow delete: if false;
     }
 
-    // Location import audit records
+    // =====================================================
+    // SERVICE LOCATION IMPORTS
+    // =====================================================
+
     match /service_location_imports/{importId} {
 
       allow get, list: if isAdmin();
