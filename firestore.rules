@@ -990,10 +990,182 @@ service cloud.firestore {
     // SERVICE LOCATIONS
     // =====================================================
 
+    // =====================================================
+    // SERVICE LOCATION BOUNDARIES
+    // =====================================================
+
+    function validBoundaryLocation(data) {
+      return data.locationId is string
+        && data.locationId.size() > 0
+        && data.locationType in [
+          'city',
+          'area',
+          'locality'
+        ];
+    }
+
+    function validBoundaryPoints(points) {
+      return points is list
+        && points.size() >= 3
+        && points.size() <= 10000;
+    }
+
+    function validBoundarySource(data) {
+      return data.sourceType in [
+          'governmentGis',
+          'governmentCadastralMap',
+          'importedGeoJson',
+          'manuallyDrawn'
+        ]
+        && data.sourceName is string
+        && data.sourceName.size() > 0
+        && data.sourceReference is string
+        && data.sourceReference.size() > 0;
+    }
+
+    function validBoundaryCreate() {
+      let d = request.resource.data;
+
+      return isAdmin()
+        && d.keys().hasAll([
+          'locationId',
+          'locationType',
+          'points',
+          'sourceType',
+          'sourceName',
+          'sourceReference',
+          'verificationStatus',
+          'createdAt',
+          'updatedAt'
+        ])
+        && d.keys().hasOnly([
+          'locationId',
+          'locationType',
+          'points',
+          'sourceType',
+          'sourceName',
+          'sourceReference',
+          'verificationStatus',
+          'verifiedBy',
+          'verifiedAt',
+          'verificationNotes',
+          'createdAt',
+          'updatedAt'
+        ])
+        && validBoundaryLocation(d)
+        && validBoundaryPoints(d.points)
+        && validBoundarySource(d)
+        && d.verificationStatus == 'pending'
+        && d.createdAt == request.time
+        && d.updatedAt == request.time
+        && d.get('verifiedBy', null) == null
+        && d.get('verifiedAt', null) == null
+        && d.get('verificationNotes', null) == null;
+    }
+
+    function validBoundaryDraftUpdate() {
+      let d = request.resource.data;
+
+      return isAdmin()
+        && resource.data.verificationStatus in [
+          'pending',
+          'rejected'
+        ]
+        && d.diff(resource.data).affectedKeys().hasOnly([
+          'points',
+          'sourceType',
+          'sourceName',
+          'sourceReference',
+          'verificationStatus',
+          'verifiedBy',
+          'verifiedAt',
+          'verificationNotes',
+          'updatedAt'
+        ])
+        && validBoundaryLocation(d)
+        && validBoundaryPoints(d.points)
+        && validBoundarySource(d)
+        && d.locationId == resource.data.locationId
+        && d.locationType == resource.data.locationType
+        && d.createdAt == resource.data.createdAt
+        && d.verificationStatus == 'pending'
+        && d.get('verifiedBy', null) == null
+        && d.get('verifiedAt', null) == null
+        && d.get('verificationNotes', null) == null
+        && d.updatedAt == request.time;
+    }
+
+    function validBoundaryVerification() {
+      let d = request.resource.data;
+
+      return isAdmin()
+        && resource.data.verificationStatus == 'pending'
+        && d.verificationStatus == 'verified'
+        && d.diff(resource.data).affectedKeys().hasOnly([
+          'verificationStatus',
+          'verifiedBy',
+          'verifiedAt',
+          'verificationNotes',
+          'updatedAt'
+        ])
+        && validBoundaryLocation(d)
+        && d.locationId == resource.data.locationId
+        && d.locationType == resource.data.locationType
+        && d.points == resource.data.points
+        && d.sourceType == resource.data.sourceType
+        && d.sourceName == resource.data.sourceName
+        && d.sourceReference == resource.data.sourceReference
+        && d.createdAt == resource.data.createdAt
+        && d.verifiedBy == request.auth.uid
+        && d.verifiedAt == request.time
+        && d.verificationNotes is string
+        && d.verificationNotes.size() > 0
+        && d.updatedAt == request.time;
+    }
+
+    function validBoundaryRejection() {
+      let d = request.resource.data;
+
+      return isAdmin()
+        && resource.data.verificationStatus == 'pending'
+        && d.verificationStatus == 'rejected'
+        && d.diff(resource.data).affectedKeys().hasOnly([
+          'verificationStatus',
+          'verifiedBy',
+          'verifiedAt',
+          'verificationNotes',
+          'updatedAt'
+        ])
+        && validBoundaryLocation(d)
+        && d.locationId == resource.data.locationId
+        && d.locationType == resource.data.locationType
+        && d.points == resource.data.points
+        && d.sourceType == resource.data.sourceType
+        && d.sourceName == resource.data.sourceName
+        && d.sourceReference == resource.data.sourceReference
+        && d.createdAt == resource.data.createdAt
+        && d.verifiedBy == request.auth.uid
+        && d.verifiedAt == null
+        && d.verificationNotes is string
+        && d.verificationNotes.size() > 0
+        && d.updatedAt == request.time;
+    }
+
+    match /service_location_boundaries/{boundaryId} {
+
+      allow get, list: if isAdmin();
+
+      allow create: if validBoundaryCreate();
+
+      allow update: if validBoundaryDraftUpdate()
+        || validBoundaryVerification()
+        || validBoundaryRejection();
+
+      allow delete: if isAdmin()
+        && resource.data.verificationStatus != 'verified';
+    }
+
     // Service Location Name Indexes
-    // Access is limited to active super admins.
-    // Actual uniqueness requires matching transactional
-    // index logic in service_location_service.dart.
     match /service_location_name_indexes/{indexId} {
 
       allow get, list: if isAdmin();
