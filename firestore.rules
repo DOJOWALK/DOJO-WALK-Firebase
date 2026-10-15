@@ -38,6 +38,12 @@ service cloud.firestore {
       return !(field in data) || data[field] is string;
     }
 
+    function validOptionalBool(data, field) {
+      return !(field in data)
+        || data[field] == null
+        || data[field] is bool;
+    }
+
     function validOptionalNumber(data, field) {
       return !(field in data)
         || data[field] == null
@@ -97,7 +103,6 @@ service cloud.firestore {
         && d.get('isApproved', false) is bool
         && d.get('isActive', false) is bool
 
-        // Approval
         && (
           d.status != 'approved'
           || (
@@ -107,7 +112,6 @@ service cloud.firestore {
           )
         )
 
-        // Rejection
         && (
           d.status != 'rejected'
           || (
@@ -117,7 +121,6 @@ service cloud.firestore {
           )
         )
 
-        // Request correction
         && (
           d.status != 'correction_required'
           || (
@@ -127,7 +130,6 @@ service cloud.firestore {
           )
         )
 
-        // Suspension
         && (
           d.status != 'suspended'
           || (
@@ -137,7 +139,6 @@ service cloud.firestore {
           )
         )
 
-        // Unapproved application states
         && (
           d.status != 'in_progress'
           || (
@@ -154,7 +155,6 @@ service cloud.firestore {
           )
         )
 
-        // Inactive and left accounts
         && (
           d.status != 'inactive'
           || d.isActive == false
@@ -495,10 +495,6 @@ service cloud.firestore {
 
     match /walkers/{walkerUid} {
 
-      // Existing read behavior retained for compatibility.
-      // IMPORTANT: This exposes the entire approved walker document
-      // to signed-in users. Move private KYC/bank/emergency data into
-      // a separate private document before tightening this rule.
       allow get: if isOwner(walkerUid)
         || isAdmin()
         || (
@@ -509,7 +505,6 @@ service cloud.firestore {
 
       allow list: if isAdmin();
 
-      // Walker draft creation
       allow create: if isOwner(walkerUid)
         && request.resource.data.keys().hasAll([
           'userId',
@@ -580,8 +575,6 @@ service cloud.firestore {
         && validOptionalString(request.resource.data, 'email')
         && validOptionalString(request.resource.data, 'gender');
 
-      // Walker profile/onboarding update.
-      // Admin-controlled decision fields cannot be changed here.
       allow update: if isOwner(walkerUid)
         && request.resource.data.diff(resource.data)
           .affectedKeys()
@@ -634,7 +627,6 @@ service cloud.firestore {
           || request.resource.data.dateOfBirth is timestamp
         );
 
-      // Initial application submission
       allow update: if isOwner(walkerUid)
         && resource.data.get('applicationSubmitted', false) == false
         && request.resource.data.get('applicationSubmitted', false) == true
@@ -654,7 +646,6 @@ service cloud.firestore {
         && request.resource.data.submittedAt == request.time
         && request.resource.data.updatedAt == request.time;
 
-      // Admin decision
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data)
           .affectedKeys()
@@ -884,7 +875,6 @@ service cloud.firestore {
           && isApprovedWalker()
         );
 
-      // Customer cancellation and review updates
       allow update: if signedIn()
         && resource.data.customerId == request.auth.uid
         && (
@@ -915,7 +905,6 @@ service cloud.firestore {
           )
         );
 
-      // Admin booking updates
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data)
           .affectedKeys()
@@ -936,7 +925,6 @@ service cloud.firestore {
             'planStatus'
           ]);
 
-      // Assigned approved walker progress updates
       allow update: if isApprovedWalker()
         && resource.data.walkerId == request.auth.uid
         && request.resource.data.diff(resource.data)
@@ -999,12 +987,321 @@ service cloud.firestore {
     }
 
     // =====================================================
-    // ZONES
+    // SERVICE LOCATIONS
     // =====================================================
 
-    match /zones/{zoneId} {
-      allow get, list: if true;
-      allow create, update, delete: if isAdmin();
+    // Countries
+    match /service_countries/{countryId} {
+
+      allow get, list: if isAdmin();
+
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly([
+          'name',
+          'code',
+          'isActive',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.code is string
+        && request.resource.data.isActive is bool;
+
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'name',
+            'code',
+            'isActive',
+            'updatedAt'
+          ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.code is string
+        && request.resource.data.isActive is bool;
+
+      allow delete: if false;
+    }
+
+    // States
+    match /service_states/{stateId} {
+
+      allow get, list: if isAdmin();
+
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly([
+          'countryId',
+          'name',
+          'isActive',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.countryId is string
+        && request.resource.data.countryId.size() > 0
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.isActive is bool;
+
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'countryId',
+            'name',
+            'isActive',
+            'updatedAt'
+          ])
+        && request.resource.data.countryId is string
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.isActive is bool;
+
+      allow delete: if false;
+    }
+
+    // Cities
+    match /service_cities/{cityId} {
+
+      allow get, list: if isAdmin();
+
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly([
+          'countryId',
+          'stateId',
+          'name',
+          'boundary',
+          'boundarySource',
+          'boundaryVerified',
+          'isServiceActive',
+          'createdAt',
+          'updatedAt',
+          'state',
+          'country'
+        ])
+        && request.resource.data.countryId is string
+        && request.resource.data.stateId is string
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.boundary is list
+        && request.resource.data.boundarySource is string
+        && request.resource.data.boundaryVerified is bool
+        && request.resource.data.isServiceActive is bool
+        && (
+          request.resource.data.isServiceActive == false
+          || (
+            request.resource.data.boundaryVerified == true
+            && request.resource.data.boundary.size() >= 3
+          )
+        )
+        && validOptionalString(request.resource.data, 'state')
+        && validOptionalString(request.resource.data, 'country');
+
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'countryId',
+            'stateId',
+            'name',
+            'boundary',
+            'boundarySource',
+            'boundaryVerified',
+            'isServiceActive',
+            'updatedAt',
+            'state',
+            'country'
+          ])
+        && request.resource.data.countryId is string
+        && request.resource.data.stateId is string
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.boundary is list
+        && request.resource.data.boundarySource is string
+        && request.resource.data.boundaryVerified is bool
+        && request.resource.data.isServiceActive is bool
+        && (
+          request.resource.data.isServiceActive == false
+          || (
+            request.resource.data.boundaryVerified == true
+            && request.resource.data.boundary.size() >= 3
+          )
+        )
+        && validOptionalString(request.resource.data, 'state')
+        && validOptionalString(request.resource.data, 'country');
+
+      allow delete: if false;
+    }
+
+    // Areas
+    match /service_areas/{areaId} {
+
+      allow get, list: if isAdmin();
+
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly([
+          'countryId',
+          'stateId',
+          'cityId',
+          'name',
+          'boundary',
+          'boundarySource',
+          'boundaryVerified',
+          'isServiceActive',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.countryId is string
+        && request.resource.data.stateId is string
+        && request.resource.data.cityId is string
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.boundary is list
+        && request.resource.data.boundarySource is string
+        && request.resource.data.boundaryVerified is bool
+        && request.resource.data.isServiceActive is bool
+        && (
+          request.resource.data.isServiceActive == false
+          || (
+            request.resource.data.boundaryVerified == true
+            && request.resource.data.boundary.size() >= 3
+          )
+        );
+
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'countryId',
+            'stateId',
+            'cityId',
+            'name',
+            'boundary',
+            'boundarySource',
+            'boundaryVerified',
+            'isServiceActive',
+            'updatedAt'
+          ])
+        && request.resource.data.countryId is string
+        && request.resource.data.stateId is string
+        && request.resource.data.cityId is string
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.boundary is list
+        && request.resource.data.boundarySource is string
+        && request.resource.data.boundaryVerified is bool
+        && request.resource.data.isServiceActive is bool
+        && (
+          request.resource.data.isServiceActive == false
+          || (
+            request.resource.data.boundaryVerified == true
+            && request.resource.data.boundary.size() >= 3
+          )
+        );
+
+      allow delete: if false;
+    }
+
+    // Localities
+    match /service_localities/{localityId} {
+
+      allow get, list: if isAdmin();
+
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly([
+          'countryId',
+          'stateId',
+          'cityId',
+          'areaId',
+          'name',
+          'pincode',
+          'boundary',
+          'boundarySource',
+          'boundaryVerified',
+          'isServiceActive',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.countryId is string
+        && request.resource.data.stateId is string
+        && request.resource.data.cityId is string
+        && request.resource.data.areaId is string
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && validOptionalString(request.resource.data, 'pincode')
+        && request.resource.data.boundary is list
+        && request.resource.data.boundarySource is string
+        && request.resource.data.boundaryVerified is bool
+        && request.resource.data.isServiceActive is bool
+        && (
+          request.resource.data.isServiceActive == false
+          || (
+            request.resource.data.boundaryVerified == true
+            && request.resource.data.boundary.size() >= 3
+          )
+        );
+
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'countryId',
+            'stateId',
+            'cityId',
+            'areaId',
+            'name',
+            'pincode',
+            'boundary',
+            'boundarySource',
+            'boundaryVerified',
+            'isServiceActive',
+            'updatedAt'
+          ])
+        && request.resource.data.countryId is string
+        && request.resource.data.stateId is string
+        && request.resource.data.cityId is string
+        && request.resource.data.areaId is string
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && validOptionalString(request.resource.data, 'pincode')
+        && request.resource.data.boundary is list
+        && request.resource.data.boundarySource is string
+        && request.resource.data.boundaryVerified is bool
+        && request.resource.data.isServiceActive is bool
+        && (
+          request.resource.data.isServiceActive == false
+          || (
+            request.resource.data.boundaryVerified == true
+            && request.resource.data.boundary.size() >= 3
+          )
+        );
+
+      allow delete: if false;
+    }
+
+    // Location import audit records
+    match /service_location_imports/{importId} {
+
+      allow get, list: if isAdmin();
+
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly([
+          'source',
+          'fileName',
+          'status',
+          'importedBy',
+          'importedAt',
+          'verificationStatus'
+        ])
+        && request.resource.data.source is string
+        && request.resource.data.fileName is string
+        && request.resource.data.status is string
+        && request.resource.data.importedBy == request.auth.uid
+        && request.resource.data.importedAt == request.time
+        && request.resource.data.verificationStatus is string;
+
+      allow update, delete: if false;
     }
 
     // =====================================================
@@ -1076,15 +1373,12 @@ service cloud.firestore {
           'reason',
           'beforeStatus',
           'afterStatus',
-
-          // Added to match walker_admin_service.dart
           'beforeVerificationStatus',
           'afterVerificationStatus',
           'beforeIsApproved',
           'afterIsApproved',
           'beforeIsActive',
           'afterIsActive',
-
           'createdAt',
           'metadata'
         ])
@@ -1113,7 +1407,7 @@ service cloud.firestore {
         && validOptionalBool(request.resource.data, 'afterIsApproved')
         && validOptionalBool(request.resource.data, 'beforeIsActive')
         && validOptionalBool(request.resource.data, 'afterIsActive');
-      
+
       allow update, delete: if false;
     }
 
