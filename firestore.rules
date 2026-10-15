@@ -127,7 +127,7 @@ service cloud.firestore {
           )
         )
 
-        // Suspension: approval remains, but access is disabled.
+        // Suspension
         && (
           d.status != 'suspended'
           || (
@@ -154,7 +154,7 @@ service cloud.firestore {
           )
         )
 
-        // Inactive and left accounts cannot remain active.
+        // Inactive and left accounts
         && (
           d.status != 'inactive'
           || d.isActive == false
@@ -495,10 +495,10 @@ service cloud.firestore {
 
     match /walkers/{walkerUid} {
 
-      // NOTE:
-      // This retains the existing public-read behavior for active,
-      // approved walkers. Sensitive fields should eventually be
-      // moved into a private document before changing this access.
+      // Existing read behavior retained for compatibility.
+      // IMPORTANT: This exposes the entire approved walker document
+      // to signed-in users. Move private KYC/bank/emergency data into
+      // a separate private document before tightening this rule.
       allow get: if isOwner(walkerUid)
         || isAdmin()
         || (
@@ -581,7 +581,7 @@ service cloud.firestore {
         && validOptionalString(request.resource.data, 'gender');
 
       // Walker profile/onboarding update.
-      // Approval and verification fields remain admin-controlled.
+      // Admin-controlled decision fields cannot be changed here.
       allow update: if isOwner(walkerUid)
         && request.resource.data.diff(resource.data)
           .affectedKeys()
@@ -634,7 +634,7 @@ service cloud.firestore {
           || request.resource.data.dateOfBirth is timestamp
         );
 
-      // Initial application submission.
+      // Initial application submission
       allow update: if isOwner(walkerUid)
         && resource.data.get('applicationSubmitted', false) == false
         && request.resource.data.get('applicationSubmitted', false) == true
@@ -654,8 +654,7 @@ service cloud.firestore {
         && request.resource.data.submittedAt == request.time
         && request.resource.data.updatedAt == request.time;
 
-      // Admin decision: approval, rejection, correction, suspension,
-      // reactivation, or other permitted status changes.
+      // Admin decision
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data)
           .affectedKeys()
@@ -885,7 +884,7 @@ service cloud.firestore {
           && isApprovedWalker()
         );
 
-      // Customer cancellation and review updates.
+      // Customer cancellation and review updates
       allow update: if signedIn()
         && resource.data.customerId == request.auth.uid
         && (
@@ -916,7 +915,7 @@ service cloud.firestore {
           )
         );
 
-      // Admin booking updates.
+      // Admin booking updates
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data)
           .affectedKeys()
@@ -937,7 +936,7 @@ service cloud.firestore {
             'planStatus'
           ]);
 
-      // Assigned approved walker progress updates.
+      // Assigned approved walker progress updates
       allow update: if isApprovedWalker()
         && resource.data.walkerId == request.auth.uid
         && request.resource.data.diff(resource.data)
@@ -1060,8 +1059,6 @@ service cloud.firestore {
 
       allow get, list: if isAdmin();
 
-      // Admin can create a decision/activity record.
-      // The application must write the corresponding record.
       allow create: if isAdmin()
         && request.resource.data.keys().hasAll([
           'actorUid',
@@ -1079,6 +1076,15 @@ service cloud.firestore {
           'reason',
           'beforeStatus',
           'afterStatus',
+
+          // Added to match walker_admin_service.dart
+          'beforeVerificationStatus',
+          'afterVerificationStatus',
+          'beforeIsApproved',
+          'afterIsApproved',
+          'beforeIsActive',
+          'afterIsActive',
+
           'createdAt',
           'metadata'
         ])
@@ -1100,8 +1106,14 @@ service cloud.firestore {
         && request.resource.data.createdAt == request.time
         && validOptionalString(request.resource.data, 'reason')
         && validOptionalString(request.resource.data, 'beforeStatus')
-        && validOptionalString(request.resource.data, 'afterStatus');
-
+        && validOptionalString(request.resource.data, 'afterStatus')
+        && validOptionalString(request.resource.data, 'beforeVerificationStatus')
+        && validOptionalString(request.resource.data, 'afterVerificationStatus')
+        && validOptionalBool(request.resource.data, 'beforeIsApproved')
+        && validOptionalBool(request.resource.data, 'afterIsApproved')
+        && validOptionalBool(request.resource.data, 'beforeIsActive')
+        && validOptionalBool(request.resource.data, 'afterIsActive');
+      
       allow update, delete: if false;
     }
 
