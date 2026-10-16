@@ -1,6 +1,7 @@
 import { booleanValid } from "@turf/boolean-valid";
 import { booleanContains } from "@turf/boolean-contains";
-import { polygon, type Feature, type Polygon } from "@turf/helpers";
+import { polygon } from "@turf/helpers";
+import type { Feature, Polygon } from "geojson";
 
 export interface BoundaryPoint { lat: number; lng: number }
 export interface BoundaryDoc {
