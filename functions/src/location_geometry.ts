@@ -1,6 +1,6 @@
 import { booleanValid } from "@turf/boolean-valid";
 import { booleanContains } from "@turf/boolean-contains";
-import { feature, polygon, type Feature, type Polygon } from "@turf/helpers";
+import { polygon, type Feature, type Polygon } from "@turf/helpers";
 
 export interface BoundaryPoint { lat: number; lng: number }
 export interface BoundaryDoc {
@@ -39,7 +39,7 @@ export function polygonFromBoundary(boundary: BoundaryDoc): Feature<Polygon> {
 
   let candidate: Feature<Polygon>;
   try {
-    candidate = feature(polygon([ring]));
+    candidate = polygon([ring]);
   } catch {
     throw new Error("BOUNDARY_POLYGON_INVALID");
   }
