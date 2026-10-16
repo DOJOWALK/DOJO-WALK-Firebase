@@ -53,9 +53,22 @@ beforeEach(async () => {
       createdAt: new Date('2026-01-01T00:00:00Z'),
       updatedAt: new Date('2026-01-01T00:00:00Z'),
     });
+    await setDoc(doc(db, 'service_location_boundaries/parent-city-boundary'), {
+      locationId: 'city-parent',
+      locationType: 'city',
+      points: [{ lat: 28.5, lng: 77.3 }, { lat: 28.6, lng: 77.3 }, { lat: 28.6, lng: 77.4 }],
+      sourceType: 'governmentGis',
+      sourceName: 'Test parent city official source',
+      sourceReference: 'TEST-PARENT-REF',
+      verificationStatus: 'verified',
+      verifiedBy: 'super-active',
+      verifiedAt: new Date('2026-01-01T00:00:00Z'),
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
     await setDoc(doc(db, 'service_cities/city-parent'), {
       countryId: 'india', stateId: 'up', name: 'Parent City',
-      verifiedBoundaryId: 'city-boundary', isServiceActive: true,
+      verifiedBoundaryId: 'parent-city-boundary', isServiceActive: true,
       createdAt: new Date('2026-01-01T00:00:00Z'), updatedAt: new Date('2026-01-01T00:00:00Z'),
     });
   });
@@ -211,7 +224,7 @@ test('area cannot be activated when its parent city is inactive', async () => {
     const db = context.firestore();
     await setDoc(doc(db, 'service_cities/city-inactive'), {
       countryId: 'india', stateId: 'up', name: 'Inactive Parent City',
-      verifiedBoundaryId: 'city-boundary', isServiceActive: false,
+      verifiedBoundaryId: 'parent-city-boundary', isServiceActive: false,
       createdAt: new Date('2026-01-01T00:00:00Z'), updatedAt: new Date('2026-01-01T00:00:00Z'),
     });
     await setDoc(doc(db, 'service_location_boundaries/area-inactive-parent-boundary'), {
