@@ -7,7 +7,7 @@ import {
   assertSucceeds,
   assertFails,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 
 const projectId = 'demo-dojo-rules-tests';
 let env;
@@ -112,8 +112,5 @@ test('verified boundary cannot be edited or deleted', async () => {
   await assertFails(updateDoc(doc(db, 'service_location_boundaries/city-boundary'), {
     sourceName: 'Changed source',
   }));
-  await assertFails(env.authenticatedContext('super-active').firestore()
-    .doc?.('service_location_boundaries/city-boundary'));
-  await assertFails(import('firebase/firestore').then(({ deleteDoc }) =>
-    deleteDoc(doc(db, 'service_location_boundaries/city-boundary'))));
+  await assertFails(deleteDoc(doc(db, 'service_location_boundaries/city-boundary')));
 });
