@@ -205,3 +205,28 @@ test('import audit creation requires active super_admin and matching actor', asy
     status: 'completed',
   }));
 });
+
+test('area cannot be activated when its parent city is inactive', async () => {
+  await env.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'service_cities/city-inactive'), {
+      countryId: 'india', stateId: 'up', name: 'Inactive Parent City',
+      verifiedBoundaryId: 'city-boundary', isServiceActive: false,
+      createdAt: new Date('2026-01-01T00:00:00Z'), updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+    await setDoc(doc(db, 'service_location_boundaries/area-inactive-parent-boundary'), {
+      locationId: 'area-inactive-parent', locationType: 'area',
+      points: [{ lat: 28.51, lng: 77.31 }, { lat: 28.52, lng: 77.31 }, { lat: 28.52, lng: 77.32 }],
+      sourceType: 'governmentGis', sourceName: 'Test official area source',
+      sourceReference: 'AREA-REF-INACTIVE-PARENT', verificationStatus: 'verified',
+      verifiedBy: 'super-active', verifiedAt: new Date('2026-01-01T00:00:00Z'),
+      createdAt: new Date('2026-01-01T00:00:00Z'), updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+  });
+  const db = env.authenticatedContext('super-active').firestore();
+  await assertFails(setDoc(doc(db, 'service_areas/area-inactive-parent'), {
+    countryId: 'india', stateId: 'up', cityId: 'city-inactive',
+    name: 'Area With Inactive Parent', verifiedBoundaryId: 'area-inactive-parent-boundary',
+    isServiceActive: true, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  }));
+});
