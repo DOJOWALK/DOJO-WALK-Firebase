@@ -1,0 +1,36 @@
+name: Trusted Location Geometry Tests
+
+on:
+  pull_request:
+    paths:
+      - "functions/**"
+      - "firebase.json"
+      - ".github/workflows/test-location-geometry.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  geometry-tests:
+    name: Build and test location geometry
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: functions/package.json
+      - name: Install function dependencies
+        working-directory: functions
+        run: npm install --no-audit --no-fund
+      - name: Build TypeScript
+        working-directory: functions
+        run: npm run build
+      - name: Run geometry tests
+        working-directory: functions
+        run: node --test test/*.test.cjs
