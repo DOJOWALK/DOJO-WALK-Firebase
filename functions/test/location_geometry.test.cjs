@@ -36,3 +36,29 @@ test("fewer than three distinct points are rejected", () => {
     { lat: 0, lng: 0 }, { lat: 0, lng: 0 }, { lat: 0, lng: 0 },
   ])), /BOUNDARY_NEEDS_THREE_DISTINCT_POINTS/);
 });
+
+test("Firestore GeoPoint-shaped latitude/longitude boundary is accepted", () => {
+  const firestoreCity = boundary("city-firestore", "city", [
+    { latitude: 0, longitude: 0 },
+    { latitude: 0, longitude: 10 },
+    { latitude: 10, longitude: 10 },
+    { latitude: 10, longitude: 0 },
+  ]);
+  assert.doesNotThrow(() => polygonFromBoundary(firestoreCity));
+});
+
+test("Firestore GeoPoint-shaped Area is checked against City containment", () => {
+  const firestoreCity = boundary("city-firestore", "city", [
+    { latitude: 0, longitude: 0 },
+    { latitude: 0, longitude: 10 },
+    { latitude: 10, longitude: 10 },
+    { latitude: 10, longitude: 0 },
+  ]);
+  const firestoreArea = boundary("area-firestore", "area", [
+    { latitude: 2, longitude: 2 },
+    { latitude: 2, longitude: 4 },
+    { latitude: 4, longitude: 4 },
+    { latitude: 4, longitude: 2 },
+  ]);
+  assert.doesNotThrow(() => assertAreaCoveredByCity(firestoreArea, firestoreCity));
+});
