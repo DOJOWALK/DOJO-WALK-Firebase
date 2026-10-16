@@ -23,13 +23,21 @@ export function polygonFromBoundary(boundary: BoundaryDoc): Feature<Polygon> {
   const ring: number[][] = [];
   for (const item of boundary.points) {
     if (!item || typeof item !== "object") throw new Error("BOUNDARY_POINT_INVALID");
-    const p = item as Partial<BoundaryPoint>;
-    if (typeof p.lat !== "number" || typeof p.lng !== "number" ||
-        !Number.isFinite(p.lat) || !Number.isFinite(p.lng) ||
-        p.lat < -90 || p.lat > 90 || p.lng < -180 || p.lng > 180) {
+    // Admin persists points as Firestore GeoPoint values. Firestore returns
+    // those as objects with latitude/longitude; older/imported documents may
+    // use lat/lng. Accept both shapes, but validate coordinates identically.
+    const p = item as Partial<BoundaryPoint> & {
+      latitude?: unknown;
+      longitude?: unknown;
+    };
+    const lat = typeof p.lat === "number" ? p.lat : p.latitude;
+    const lng = typeof p.lng === "number" ? p.lng : p.longitude;
+    if (typeof lat !== "number" || typeof lng !== "number" ||
+        !Number.isFinite(lat) || !Number.isFinite(lng) ||
+        lat < -90 || lat > 90 || lng < -180 || lng > 180) {
       throw new Error("BOUNDARY_COORDINATE_INVALID");
     }
-    ring.push([p.lng, p.lat]);
+    ring.push([lng, lat]);
   }
 
   const distinct = new Set(ring.map(([lng, lat]) => `${lng},${lat}`));
