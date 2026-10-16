@@ -1058,6 +1058,9 @@ service cloud.firestore {
     }
 
     function validAreaActivation(data, areaId) {
+      let cityPath =
+        /databases/$(database)/documents/service_cities/$(data.cityId);
+
       return data.isServiceActive == false
         || (
           data.verifiedBoundaryId is string
@@ -1066,6 +1069,10 @@ service cloud.firestore {
             areaId,
             'area'
           )
+          && data.cityId is string
+          && exists(cityPath)
+          && get(cityPath).data.isServiceActive == true
+          && validCityActivation(get(cityPath).data, data.cityId)
         );
     }
 
