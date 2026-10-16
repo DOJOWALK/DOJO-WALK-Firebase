@@ -1,0 +1,40 @@
+name: Test Firestore Security Rules
+
+on:
+  pull_request:
+    paths:
+      - "firestore.rules"
+      - "firebase.json"
+      - "package.json"
+      - "test/**"
+      - ".github/workflows/test-firestore-rules.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "firestore.rules"
+      - "firebase.json"
+      - "package.json"
+      - "test/**"
+      - ".github/workflows/test-firestore-rules.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  emulator-tests:
+    name: Firestore Rules Emulator Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install test dependencies
+        run: npm install --no-audit --no-fund
+      - name: Run Firestore Emulator tests
+        run: npx firebase emulators:exec --only firestore --project demo-dojo-rules-tests "npm test"
