@@ -22,6 +22,14 @@ const ids = {
   cityBoundary: `it-city-boundary-${suffix}`,
   areaBoundary: `it-area-boundary-${suffix}`,
   invalidBoundary: `it-invalid-boundary-${suffix}`,
+  noBoundaryCity: `it-no-boundary-city-${suffix}`,
+  wrongTypeCity: `it-wrong-type-city-${suffix}`,
+  wrongTypeBoundary: `it-wrong-type-boundary-${suffix}`,
+  inactiveParentCity: `it-inactive-parent-city-${suffix}`,
+  inactiveParentArea: `it-inactive-parent-area-${suffix}`,
+  inactiveParentAreaBoundary: `it-inactive-parent-area-boundary-${suffix}`,
+  outsideArea: `it-outside-area-${suffix}`,
+  outsideAreaBoundary: `it-outside-area-boundary-${suffix}`,
 };
 
 const polygonPoints = (south, west, north, east) => [
@@ -71,6 +79,14 @@ test("callable integration: auth, boundary validation, City and Area activation"
     `service_location_boundaries/${ids.cityBoundary}`,
     `service_location_boundaries/${ids.areaBoundary}`,
     `service_location_boundaries/${ids.invalidBoundary}`,
+    `service_cities/${ids.noBoundaryCity}`,
+    `service_cities/${ids.wrongTypeCity}`,
+    `service_location_boundaries/${ids.wrongTypeBoundary}`,
+    `service_cities/${ids.inactiveParentCity}`,
+    `service_areas/${ids.inactiveParentArea}`,
+    `service_location_boundaries/${ids.inactiveParentAreaBoundary}`,
+    `service_areas/${ids.outsideArea}`,
+    `service_location_boundaries/${ids.outsideAreaBoundary}`,
   ];
   t.after(async () => {
     await Promise.all(docPaths.map((path) => db.doc(path).delete().catch(() => undefined)));
@@ -100,6 +116,26 @@ test("callable integration: auth, boundary validation, City and Area activation"
     db.doc(`service_location_boundaries/${ids.invalidBoundary}`).set({
       ...boundary(ids.invalidCity, "city", [new GeoPoint(0, 0), new GeoPoint(0, 0)]),
     }),
+    db.doc(`service_cities/${ids.noBoundaryCity}`).set({ isServiceActive: false }),
+    db.doc(`service_cities/${ids.wrongTypeCity}`).set({ isServiceActive: false, verifiedBoundaryId: ids.wrongTypeBoundary }),
+    db.doc(`service_location_boundaries/${ids.wrongTypeBoundary}`).set(
+      boundary(ids.wrongTypeCity, "area", polygonPoints(2, 2, 4, 4)),
+    ),
+    db.doc(`service_cities/${ids.inactiveParentCity}`).set({
+      isServiceActive: false, verifiedBoundaryId: ids.cityBoundary,
+    }),
+    db.doc(`service_areas/${ids.inactiveParentArea}`).set({
+      isServiceActive: false, cityId: ids.inactiveParentCity, verifiedBoundaryId: ids.inactiveParentAreaBoundary,
+    }),
+    db.doc(`service_location_boundaries/${ids.inactiveParentAreaBoundary}`).set(
+      boundary(ids.inactiveParentArea, "area", polygonPoints(2, 2, 4, 4)),
+    ),
+    db.doc(`service_areas/${ids.outsideArea}`).set({
+      isServiceActive: false, cityId: ids.city, verifiedBoundaryId: ids.outsideAreaBoundary,
+    }),
+    db.doc(`service_location_boundaries/${ids.outsideAreaBoundary}`).set(
+      boundary(ids.outsideArea, "area", polygonPoints(12, 12, 14, 14)),
+    ),
   ]);
 
   await t.test("unauthenticated caller is rejected", async () => {
@@ -117,6 +153,31 @@ test("callable integration: auth, boundary validation, City and Area activation"
     await expectCallableCode(invoke(ids.inactive, "city", ids.city), "permission-denied");
   });
 
+  await t.test("invalid callable arguments are rejected", async () => {
+    await expectCallableCode(invoke(ids.admin, "country", ids.city), "invalid-argument");
+    await expectCallableCode(invoke(ids.admin, "city", "../bad-id"), "invalid-argument");
+  });
+
+  await t.test("missing boundary reference is rejected", async () => {
+    await expectCallableCode(invoke(ids.admin, "city", ids.noBoundaryCity), "failed-precondition");
+    assert.equal((await db.doc(`service_cities/${ids.noBoundaryCity}`).get()).get("isServiceActive"), false);
+  });
+
+  await t.test("boundary for a different location type is rejected", async () => {
+    await expectCallableCode(invoke(ids.admin, "city", ids.wrongTypeCity), "failed-precondition");
+    assert.equal((await db.doc(`service_cities/${ids.wrongTypeCity}`).get()).get("isServiceActive"), false);
+  });
+
+  await t.test("Area activation is rejected when parent City is inactive", async () => {
+    await expectCallableCode(invoke(ids.admin, "area", ids.inactiveParentArea), "failed-precondition");
+    assert.equal((await db.doc(`service_areas/${ids.inactiveParentArea}`).get()).get("isServiceActive"), false);
+  });
+
+  await t.test("Area outside parent City boundary is rejected", async () => {
+    await expectCallableCode(invoke(ids.admin, "area", ids.outsideArea), "failed-precondition");
+    assert.equal((await db.doc(`service_areas/${ids.outsideArea}`).get()).get("isServiceActive"), false);
+  });
+
   await t.test("invalid verified boundary is rejected and location stays inactive", async () => {
     await expectCallableCode(invoke(ids.admin, "city", ids.invalidCity), "failed-precondition");
     const location = await db.doc(`service_cities/${ids.invalidCity}`).get();
@@ -127,6 +188,10 @@ test("callable integration: auth, boundary validation, City and Area activation"
     const result = await invoke(ids.admin, "city", ids.city);
     assert.deepEqual(result, { ok: true, locationId: ids.city, locationType: "city" });
     assert.equal((await db.doc(`service_cities/${ids.city}`).get()).get("isServiceActive"), true);
+    const audit = await db.collection("service_location_activation_audit")
+      .where("actorUid", "==", ids.admin).where("locationId", "==", ids.city).get();
+    assert.equal(audit.size, 1);
+    assert.equal(audit.docs[0].get("result"), "activated");
   });
 
   await t.test("active super_admin can activate an Area contained by its active City", async () => {
