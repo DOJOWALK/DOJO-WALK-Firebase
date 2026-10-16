@@ -121,6 +121,33 @@ test('client cannot directly activate city even with a matching verified boundar
   }));
 });
 
+test('client cannot change an inactive city to active', async () => {
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'service_cities/city-inactive-to-active'), {
+      countryId: 'india', stateId: 'up', name: 'Inactive City',
+      verifiedBoundaryId: 'city-boundary', isServiceActive: false,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+    // Make the referenced verified boundary match this test location.
+    await setDoc(doc(context.firestore(), 'service_location_boundaries/city-inactive-to-active-boundary'), {
+      locationId: 'city-inactive-to-active', locationType: 'city',
+      points: [{ lat: 28.5, lng: 77.3 }, { lat: 28.6, lng: 77.3 }, { lat: 28.6, lng: 77.4 }],
+      sourceType: 'governmentGis', sourceName: 'Test official source',
+      sourceReference: 'TEST-REF-INACTIVE', verificationStatus: 'verified',
+      verifiedBy: 'super-active', verifiedAt: new Date('2026-01-01T00:00:00Z'),
+      createdAt: new Date('2026-01-01T00:00:00Z'), updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+    await updateDoc(doc(context.firestore(), 'service_cities/city-inactive-to-active'), {
+      verifiedBoundaryId: 'city-inactive-to-active-boundary',
+    });
+  });
+  const db = env.authenticatedContext('super-active').firestore();
+  await assertFails(updateDoc(doc(db, 'service_cities/city-inactive-to-active'), {
+    isServiceActive: true, updatedAt: serverTimestamp(),
+  }));
+});
+
 test('direct city activation with a mismatched boundary is denied', async () => {
   const db = env.authenticatedContext('super-active').firestore();
   await assertFails(setDoc(doc(db, 'service_cities/city-2'), {
