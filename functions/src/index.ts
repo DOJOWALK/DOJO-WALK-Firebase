@@ -40,7 +40,7 @@ export const activateServiceLocation = onCall({ region: "asia-south1" }, async (
   const locationType = request.data?.locationType;
   const locationId = request.data?.locationId;
 
-  if (!["city", "area"].includes(locationType) ||
+  if ((locationType !== "city" && locationType !== "area") ||
       typeof locationId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(locationId)) {
     throw new HttpsError("invalid-argument", "Provide a valid locationType and locationId.");
   }
