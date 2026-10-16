@@ -1,10 +1,11 @@
-name: Trusted Location Geometry Tests
+name: Trusted Location Geometry and Callable Tests
 
 on:
   pull_request:
     paths:
       - "functions/**"
       - "firebase.json"
+      - "firestore.rules"
       - ".github/workflows/test-location-geometry.yml"
   workflow_dispatch:
 
@@ -12,10 +13,10 @@ permissions:
   contents: read
 
 jobs:
-  geometry-tests:
-    name: Build and test location geometry
+  location-tests:
+    name: Build, geometry and callable integration tests
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -23,12 +24,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Setup Java for Firestore Emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
       - name: Install function dependencies
         working-directory: functions
         run: npm install --no-audit --no-fund
-      - name: Build TypeScript
-        working-directory: functions
-        run: npm run build
-      - name: Run geometry tests
-        working-directory: functions
-        run: node --test test/*.test.cjs
+      - name: Build and run tests against Firestore Emulator
+        run: npx --yes firebase-tools emulators:exec --project demo-dojo-walk-tests --only firestore "cd functions && npm test"
