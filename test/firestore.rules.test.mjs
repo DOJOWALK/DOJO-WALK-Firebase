@@ -37,6 +37,9 @@ beforeEach(async () => {
     await setDoc(doc(db, 'admin_users/support-active'), {
       role: 'support', isActive: true,
     });
+    await setDoc(doc(db, 'admin_users/location-active'), {
+      role: 'admin', isActive: true,
+    });
     await setDoc(doc(db, 'service_location_boundaries/city-boundary'), {
       locationId: 'city-1',
       locationType: 'city',
@@ -49,6 +52,11 @@ beforeEach(async () => {
       verifiedAt: new Date('2026-01-01T00:00:00Z'),
       createdAt: new Date('2026-01-01T00:00:00Z'),
       updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+    await setDoc(doc(db, 'service_cities/city-parent'), {
+      countryId: 'india', stateId: 'up', name: 'Parent City',
+      verifiedBoundaryId: 'city-boundary', isServiceActive: true,
+      createdAt: new Date('2026-01-01T00:00:00Z'), updatedAt: new Date('2026-01-01T00:00:00Z'),
     });
   });
 });
@@ -73,12 +81,14 @@ test('active super_admin can create a valid country', async () => {
 test('inactive super_admin and active support role cannot write service locations', async () => {
   const inactiveDb = env.authenticatedContext('super-inactive').firestore();
   const supportDb = env.authenticatedContext('support-active').firestore();
+  const locationDb = env.authenticatedContext('location-active').firestore();
   const country = {
     name: 'India', code: 'IN', isActive: false,
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   };
   await assertFails(setDoc(doc(inactiveDb, 'service_countries/inactive-attempt'), country));
-  await assertFails(setDoc(doc(supportDb, 'service_countries/support-attempt'), country));\n  await assertFails(setDoc(doc(locationDb, 'service_countries/location-attempt'), country));
+  await assertFails(setDoc(doc(supportDb, 'service_countries/support-attempt'), country));
+  await assertFails(setDoc(doc(locationDb, 'service_countries/location-attempt'), country));
 });
 
 test('city cannot be activated without a verified matching boundary', async () => {
@@ -119,7 +129,7 @@ test('verified boundary cannot be edited or deleted', async () => {
 test('area cannot be activated without a verified matching boundary', async () => {
   const db = env.authenticatedContext('super-active').firestore();
   await assertFails(setDoc(doc(db, 'service_areas/area-no-boundary'), {
-    countryId: 'india', stateId: 'up', cityId: 'city-1',
+    countryId: 'india', stateId: 'up', cityId: 'city-parent',
     name: 'Area Without Boundary', isServiceActive: true,
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   }));
@@ -138,7 +148,7 @@ test('area can be activated with its own verified boundary', async () => {
   });
   const db = env.authenticatedContext('super-active').firestore();
   await assertSucceeds(setDoc(doc(db, 'service_areas/area-1'), {
-    countryId: 'india', stateId: 'up', cityId: 'city-1',
+    countryId: 'india', stateId: 'up', cityId: 'city-parent',
     name: 'Verified Area', verifiedBoundaryId: 'area-boundary',
     isServiceActive: true, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   }));
@@ -157,7 +167,7 @@ test('area cannot use a verified boundary belonging to a different area', async 
   });
   const db = env.authenticatedContext('super-active').firestore();
   await assertFails(setDoc(doc(db, 'service_areas/area-2'), {
-    countryId: 'india', stateId: 'up', cityId: 'city-1',
+    countryId: 'india', stateId: 'up', cityId: 'city-parent',
     name: 'Mismatched Area', verifiedBoundaryId: 'other-area-boundary',
     isServiceActive: true, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   }));
@@ -166,10 +176,12 @@ test('area cannot use a verified boundary belonging to a different area', async 
 test('only active super_admin can write service location name indexes', async () => {
   const superDb = env.authenticatedContext('super-active').firestore();
   const supportDb = env.authenticatedContext('support-active').firestore();
+  const locationDb = env.authenticatedContext('location-active').firestore();
   const inactiveDb = env.authenticatedContext('super-inactive').firestore();
   const index = { normalizedName: 'example-area', locationId: 'area-1', locationType: 'area' };
   await assertSucceeds(setDoc(doc(superDb, 'service_location_name_indexes/area-example'), index));
-  await assertFails(setDoc(doc(supportDb, 'service_location_name_indexes/support-attempt'), index));\n  await assertFails(setDoc(doc(locationDb, 'service_location_name_indexes/location-attempt'), index));
+  await assertFails(setDoc(doc(supportDb, 'service_location_name_indexes/support-attempt'), index));
+  await assertFails(setDoc(doc(locationDb, 'service_location_name_indexes/location-attempt'), index));
   await assertFails(setDoc(doc(inactiveDb, 'service_location_name_indexes/inactive-attempt'), index));
   await assertFails(deleteDoc(doc(supportDb, 'service_location_name_indexes/area-example')));
 });
