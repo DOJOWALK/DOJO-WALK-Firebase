@@ -91,11 +91,16 @@ export const activateServiceLocation = onCall({ region: "asia-south1" }, async (
 
   // Re-read the relevant documents transactionally to reject stale IDs/revisions before activation.
   await db.runTransaction(async (tx) => {
-    const refs = [locationRef, boundaryRef, ...(parentRef ? [parentRef] : []), ...(parentBoundaryRef ? [parentBoundaryRef] : [])];
+    const refs = [actorRef, locationRef, boundaryRef, ...(parentRef ? [parentRef] : []), ...(parentBoundaryRef ? [parentBoundaryRef] : [])];
     const snaps = await Promise.all(refs.map((ref) => tx.get(ref)));
-    const currentLocation = snaps[0];
-    const currentBoundary = snaps[1];
-    if (!currentLocation.exists || currentLocation.get("verifiedBoundaryId") !== boundaryId || !currentBoundary.exists) {
+    const currentActor = snaps[0];
+    const currentLocation = snaps[1];
+    const currentBoundary = snaps[2];
+    if (!currentActor.exists || currentActor.get("isActive") !== true || currentActor.get("role") !== "super_admin") {
+      throw new HttpsError("permission-denied", "Admin access changed during validation.");
+    }
+    if (!currentLocation.exists || currentLocation.get("verifiedBoundaryId") !== boundaryId ||
+        (locationType === "area" && currentLocation.get("cityId") !== initial.get("cityId")) || !currentBoundary.exists) {
       throw new HttpsError("aborted", "Location or boundary changed during validation. Retry.");
     }
     const currentBoundaryData = requireVerifiedBoundary(currentBoundary.data(), boundaryId, locationId, locationType);
@@ -103,8 +108,8 @@ export const activateServiceLocation = onCall({ region: "asia-south1" }, async (
       throw new HttpsError("aborted", "Boundary geometry changed during validation. Retry.");
     }
     if (locationType === "area") {
-      const currentParent = snaps[2];
-      const currentParentBoundary = snaps[3];
+      const currentParent = snaps[3];
+      const currentParentBoundary = snaps[4];
       if (!currentParent?.exists || currentParent.get("isServiceActive") !== true || !currentParentBoundary?.exists) {
         throw new HttpsError("aborted", "Parent City changed during validation. Retry.");
       }
