@@ -1341,7 +1341,7 @@ service cloud.firestore {
         && request.resource.data.stateId is string
         && request.resource.data.stateId.size() > 0
         && validLocationName(request.resource.data)
-        && request.resource.data.isServiceActive is bool
+        && request.resource.data.isServiceActive == false
         && validCityActivation(request.resource.data, cityId)
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time
@@ -1377,6 +1377,7 @@ service cloud.firestore {
         && request.resource.data.stateId.size() > 0
         && validLocationName(request.resource.data)
         && request.resource.data.isServiceActive is bool
+        && (!request.resource.data.isServiceActive || resource.data.isServiceActive == true)
         && validCityActivation(request.resource.data, cityId)
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.updatedAt == request.time
@@ -1421,7 +1422,7 @@ service cloud.firestore {
         && request.resource.data.cityId is string
         && request.resource.data.cityId.size() > 0
         && validLocationName(request.resource.data)
-        && request.resource.data.isServiceActive is bool
+        && request.resource.data.isServiceActive == false
         && validAreaActivation(request.resource.data, areaId)
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time
@@ -1456,6 +1457,7 @@ service cloud.firestore {
         && request.resource.data.cityId.size() > 0
         && validLocationName(request.resource.data)
         && request.resource.data.isServiceActive is bool
+        && (!request.resource.data.isServiceActive || resource.data.isServiceActive == true)
         && validAreaActivation(request.resource.data, areaId)
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.updatedAt == request.time
