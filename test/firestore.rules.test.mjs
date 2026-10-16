@@ -78,7 +78,7 @@ test('inactive super_admin and active support role cannot write service location
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   };
   await assertFails(setDoc(doc(inactiveDb, 'service_countries/inactive-attempt'), country));
-  await assertFails(setDoc(doc(supportDb, 'service_countries/support-attempt'), country));
+  await assertFails(setDoc(doc(supportDb, 'service_countries/support-attempt'), country));\n  await assertFails(setDoc(doc(locationDb, 'service_countries/location-attempt'), country));
 });
 
 test('city cannot be activated without a verified matching boundary', async () => {
@@ -169,7 +169,7 @@ test('only active super_admin can write service location name indexes', async ()
   const inactiveDb = env.authenticatedContext('super-inactive').firestore();
   const index = { normalizedName: 'example-area', locationId: 'area-1', locationType: 'area' };
   await assertSucceeds(setDoc(doc(superDb, 'service_location_name_indexes/area-example'), index));
-  await assertFails(setDoc(doc(supportDb, 'service_location_name_indexes/support-attempt'), index));
+  await assertFails(setDoc(doc(supportDb, 'service_location_name_indexes/support-attempt'), index));\n  await assertFails(setDoc(doc(locationDb, 'service_location_name_indexes/location-attempt'), index));
   await assertFails(setDoc(doc(inactiveDb, 'service_location_name_indexes/inactive-attempt'), index));
   await assertFails(deleteDoc(doc(supportDb, 'service_location_name_indexes/area-example')));
 });
