@@ -112,16 +112,16 @@ test('city cannot be activated without a verified matching boundary', async () =
   }));
 });
 
-test('city can be activated when its referenced boundary is verified and matches', async () => {
+test('client cannot directly activate city even with a matching verified boundary', async () => {
   const db = env.authenticatedContext('super-active').firestore();
-  await assertSucceeds(setDoc(doc(db, 'service_cities/city-1'), {
+  await assertFails(setDoc(doc(db, 'service_cities/city-1'), {
     countryId: 'india', stateId: 'up', name: 'Example City',
     verifiedBoundaryId: 'city-boundary',
     isServiceActive: true, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   }));
 });
 
-test('city cannot use a verified boundary belonging to a different location', async () => {
+test('direct city activation with a mismatched boundary is denied', async () => {
   const db = env.authenticatedContext('super-active').firestore();
   await assertFails(setDoc(doc(db, 'service_cities/city-2'), {
     countryId: 'india', stateId: 'up', name: 'Other City',
@@ -148,7 +148,7 @@ test('area cannot be activated without a verified matching boundary', async () =
   }));
 });
 
-test('area can be activated with its own verified boundary', async () => {
+test('client cannot directly activate area even with its own verified boundary', async () => {
   await env.withSecurityRulesDisabled(async (context) => {
     await setDoc(doc(context.firestore(), 'service_location_boundaries/area-boundary'), {
       locationId: 'area-1', locationType: 'area',
@@ -160,14 +160,14 @@ test('area can be activated with its own verified boundary', async () => {
     });
   });
   const db = env.authenticatedContext('super-active').firestore();
-  await assertSucceeds(setDoc(doc(db, 'service_areas/area-1'), {
+  await assertFails(setDoc(doc(db, 'service_areas/area-1'), {
     countryId: 'india', stateId: 'up', cityId: 'city-parent',
     name: 'Verified Area', verifiedBoundaryId: 'area-boundary',
     isServiceActive: true, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   }));
 });
 
-test('area cannot use a verified boundary belonging to a different area', async () => {
+test('direct area activation with a mismatched boundary is denied', async () => {
   await env.withSecurityRulesDisabled(async (context) => {
     await setDoc(doc(context.firestore(), 'service_location_boundaries/other-area-boundary'), {
       locationId: 'some-other-area', locationType: 'area',
