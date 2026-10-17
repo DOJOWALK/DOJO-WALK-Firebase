@@ -84,28 +84,26 @@ beforeEach(async () => {
 
 test('new hierarchy records require existing, correctly linked ancestors', async () => {
   const db = env.authenticatedContext('super-active').firestore();
-  const base = { name: 'Draft', isActive: false, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+  const stamps = { createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+  const stateBase = { name: 'Draft State', isActive: false, ...stamps };
+  const childBase = { name: 'Draft Child', isServiceActive: false, ...stamps };
   await assertFails(setDoc(doc(db, 'service_states/missing-country-state'), {
-    ...base, countryId: 'missing-country',
+    ...stateBase, countryId: 'missing-country',
   }));
   await assertFails(setDoc(doc(db, 'service_cities/missing-state-city'), {
-    ...base, countryId: 'india', stateId: 'missing-state',
-    isServiceActive: false,
+    ...childBase, countryId: 'india', stateId: 'missing-state',
   }));
   await assertFails(setDoc(doc(db, 'service_cities/mismatched-city'), {
-    ...base, countryId: 'other-country', stateId: 'up',
-    isServiceActive: false,
+    ...childBase, countryId: 'other-country', stateId: 'up',
   }));
   await assertFails(setDoc(doc(db, 'service_areas/missing-city-area'), {
-    ...base, countryId: 'india', stateId: 'up', cityId: 'missing-city',
-    isServiceActive: false,
+    ...childBase, countryId: 'india', stateId: 'up', cityId: 'missing-city',
   }));
   await assertFails(setDoc(doc(db, 'service_localities/missing-area-locality'), {
-    ...base, countryId: 'india', stateId: 'up', cityId: 'city-parent', areaId: 'missing-area',
-    isServiceActive: false,
+    ...childBase, countryId: 'india', stateId: 'up', cityId: 'city-parent', areaId: 'missing-area',
   }));
   await assertSucceeds(setDoc(doc(db, 'service_states/valid-new-state'), {
-    ...base, countryId: 'india',
+    ...stateBase, countryId: 'india',
   }));
 });
 
