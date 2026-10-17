@@ -460,9 +460,9 @@ test('clients cannot create, update, or delete service location activation audit
 });
 
 
-// Regression: the Admin client verifies a boundary and binds the owning
-// inactive City's verifiedBoundaryId in one Firestore transaction.
-test('Admin-style transaction atomically verifies boundary and binds inactive City', async () => {
+// Direct client transactions must not be able to verify a boundary or bind it
+// to a City. The trusted callable integration suite covers the allowed server path.
+test('client transaction cannot verify boundary and bind inactive City', async () => {
   const db = env.authenticatedContext('super-active').firestore();
   const cityRef = doc(db, 'service_cities/city-transaction');
   const boundaryRef = doc(db, 'service_location_boundaries/city-transaction-boundary');
@@ -491,34 +491,31 @@ test('Admin-style transaction atomically verifies boundary and binds inactive Ci
     updatedAt: serverTimestamp(),
   }));
 
-  await assertSucceeds((async () => {
-    const { runTransaction } = await import('firebase/firestore');
-    return runTransaction(db, async (transaction) => {
-      const boundarySnapshot = await transaction.get(boundaryRef);
-      const citySnapshot = await transaction.get(cityRef);
-      assert.equal(boundarySnapshot.data().verificationStatus, 'pending');
-      assert.equal(citySnapshot.data().isServiceActive, false);
-
-      transaction.update(boundaryRef, {
-        verificationStatus: 'verified',
-        verifiedBy: 'super-active',
-        verifiedAt: serverTimestamp(),
-        verificationNotes: 'Combined Admin transaction regression',
-        updatedAt: serverTimestamp(),
-      });
-      transaction.update(cityRef, {
-        verifiedBoundaryId: 'city-transaction-boundary',
-        updatedAt: serverTimestamp(),
-      });
+  const { runTransaction } = await import('firebase/firestore');
+  await assertFails(runTransaction(db, async (transaction) => {
+    const boundarySnapshot = await transaction.get(boundaryRef);
+    const citySnapshot = await transaction.get(cityRef);
+    assert.equal(boundarySnapshot.data().verificationStatus, 'pending');
+    assert.equal(citySnapshot.data().isServiceActive, false);
+    transaction.update(boundaryRef, {
+      verificationStatus: 'verified',
+      verifiedBy: 'super-active',
+      verifiedAt: serverTimestamp(),
+      verificationNotes: 'Direct client transaction attempt',
+      updatedAt: serverTimestamp(),
     });
-  })());
+    transaction.update(cityRef, {
+      verifiedBoundaryId: 'city-transaction-boundary',
+      updatedAt: serverTimestamp(),
+    });
+  }));
 
   const [savedBoundary, savedCity] = await Promise.all([
     getDoc(boundaryRef),
     getDoc(cityRef),
   ]);
-  assert.equal(savedBoundary.data().verificationStatus, 'verified');
-  assert.equal(savedCity.data().verifiedBoundaryId, 'city-transaction-boundary');
+  assert.equal(savedBoundary.data().verificationStatus, 'pending');
+  assert.equal(savedCity.data().verifiedBoundaryId, undefined);
   assert.equal(savedCity.data().isServiceActive, false);
 });
 
