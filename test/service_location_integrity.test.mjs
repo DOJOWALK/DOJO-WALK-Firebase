@@ -9,6 +9,7 @@ test('reports missing and mismatched parents without mutating snapshot', () => {
     service_cities: { city: { countryId: 'india', stateId: 'up', isServiceActive: true } },
     service_areas: { area: { countryId: 'india', stateId: 'wrong-state', cityId: 'city', isServiceActive: true } },
     service_localities: { locality: { countryId: 'india', stateId: 'up', cityId: 'city', areaId: 'missing-area', isServiceActive: true } },
+    service_location_boundaries: {},
   };
   const before = JSON.stringify(snapshot);
   const report = auditSnapshot(snapshot);
@@ -25,6 +26,7 @@ test('clean complete inactive hierarchy has no issues', () => {
     service_cities: { city: { countryId: 'india', stateId: 'up', isServiceActive: false } },
     service_areas: { area: { countryId: 'india', stateId: 'up', cityId: 'city', isServiceActive: false } },
     service_localities: { locality: { countryId: 'india', stateId: 'up', cityId: 'city', areaId: 'area', isServiceActive: false } },
+    service_location_boundaries: {},
   };
   assert.equal(auditSnapshot(snapshot).issueCount, 0);
 });
@@ -39,7 +41,7 @@ test('rejects snapshots missing any required collection', () => {
 test('rejects array in place of a document-ID keyed collection', () => {
   assert.throws(
     () => auditSnapshot({
-      service_countries: [], service_states: {}, service_cities: {}, service_areas: {}, service_localities: {},
+      service_countries: [], service_states: {}, service_cities: {}, service_areas: {}, service_localities: {}, service_location_boundaries: {},
     }),
     /service_countries/,
   );
@@ -55,7 +57,31 @@ test('rejects null or array document values with collection and document ID', ()
     service_states: { broken: null },
     service_cities: {},
     service_areas: {},
-    service_localities: {},
+    service_localities: {}, service_location_boundaries: {},
   };
   assert.throws(() => auditSnapshot(snapshot), /service_states\/broken/);
+});
+
+test('flags active City with missing boundary reference', () => {
+  const snapshot = {
+    service_countries: { c: { isActive: true } },
+    service_states: { s: { countryId: 'c', isActive: true } },
+    service_cities: { city: { countryId: 'c', stateId: 's', isServiceActive: true, verifiedBoundaryId: 'missing' } },
+    service_areas: {}, service_localities: {}, service_location_boundaries: {},
+  };
+  assert.ok(auditSnapshot(snapshot).issues.some(x => x.code === 'MISSING_VERIFIED_BOUNDARY' && x.type === 'city'));
+});
+
+test('flags invalid verification metadata and coordinates for active Area', () => {
+  const snapshot = {
+    service_countries: { c: { isActive: true } },
+    service_states: { s: { countryId: 'c', isActive: true } },
+    service_cities: { city: { countryId: 'c', stateId: 's', isServiceActive: true } },
+    service_areas: { area: { countryId: 'c', stateId: 's', cityId: 'city', isServiceActive: true, verifiedBoundaryId: 'b' } },
+    service_localities: {},
+    service_location_boundaries: { b: { locationId: 'wrong', locationType: 'area', verificationStatus: 'draft', sourceName: '', sourceReference: '', points: [{lat: 0,lng: 0},{lat: 0,lng: 0},{lat: 1,lng: 1}] } },
+  };
+  const codes = auditSnapshot(snapshot).issues.map(x => x.code);
+  assert.ok(codes.includes('BOUNDARY_VERIFICATION_METADATA_INVALID'));
+  assert.ok(codes.includes('BOUNDARY_COORDINATES_INVALID'));
 });
