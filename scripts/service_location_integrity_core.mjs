@@ -99,11 +99,14 @@ export function auditSnapshot(snapshot) {
     const completeIsArray = Array.isArray(metadata.completeCollections);
     const included = includedIsArray ? metadata.collectionsIncluded : [];
     const complete = completeIsArray ? metadata.completeCollections : [];
-    const declared = metadata.recordCounts && typeof metadata.recordCounts === 'object' && !Array.isArray(metadata.recordCounts)
-      ? metadata.recordCounts : {};
+    const recordCountsIsObject = metadata.recordCounts !== null &&
+      typeof metadata.recordCounts === 'object' && !Array.isArray(metadata.recordCounts);
+    const declared = recordCountsIsObject ? metadata.recordCounts : {};
     const validNames = value => value.every(name => typeof name === 'string' && collections.includes(name));
     const unknownCollections = [...new Set([...included, ...complete].filter(name => typeof name === 'string' && !collections.includes(name)))];
+    const unknownRecordCountKeys = Object.keys(declared).filter(name => !collections.includes(name)).sort();
     const malformedCollectionLists = !includedIsArray || !completeIsArray || !validNames(included) || !validNames(complete);
+    const malformedRecordCounts = !recordCountsIsObject || unknownRecordCountKeys.length > 0;
     const missingCollections = collections.filter(name => !included.includes(name) || !complete.includes(name));
     const countMismatches = collections.filter(name =>
       !Number.isInteger(declared[name]) || declared[name] < 0 || declared[name] !== counts[name]);
@@ -113,7 +116,7 @@ export function auditSnapshot(snapshot) {
     const hasIdentity = hasProjectId && hasValidExportTime;
     snapshotScope = {
       status: hasIdentity && !malformedCollectionLists && unknownCollections.length === 0 &&
-        missingCollections.length === 0 && countMismatches.length === 0 ? 'DECLARED_COMPLETE' : 'INCOMPLETE_OR_UNVERIFIED',
+        missingCollections.length === 0 && countMismatches.length === 0 && !malformedRecordCounts ? 'DECLARED_COMPLETE' : 'INCOMPLETE_OR_UNVERIFIED',
       sourceProjectId: hasProjectId ? metadata.sourceProjectId : null,
       exportedAt: hasValidExportTime ? metadata.exportedAt : null,
       collectionsIncluded: included,
@@ -123,6 +126,8 @@ export function auditSnapshot(snapshot) {
       missingCollections,
       unknownCollections,
       malformedCollectionLists,
+      malformedRecordCounts,
+      unknownRecordCountKeys,
       invalidExportTimestamp: !hasValidExportTime,
     };
   }
