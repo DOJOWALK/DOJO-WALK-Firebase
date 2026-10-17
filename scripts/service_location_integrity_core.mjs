@@ -117,7 +117,7 @@ export function auditSnapshot(snapshot) {
       !Number.isInteger(declared[name]) || declared[name] < 0 || declared[name] !== counts[name]);
     const hasProjectId = typeof metadata.sourceProjectId === 'string' && metadata.sourceProjectId.trim().length > 0;
     const parsedExportTime = typeof metadata.exportedAt === 'string' ? Date.parse(metadata.exportedAt) : NaN;
-    const hasValidExportTime = Number.isFinite(parsedExportTime) && /^\d{4}-\d{2}-\d{2}T/.test(metadata.exportedAt);
+    const hasValidExportTime = Number.isFinite(parsedExportTime) && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(metadata.exportedAt);
     const hasIdentity = hasProjectId && hasValidExportTime;
     snapshotScope = {
       status: hasIdentity && !malformedCollectionLists && unknownCollections.length === 0 &&
