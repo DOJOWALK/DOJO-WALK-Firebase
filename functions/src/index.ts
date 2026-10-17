@@ -63,6 +63,22 @@ export const activateServiceLocation = onCall({ region: "asia-south1" }, async (
   const boundarySnap = await boundaryRef.get();
   const boundary = requireVerifiedBoundary(boundarySnap.data(), boundaryId, locationId, locationType);
 
+  const countryId = initial.get("countryId");
+  const stateId = initial.get("stateId");
+  if (typeof countryId !== "string" || !countryId || typeof stateId !== "string" || !stateId) {
+    throw new HttpsError("failed-precondition", "Location must reference its Country and State.");
+  }
+  const countryRef = db.doc(`service_countries/${countryId}`);
+  const stateRef = db.doc(`service_states/${stateId}`);
+  const countrySnap = await countryRef.get();
+  const stateSnap = await stateRef.get();
+  if (!countrySnap.exists || countrySnap.get("isActive") !== true) {
+    throw new HttpsError("failed-precondition", "Location Country must exist and be active.");
+  }
+  if (!stateSnap.exists || stateSnap.get("isActive") !== true || stateSnap.get("countryId") !== countryId) {
+    throw new HttpsError("failed-precondition", "Location State must exist, be active, and belong to its Country.");
+  }
+
   let parentRef: FirebaseFirestore.DocumentReference | undefined;
   let parentBoundaryRef: FirebaseFirestore.DocumentReference | undefined;
   if (locationType === "area") {
@@ -74,6 +90,9 @@ export const activateServiceLocation = onCall({ region: "asia-south1" }, async (
     const parentSnap = await parentRef.get();
     if (!parentSnap.exists || parentSnap.get("isServiceActive") !== true) {
       throw new HttpsError("failed-precondition", "Parent City must be active.");
+    }
+    if (parentSnap.get("countryId") !== countryId || parentSnap.get("stateId") !== stateId) {
+      throw new HttpsError("failed-precondition", "Area Country and State must match its parent City.");
     }
     const parentBoundaryId = parentSnap.get("verifiedBoundaryId");
     if (typeof parentBoundaryId !== "string" || !parentBoundaryId) {
@@ -89,38 +108,63 @@ export const activateServiceLocation = onCall({ region: "asia-south1" }, async (
     }
   }
 
-  // Re-read the relevant documents transactionally to reject stale IDs/revisions before activation.
+  // Re-read all relevant documents transactionally to reject stale ancestry,
+  // status, boundary references, and geometry before activation.
   await db.runTransaction(async (tx) => {
-    const refs = [actorRef, locationRef, boundaryRef, ...(parentRef ? [parentRef] : []), ...(parentBoundaryRef ? [parentBoundaryRef] : [])];
+    const refs = [
+      actorRef, locationRef, boundaryRef, countryRef, stateRef,
+      ...(parentRef ? [parentRef] : []),
+      ...(parentBoundaryRef ? [parentBoundaryRef] : []),
+    ];
     const snaps = await Promise.all(refs.map((ref) => tx.get(ref)));
     const currentActor = snaps[0];
     const currentLocation = snaps[1];
     const currentBoundary = snaps[2];
+    const currentCountry = snaps[3];
+    const currentState = snaps[4];
+
     if (!currentActor.exists || currentActor.get("isActive") !== true || currentActor.get("role") !== "super_admin") {
       throw new HttpsError("permission-denied", "Admin access changed during validation.");
     }
     if (!currentLocation.exists || currentLocation.get("verifiedBoundaryId") !== boundaryId ||
+        currentLocation.get("countryId") !== countryId || currentLocation.get("stateId") !== stateId ||
         (locationType === "area" && currentLocation.get("cityId") !== initial.get("cityId")) || !currentBoundary.exists) {
       throw new HttpsError("aborted", "Location or boundary changed during validation. Retry.");
     }
+    if (!currentCountry.exists || currentCountry.get("isActive") !== true) {
+      throw new HttpsError("failed-precondition", "Location Country must still be active.");
+    }
+    if (!currentState.exists || currentState.get("isActive") !== true || currentState.get("countryId") !== countryId) {
+      throw new HttpsError("failed-precondition", "Location State must still be active and belong to its Country.");
+    }
+
     const currentBoundaryData = requireVerifiedBoundary(currentBoundary.data(), boundaryId, locationId, locationType);
     if (JSON.stringify(currentBoundaryData.points) !== JSON.stringify(boundary.points)) {
       throw new HttpsError("aborted", "Boundary geometry changed during validation. Retry.");
     }
+
     if (locationType === "area") {
-      const currentParent = snaps[3];
-      const currentParentBoundary = snaps[4];
-      if (!currentParent?.exists || currentParent.get("isServiceActive") !== true || !currentParentBoundary?.exists) {
-        throw new HttpsError("aborted", "Parent City changed during validation. Retry.");
+      const currentParent = snaps[5];
+      const currentParentBoundary = snaps[6];
+      if (!currentParent?.exists || currentParent.get("isServiceActive") !== true ||
+          currentParent.get("countryId") !== countryId || currentParent.get("stateId") !== stateId ||
+          !currentParentBoundary?.exists) {
+        throw new HttpsError("failed-precondition", "Parent City must remain active and match the Area's Country/State.");
       }
       const currentParentBoundaryId = currentParent.get("verifiedBoundaryId");
       if (typeof currentParentBoundaryId !== "string" || currentParentBoundaryId !== currentParentBoundary.id) {
         throw new HttpsError("aborted", "Parent City boundary changed during validation. Retry.");
       }
-      const currentParentBoundaryData = requireVerifiedBoundary(currentParentBoundary.data(), currentParentBoundaryId, currentParent.id, "city");
-      try { assertAreaCoveredByCity(currentBoundaryData, currentParentBoundaryData); }
-      catch { throw new HttpsError("failed-precondition", "Area is not fully within the current parent City boundary."); }
+      const currentParentBoundaryData = requireVerifiedBoundary(
+        currentParentBoundary.data(), currentParentBoundaryId, currentParent.id, "city",
+      );
+      try {
+        assertAreaCoveredByCity(currentBoundaryData, currentParentBoundaryData);
+      } catch {
+        throw new HttpsError("failed-precondition", "Area is not fully within the current parent City boundary.");
+      }
     }
+
     tx.update(locationRef, { isServiceActive: true, updatedAt: FieldValue.serverTimestamp() });
     const auditRef = db.collection("service_location_activation_audit").doc();
     tx.create(auditRef, {
