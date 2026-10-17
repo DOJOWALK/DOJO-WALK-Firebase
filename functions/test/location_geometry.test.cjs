@@ -49,6 +49,13 @@ test("collinear boundary points are rejected as an invalid polygon", () => {
   ])), /BOUNDARY_POLYGON_INVALID/);
 });
 
+test("consecutive duplicate vertices creating a zero-length edge are rejected", () => {
+  assert.throws(() => polygonFromBoundary(boundary("zero-length-edge", "area", [
+    { lat: 0, lng: 0 }, { lat: 0, lng: 0 },
+    { lat: 0, lng: 2 }, { lat: 2, lng: 2 }, { lat: 2, lng: 0 },
+  ])), /BOUNDARY_POLYGON_INVALID/);
+});
+
 test("Firestore GeoPoint-shaped latitude/longitude boundary is accepted", () => {
   const firestoreCity = boundary("city-firestore", "city", [
     { latitude: 0, longitude: 0 },
