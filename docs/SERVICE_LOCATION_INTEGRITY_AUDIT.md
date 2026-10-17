@@ -85,3 +85,7 @@ Snapshot export timestamps now reject offsets larger than ±14:00 and reject non
 
 The timestamp auditor calculates month lengths using Gregorian leap-year rules directly rather than relying on JavaScript `Date.UTC` for years 0000–0099, which applies a legacy 1900-year adjustment. Regression coverage checks year 0000 and year 2000 as leap years and 1900 as a non-leap year. These checks remain limited to timestamp syntax/calendar validity and do not authenticate export provenance.
 
+## Step 108 — Negative timezone bounds and fractional seconds
+
+Regression tests now cover the negative side of the offset range: `-14:00` is accepted, while `-14:01` and `-15:00` are rejected. A timestamp with fractional seconds and an explicit UTC timezone is also checked. This remains format validation only; it does not authenticate export provenance or prove the source export is complete.
+
