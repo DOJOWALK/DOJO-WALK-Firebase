@@ -98,3 +98,31 @@ test('summarizes issue counts by code and record type', () => {
   assert.equal(report.issueCountsByType.city, 1);
   assert.equal(report.issueCount, report.issues.length);
 });
+
+
+test('marks snapshot scope unverified when export metadata is absent', () => {
+  const snapshot = {
+    service_countries: {}, service_states: {}, service_cities: {},
+    service_areas: {}, service_localities: {}, service_location_boundaries: {},
+  };
+  const report = auditSnapshot(snapshot);
+  assert.equal(report.snapshotScope.status, 'UNVERIFIED');
+  assert.equal(report.snapshotScope.missingCollections.length, 6);
+});
+
+test('reports declared complete snapshot scope only when all collections and counts match', () => {
+  const names = ['service_countries','service_states','service_cities','service_areas','service_localities','service_location_boundaries'];
+  const snapshot = Object.fromEntries(names.map(name => [name, {}]));
+  snapshot.snapshotMetadata = {
+    sourceProjectId: 'synthetic-project',
+    exportedAt: '2026-10-17T00:00:00Z',
+    collectionsIncluded: names,
+    completeCollections: names,
+    recordCounts: Object.fromEntries(names.map(name => [name, 0])),
+  };
+  assert.equal(auditSnapshot(snapshot).snapshotScope.status, 'DECLARED_COMPLETE');
+  snapshot.snapshotMetadata.recordCounts.service_areas = 1;
+  const report = auditSnapshot(snapshot);
+  assert.equal(report.snapshotScope.status, 'INCOMPLETE_OR_UNVERIFIED');
+  assert.deepEqual(report.snapshotScope.countMismatches, ['service_areas']);
+});
