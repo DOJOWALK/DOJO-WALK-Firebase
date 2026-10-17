@@ -19,6 +19,23 @@ Provide all six collections as objects keyed by Firestore document ID:
 
 Preserve document IDs and hierarchy/status fields exactly as exported. Country/State use `isActive`; City/Area/Locality use `isServiceActive`. Do not normalize or repair records before auditing. If a collection was not exported, do not substitute an empty object; obtain a complete export or document the scope limitation separately.
 
+Optional `snapshotMetadata` may be included to describe export scope:
+```json
+{
+  "snapshotMetadata": {
+    "sourceProjectId": "project-id",
+    "exportedAt": "2026-10-17T00:00:00Z",
+    "collectionsIncluded": ["service_countries", "service_states", "service_cities", "service_areas", "service_localities", "service_location_boundaries"],
+    "completeCollections": ["service_countries", "service_states", "service_cities", "service_areas", "service_localities", "service_location_boundaries"],
+    "recordCounts": {
+      "service_countries": 0, "service_states": 0, "service_cities": 0,
+      "service_areas": 0, "service_localities": 0, "service_location_boundaries": 0
+    }
+  }
+}
+```
+Use actual project/export metadata only in a protected local snapshot. The auditor compares declared collection counts with observed snapshot counts and reports `snapshotScope.status` as `DECLARED_COMPLETE`, `INCOMPLETE_OR_UNVERIFIED`, or `UNVERIFIED`. This is a declaration/count consistency check, not cryptographic proof that the export is complete or authorized. Never put real export metadata or snapshots in Git.
+
 The file `scripts/examples/service_location_snapshot.example.json` is a synthetic fixture, not production data.
 
 ## Run locally
@@ -29,7 +46,7 @@ From the repository root:
 node scripts/audit_service_location_integrity.mjs scripts/examples/service_location_snapshot.example.json /tmp/service-location-integrity-report.json
 ```
 
-The command exits with code 0 when no issues are found and 1 when integrity issues are found. Invalid/missing collection shapes produce an error. Review `issueCount`, each issue code, record counts, and the exact export scope before interpreting results.
+The command exits with code 0 when no issues are found and 1 when integrity issues are found. Invalid/missing collection shapes produce an error. Review `issueCount`, grouped issue counts, `snapshotScope.status`, collection counts, and the exact export scope before interpreting results. An `UNVERIFIED` scope means metadata was not supplied; it is not evidence of a complete export.
 
 For a real authorized snapshot, use a local protected path, not a Git-tracked path:
 
