@@ -85,3 +85,16 @@ test('flags invalid verification metadata and coordinates for active Area', () =
   assert.ok(codes.includes('BOUNDARY_VERIFICATION_METADATA_INVALID'));
   assert.ok(codes.includes('BOUNDARY_COORDINATES_INVALID'));
 });
+
+test('summarizes issue counts by code and record type', () => {
+  const snapshot = {
+    service_countries: { c: { isActive: true } },
+    service_states: { s: { countryId: 'c', isActive: true } },
+    service_cities: { city: { countryId: 'c', stateId: 's', isServiceActive: true, verifiedBoundaryId: 'missing' } },
+    service_areas: {}, service_localities: {}, service_location_boundaries: {},
+  };
+  const report = auditSnapshot(snapshot);
+  assert.equal(report.issueCountsByCode.MISSING_VERIFIED_BOUNDARY, 1);
+  assert.equal(report.issueCountsByType.city, 1);
+  assert.equal(report.issueCount, report.issues.length);
+});
