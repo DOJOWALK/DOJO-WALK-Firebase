@@ -116,8 +116,21 @@ export function auditSnapshot(snapshot) {
     const countMismatches = collections.filter(name =>
       !Number.isInteger(declared[name]) || declared[name] < 0 || declared[name] !== counts[name]);
     const hasProjectId = typeof metadata.sourceProjectId === 'string' && metadata.sourceProjectId.trim().length > 0;
+    const exportedAtMatch = typeof metadata.exportedAt === 'string'
+      ? metadata.exportedAt.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|([+-])(\d{2}):(\d{2}))$/)
+      : null;
+    const hasValidCalendarTime = (() => {
+      if (!exportedAtMatch) return false;
+      const year = Number(exportedAtMatch[1]), month = Number(exportedAtMatch[2]), day = Number(exportedAtMatch[3]);
+      const hour = Number(exportedAtMatch[4]), minute = Number(exportedAtMatch[5]), second = Number(exportedAtMatch[6]);
+      const zone = exportedAtMatch[7], offsetHour = Number(exportedAtMatch[9]), offsetMinute = Number(exportedAtMatch[10]);
+      const daysInMonth = month >= 1 && month <= 12 ? new Date(Date.UTC(year, month, 0)).getUTCDate() : 0;
+      if (day < 1 || day > daysInMonth || hour > 23 || minute > 59 || second > 59) return false;
+      if (zone !== 'Z' && (offsetHour > 23 || offsetMinute > 59)) return false;
+      return true;
+    })();
     const parsedExportTime = typeof metadata.exportedAt === 'string' ? Date.parse(metadata.exportedAt) : NaN;
-    const hasValidExportTime = Number.isFinite(parsedExportTime) && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(metadata.exportedAt);
+    const hasValidExportTime = hasValidCalendarTime && Number.isFinite(parsedExportTime);
     const hasIdentity = hasProjectId && hasValidExportTime;
     snapshotScope = {
       status: hasIdentity && !malformedCollectionLists && unknownCollections.length === 0 &&
