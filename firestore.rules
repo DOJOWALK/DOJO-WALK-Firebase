@@ -1237,9 +1237,9 @@ service cloud.firestore {
 
       allow create: if validBoundaryCreate();
 
-      allow update: if validBoundaryDraftUpdate()
-        || validBoundaryVerification()
-        || validBoundaryRejection();
+      // Verification/rejection transitions are performed only by the trusted
+      // callable using the Admin SDK. Client writes may edit eligible drafts only.
+      allow update: if validBoundaryDraftUpdate();
 
       // Verified boundary records cannot be deleted.
       allow delete: if isAdmin()
