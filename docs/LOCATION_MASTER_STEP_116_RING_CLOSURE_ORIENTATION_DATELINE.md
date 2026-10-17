@@ -1,5 +1,5 @@
 # DOJO WALK Location Master — Step 116
-## Ring Closure, Winding and Antimeridian Handling
+## Ring Closure, Winding and Antimeridian Handling — PASS
 
 Date: 2026-10-17
 
@@ -15,7 +15,9 @@ Date: 2026-10-17
 - Expected rejection code for unsupported antimeridian crossing: `BOUNDARY_ANTIMERIDIAN_CROSSING_UNSUPPORTED`.
 
 ### Validation status
-- Automated CI: pending confirmation; do not treat this report as PASS until required workflows succeed on the latest commit.
+- Firestore Rules CI PASS: [39034359901](https://github.com/dojoplatform2026/DOJO-WALK-Firebase/actions/runs/39034359901).
+- Geometry/Callable CI PASS: [39034359897](https://github.com/dojoplatform2026/DOJO-WALK-Firebase/actions/runs/39034359897).
+- These workflows passed on commit `067a584ec8612096b571e7f81b06e2d5c34ef749`, which included this audit report and the implementation/tests.
 - This is a coordinate-model limitation, not full geodesic/ellipsoidal polygon validation.
 
 ### Release gates not covered
