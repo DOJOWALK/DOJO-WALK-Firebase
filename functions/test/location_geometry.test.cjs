@@ -104,3 +104,19 @@ test("non-adjacent vertex touching another edge is rejected", () => {
     { lat: 4, lng: 0 },
   ])), /BOUNDARY_POLYGON_INVALID/);
 });
+
+test("near-parallel edges with a tiny positive gap are not treated as intersecting", () => {
+  // The polygon has a very shallow notch (1e-13 degrees high) but substantial
+  // area. Non-adjacent edges are distinct and do not touch; fixed 1e-12
+  // cross-product/bounds tolerances can incorrectly classify them as touching.
+  assert.doesNotThrow(() => polygonFromBoundary(boundary("near-parallel-gap", "area", [
+    { lat: 0, lng: 0 },
+    { lat: 0, lng: 10 },
+    { lat: 10, lng: 10 },
+    { lat: 10, lng: 0 },
+    { lat: 6, lng: 0 },
+    { lat: 1e-13, lng: 6 },
+    { lat: 1e-13, lng: 4 },
+    { lat: 0, lng: 4 },
+  ])));
+});
