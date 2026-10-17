@@ -16,6 +16,8 @@ const ids = {
   ordinary: `it-ordinary-${suffix}`,
   inactive: `it-inactive-${suffix}`,
   admin: `it-admin-${suffix}`,
+  country: `it-country-${suffix}`,
+  state: `it-state-${suffix}`,
   city: `it-city-${suffix}`,
   area: `it-area-${suffix}`,
   invalidCity: `it-invalid-city-${suffix}`,
@@ -73,6 +75,8 @@ test("callable integration: auth, boundary validation, City and Area activation"
     `admin_users/${ids.ordinary}`,
     `admin_users/${ids.inactive}`,
     `admin_users/${ids.admin}`,
+    `service_countries/${ids.country}`,
+    `service_states/${ids.state}`,
     `service_cities/${ids.city}`,
     `service_areas/${ids.area}`,
     `service_cities/${ids.invalidCity}`,
@@ -98,26 +102,28 @@ test("callable integration: auth, boundary validation, City and Area activation"
   await Promise.all([
     db.doc(`admin_users/${ids.inactive}`).set({ isActive: false, role: "super_admin" }),
     db.doc(`admin_users/${ids.admin}`).set({ isActive: true, role: "super_admin" }),
+    db.doc(`service_countries/${ids.country}`).set({ isActive: true }),
+    db.doc(`service_states/${ids.state}`).set({ countryId: ids.country, isActive: true }),
     db.doc(`service_cities/${ids.city}`).set({
-      isServiceActive: false, verifiedBoundaryId: ids.cityBoundary,
+      isServiceActive: false, countryId: ids.country, stateId: ids.state, verifiedBoundaryId: ids.cityBoundary,
     }),
     db.doc(`service_location_boundaries/${ids.cityBoundary}`).set(
       boundary(ids.city, "city", polygonPoints(0, 0, 10, 10)),
     ),
     db.doc(`service_areas/${ids.area}`).set({
-      isServiceActive: false, cityId: ids.city, verifiedBoundaryId: ids.areaBoundary,
+      isServiceActive: false, countryId: ids.country, stateId: ids.state, cityId: ids.city, verifiedBoundaryId: ids.areaBoundary,
     }),
     db.doc(`service_location_boundaries/${ids.areaBoundary}`).set(
       boundary(ids.area, "area", polygonPoints(2, 2, 4, 4)),
     ),
     db.doc(`service_cities/${ids.invalidCity}`).set({
-      isServiceActive: false, verifiedBoundaryId: ids.invalidBoundary,
+      isServiceActive: false, countryId: ids.country, stateId: ids.state, verifiedBoundaryId: ids.invalidBoundary,
     }),
     db.doc(`service_location_boundaries/${ids.invalidBoundary}`).set({
       ...boundary(ids.invalidCity, "city", [new GeoPoint(0, 0), new GeoPoint(0, 0)]),
     }),
-    db.doc(`service_cities/${ids.noBoundaryCity}`).set({ isServiceActive: false }),
-    db.doc(`service_cities/${ids.wrongTypeCity}`).set({ isServiceActive: false, verifiedBoundaryId: ids.wrongTypeBoundary }),
+    db.doc(`service_cities/${ids.noBoundaryCity}`).set({ isServiceActive: false, countryId: ids.country, stateId: ids.state }),
+    db.doc(`service_cities/${ids.wrongTypeCity}`).set({ isServiceActive: false, countryId: ids.country, stateId: ids.state, verifiedBoundaryId: ids.wrongTypeBoundary }),
     db.doc(`service_location_boundaries/${ids.wrongTypeBoundary}`).set(
       boundary(ids.wrongTypeCity, "area", polygonPoints(2, 2, 4, 4)),
     ),
@@ -131,7 +137,7 @@ test("callable integration: auth, boundary validation, City and Area activation"
       boundary(ids.inactiveParentArea, "area", polygonPoints(2, 2, 4, 4)),
     ),
     db.doc(`service_areas/${ids.outsideArea}`).set({
-      isServiceActive: false, cityId: ids.city, verifiedBoundaryId: ids.outsideAreaBoundary,
+      isServiceActive: false, countryId: ids.country, stateId: ids.state, cityId: ids.city, verifiedBoundaryId: ids.outsideAreaBoundary,
     }),
     db.doc(`service_location_boundaries/${ids.outsideAreaBoundary}`).set(
       boundary(ids.outsideArea, "area", polygonPoints(12, 12, 14, 14)),
