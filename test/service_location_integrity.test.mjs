@@ -227,3 +227,27 @@ test('requires an explicit timezone in snapshot export timestamps', () => {
   assert.equal(scope.invalidExportTimestamp, false);
   assert.equal(scope.exportedAt, '2026-10-17T12:00:00+05:30');
 });
+
+
+test('rejects impossible calendar dates and out-of-range time components in snapshot timestamps', () => {
+  const names = ['service_countries','service_states','service_cities','service_areas','service_localities','service_location_boundaries'];
+  const snapshot = Object.fromEntries(names.map(name => [name, {}]));
+  snapshot.snapshotMetadata = {
+    sourceProjectId: 'synthetic-project',
+    exportedAt: '2026-02-30T12:00:00Z',
+    collectionsIncluded: names,
+    completeCollections: names,
+    recordCounts: Object.fromEntries(names.map(name => [name, 0])),
+  };
+  let scope = auditSnapshot(snapshot).snapshotScope;
+  assert.equal(scope.status, 'INCOMPLETE_OR_UNVERIFIED');
+  assert.equal(scope.invalidExportTimestamp, true);
+  assert.equal(scope.exportedAt, null);
+  snapshot.snapshotMetadata.exportedAt = '2026-10-17T25:00:00Z';
+  scope = auditSnapshot(snapshot).snapshotScope;
+  assert.equal(scope.invalidExportTimestamp, true);
+  snapshot.snapshotMetadata.exportedAt = '2024-02-29T23:59:59Z';
+  scope = auditSnapshot(snapshot).snapshotScope;
+  assert.equal(scope.invalidExportTimestamp, false);
+  assert.equal(scope.exportedAt, '2024-02-29T23:59:59Z');
+});
