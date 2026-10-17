@@ -451,3 +451,53 @@ test('Admin-style transaction atomically verifies boundary and binds inactive Ci
   assert.equal(savedCity.data().verifiedBoundaryId, 'city-transaction-boundary');
   assert.equal(savedCity.data().isServiceActive, false);
 });
+
+
+test('clients cannot directly deactivate Country, State, City, or Area', async () => {
+  await env.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'service_countries/country-status'), {
+      name: 'India', code: 'IN', isActive: true,
+      createdAt: new Date('2026-01-01T00:00:00Z'), updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+    await setDoc(doc(db, 'service_states/state-status'), {
+      countryId: 'country-status', name: 'State', isActive: true,
+      createdAt: new Date('2026-01-01T00:00:00Z'), updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+    await setDoc(doc(db, 'service_cities/city-status'), {
+      countryId: 'country-status', stateId: 'state-status', name: 'City',
+      verifiedBoundaryId: 'city-boundary', isServiceActive: true,
+      createdAt: new Date('2026-01-01T00:00:00Z'), updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+    await setDoc(doc(db, 'service_areas/area-status'), {
+      countryId: 'country-status', stateId: 'state-status', cityId: 'city-status', name: 'Area',
+      isServiceActive: true,
+      createdAt: new Date('2026-01-01T00:00:00Z'), updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+  });
+  const db = env.authenticatedContext('super-active').firestore();
+  await assertFails(updateDoc(doc(db, 'service_countries/country-status'), {
+    isActive: false, updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(db, 'service_states/state-status'), {
+    isActive: false, updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(db, 'service_cities/city-status'), {
+    isServiceActive: false, updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(db, 'service_areas/area-status'), {
+    isServiceActive: false, updatedAt: serverTimestamp(),
+  }));
+});
+
+test('clients cannot create an already-active Country or State', async () => {
+  const db = env.authenticatedContext('super-active').firestore();
+  await assertFails(setDoc(doc(db, 'service_countries/country-created-active'), {
+    name: 'Active Country', code: 'AC', isActive: true,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  }));
+  await assertFails(setDoc(doc(db, 'service_states/state-created-active'), {
+    countryId: 'india', name: 'Active State', isActive: true,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  }));
+});
