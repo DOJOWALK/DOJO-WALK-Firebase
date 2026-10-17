@@ -1250,7 +1250,7 @@ service cloud.firestore {
         && validLocationName(request.resource.data)
         && request.resource.data.code is string
         && request.resource.data.code.size() > 0
-        && request.resource.data.isActive is bool
+        && request.resource.data.isActive == false
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time;
 
@@ -1292,7 +1292,7 @@ service cloud.firestore {
         && request.resource.data.countryId is string
         && request.resource.data.countryId.size() > 0
         && validLocationName(request.resource.data)
-        && request.resource.data.isActive is bool
+        && request.resource.data.isActive == false
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time;
 
