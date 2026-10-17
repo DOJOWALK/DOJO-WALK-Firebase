@@ -47,6 +47,123 @@ function requireVerifiedBoundary(
   return boundary;
 }
 
+export const reviewServiceLocationBoundary = onCall({ region: "asia-south1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in is required.");
+  const uid = request.auth.uid;
+  const boundaryId = request.data?.boundaryId;
+  const decision = request.data?.decision;
+  const notes = request.data?.notes;
+
+  if (typeof boundaryId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(boundaryId)) {
+    throw new HttpsError("invalid-argument", "A valid boundaryId is required.");
+  }
+  if (decision !== "verified" && decision !== "rejected") {
+    throw new HttpsError("invalid-argument", "Decision must be verified or rejected.");
+  }
+  if (typeof notes !== "string" || !notes.trim() || notes.trim().length > 2000) {
+    throw new HttpsError("invalid-argument", "A review note of 1–2000 characters is required.");
+  }
+
+  const actorRef = db.doc(`admin_users/${uid}`);
+  const boundaryRef = db.doc(`service_location_boundaries/${boundaryId}`);
+  const actor = await actorRef.get();
+  if (!actor.exists || actor.get("isActive") !== true || actor.get("role") !== "super_admin") {
+    throw new HttpsError("permission-denied", "An active super_admin account is required.");
+  }
+
+  // Read the boundary once to identify its owning document. All values that
+  // influence the decision are re-read and checked again inside the transaction.
+  const initialBoundary = await boundaryRef.get();
+  if (!initialBoundary.exists) throw new HttpsError("not-found", "Boundary was not found.");
+  const initial = initialBoundary.data()!;
+  const locationType = initial.locationType;
+  const locationId = initial.locationId;
+  if ((locationType !== "city" && locationType !== "area") ||
+      typeof locationId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(locationId)) {
+    throw new HttpsError("failed-precondition", "Only City and Area boundaries with valid owner IDs can be reviewed.");
+  }
+
+  const locationRef = db.doc(`${locationType === "city" ? "service_cities" : "service_areas"}/${locationId}`);
+  const auditRef = db.collection("service_location_boundary_review_audit").doc();
+
+  return db.runTransaction(async (tx) => {
+    const [currentActor, currentBoundary, currentLocation] = await Promise.all([
+      tx.get(actorRef), tx.get(boundaryRef), tx.get(locationRef),
+    ]);
+    if (!currentActor.exists || currentActor.get("isActive") !== true ||
+        currentActor.get("role") !== "super_admin") {
+      throw new HttpsError("permission-denied", "Admin access changed during review.");
+    }
+    if (!currentBoundary.exists || !currentLocation.exists) {
+      throw new HttpsError("not-found", "Boundary or owning location was not found.");
+    }
+    const boundary = asBoundary(currentBoundary.data());
+    if (boundary.locationId !== locationId || boundary.locationType !== locationType ||
+        currentBoundary.get("verificationStatus") !== "pending") {
+      throw new HttpsError("failed-precondition", "Only the current pending boundary for its owner can be reviewed.");
+    }
+
+    let parentBoundary: BoundaryDoc | undefined;
+    if (decision === "verified") {
+      try {
+        if (typeof boundary.sourceName !== "string" || !boundary.sourceName.trim() ||
+            typeof boundary.sourceReference !== "string" || !boundary.sourceReference.trim()) {
+          throw new Error("Boundary source name and reference are required.");
+        }
+        polygonFromBoundary(boundary);
+        if (locationType === "area") {
+          const cityId = currentLocation.get("cityId");
+          if (typeof cityId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(cityId)) {
+            throw new Error("Area must reference a valid parent City.");
+          }
+          const cityRef = db.doc(`service_cities/${cityId}`);
+          const citySnapshot = await tx.get(cityRef);
+          if (!citySnapshot.exists || citySnapshot.get("isServiceActive") !== true) {
+            throw new Error("Parent City must exist and be active before Area verification.");
+          }
+          const cityBoundaryId = citySnapshot.get("verifiedBoundaryId");
+          if (typeof cityBoundaryId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(cityBoundaryId)) {
+            throw new Error("Parent City must reference a verified boundary.");
+          }
+          const cityBoundarySnapshot = await tx.get(db.doc(`service_location_boundaries/${cityBoundaryId}`));
+          parentBoundary = asBoundary(cityBoundarySnapshot.data());
+          if (!cityBoundarySnapshot.exists ||
+              parentBoundary.locationId !== cityId ||
+              parentBoundary.locationType !== "city" ||
+              parentBoundary.verificationStatus !== "verified") {
+            throw new Error("Parent City boundary is not verified for that City.");
+          }
+          assertAreaCoveredByCity(boundary, parentBoundary);
+        }
+      } catch (error) {
+        throw new HttpsError("failed-precondition", error instanceof Error ? error.message : "Boundary geometry validation failed.");
+      }
+    }
+
+    const timestamp = FieldValue.serverTimestamp();
+    tx.update(boundaryRef, {
+      verificationStatus: decision,
+      verifiedBy: uid,
+      verifiedAt: decision === "verified" ? timestamp : null,
+      verificationNotes: notes.trim(),
+      updatedAt: timestamp,
+      ...(decision === "verified" ? { validationMethod: "trusted-server-turf", validationVersion: 1 } : {}),
+    });
+    tx.create(auditRef, {
+      actorUid: uid,
+      locationId,
+      locationType,
+      boundaryId,
+      decision,
+      notes: notes.trim(),
+      validationMethod: decision === "verified" ? "trusted-server-turf" : null,
+      validationVersion: decision === "verified" ? 1 : null,
+      createdAt: timestamp,
+    });
+    return { ok: true, boundaryId, locationId, locationType, decision };
+  });
+});
+
 export const activateServiceLocation = onCall({ region: "asia-south1" }, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in is required.");
   const uid = request.auth.uid;
