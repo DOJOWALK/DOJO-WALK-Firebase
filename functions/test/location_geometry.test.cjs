@@ -204,3 +204,26 @@ test("small representable polygon far from coordinate origin is accepted", () =>
     { lat: 28.6139001, lng: 77.2090 },
   ])));
 });
+
+test("area that shares part of the city boundary is accepted when fully covered", () => {
+  const edgeTouchingArea = boundary("area-edge-touch", "area", [
+    { lat: 0, lng: 2 },
+    { lat: 0, lng: 4 },
+    { lat: 3, lng: 4 },
+    { lat: 3, lng: 2 },
+  ]);
+  assert.doesNotThrow(() => assertAreaCoveredByCity(edgeTouchingArea, city));
+});
+
+test("area that extends a tiny amount beyond city boundary is rejected", () => {
+  const slightOutside = boundary("area-slight-outside", "area", [
+    { lat: -1e-9, lng: 2 },
+    { lat: 2, lng: 2 },
+    { lat: 2, lng: 4 },
+    { lat: -1e-9, lng: 4 },
+  ]);
+  assert.throws(
+    () => assertAreaCoveredByCity(slightOutside, city),
+    /AREA_NOT_FULLY_WITHIN_PARENT_CITY/,
+  );
+});
