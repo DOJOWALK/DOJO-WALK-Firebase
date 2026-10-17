@@ -87,6 +87,12 @@ function assertSimpleNonZeroAreaRing(ring: number[][]): void {
     p[0] <= Math.max(a[0], b[0]) &&
     p[1] >= Math.min(a[1], b[1]) &&
     p[1] <= Math.max(a[1], b[1]);
+  const crossIsNumericallyZero = (a: number[], b: number[], c: number[]) => {
+    const left = (b[0] - a[0]) * (c[1] - a[1]);
+    const right = (b[1] - a[1]) * (c[0] - a[0]);
+    const errorBound = Number.EPSILON * 16 * (Math.abs(left) + Math.abs(right));
+    return Math.abs(left - right) <= errorBound;
+  };
   const intersects = (a: number[], b: number[], c: number[], d: number[]) => {
     const abC = cross(a, b, c);
     const abD = cross(a, b, d);
@@ -94,10 +100,10 @@ function assertSimpleNonZeroAreaRing(ring: number[][]): void {
     const cdB = cross(c, d, b);
     if (((abC > 0 && abD < 0) || (abC < 0 && abD > 0)) &&
         ((cdA > 0 && cdB < 0) || (cdA < 0 && cdB > 0))) return true;
-    return (Math.abs(abC) <= 1e-12 && onSegment(a, b, c)) ||
-      (Math.abs(abD) <= 1e-12 && onSegment(a, b, d)) ||
-      (Math.abs(cdA) <= 1e-12 && onSegment(c, d, a)) ||
-      (Math.abs(cdB) <= 1e-12 && onSegment(c, d, b));
+    return (crossIsNumericallyZero(a, b, c) && onSegment(a, b, c)) ||
+      (crossIsNumericallyZero(a, b, d) && onSegment(a, b, d)) ||
+      (crossIsNumericallyZero(c, d, a) && onSegment(c, d, a)) ||
+      (crossIsNumericallyZero(c, d, b) && onSegment(c, d, b));
   };
 
   for (let i = 0; i < segmentCount; i++) {
