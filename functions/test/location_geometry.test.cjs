@@ -111,10 +111,10 @@ test("near-parallel edges with a tiny positive gap are not treated as intersecti
   // cross-product/bounds tolerances can incorrectly classify them as touching.
   assert.doesNotThrow(() => polygonFromBoundary(boundary("near-parallel-gap", "area", [
     { lat: 0, lng: 0 },
-    { lat: 0, lng: 10 },
-    { lat: 10, lng: 10 },
     { lat: 10, lng: 0 },
-    { lat: 6, lng: 0 },
+    { lat: 10, lng: 10 },
+    { lat: 0, lng: 10 },
+    { lat: 0, lng: 6 },
     { lat: 1e-13, lng: 6 },
     { lat: 1e-13, lng: 4 },
     { lat: 0, lng: 4 },
