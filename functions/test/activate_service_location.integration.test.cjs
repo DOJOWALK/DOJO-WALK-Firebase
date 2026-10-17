@@ -27,6 +27,8 @@ const ids = {
   cityBoundary: `it-city-boundary-${suffix}`,
   areaBoundary: `it-area-boundary-${suffix}`,
   invalidBoundary: `it-invalid-boundary-${suffix}`,
+  invalidTimestampCity: `it-invalid-timestamp-city-${suffix}`,
+  invalidTimestampBoundary: `it-invalid-timestamp-boundary-${suffix}`,
   noBoundaryCity: `it-no-boundary-city-${suffix}`,
   wrongTypeCity: `it-wrong-type-city-${suffix}`,
   wrongTypeBoundary: `it-wrong-type-boundary-${suffix}`,
@@ -95,6 +97,8 @@ test("callable integration: auth, boundary validation, City and Area activation"
     `service_location_boundaries/${ids.cityBoundary}`,
     `service_location_boundaries/${ids.areaBoundary}`,
     `service_location_boundaries/${ids.invalidBoundary}`,
+    `service_cities/${ids.invalidTimestampCity}`,
+    `service_location_boundaries/${ids.invalidTimestampBoundary}`,
     `service_cities/${ids.noBoundaryCity}`,
     `service_cities/${ids.wrongTypeCity}`,
     `service_cities/${ids.missingStateCity}`,
@@ -143,6 +147,14 @@ test("callable integration: auth, boundary validation, City and Area activation"
     db.doc(`service_location_boundaries/${ids.invalidBoundary}`).set({
       ...boundary(ids.invalidCity, "city", [new GeoPoint(0, 0), new GeoPoint(0, 0)]),
     }),
+    db.doc(`service_cities/${ids.invalidTimestampCity}`).set({
+      isServiceActive: false, countryId: ids.country, stateId: ids.state,
+      verifiedBoundaryId: ids.invalidTimestampBoundary,
+    }),
+    db.doc(`service_location_boundaries/${ids.invalidTimestampBoundary}`).set({
+      ...boundary(ids.invalidTimestampCity, "city", polygonPoints(0, 0, 10, 10)),
+      verifiedAt: "verified-yesterday",
+    }),
     db.doc(`service_cities/${ids.noBoundaryCity}`).set({ isServiceActive: false, countryId: ids.country, stateId: ids.state }),
     db.doc(`service_cities/${ids.wrongTypeCity}`).set({ isServiceActive: false, countryId: ids.country, stateId: ids.state, verifiedBoundaryId: ids.wrongTypeBoundary }),
     db.doc(`service_location_boundaries/${ids.wrongTypeBoundary}`).set(
@@ -189,6 +201,11 @@ test("callable integration: auth, boundary validation, City and Area activation"
   await t.test("invalid callable arguments are rejected", async () => {
     await expectCallableCode(invoke(ids.admin, "country", ids.city), "invalid-argument");
     await expectCallableCode(invoke(ids.admin, "city", "../bad-id"), "invalid-argument");
+  });
+
+  await t.test("verified boundary with a non-timestamp verifiedAt is rejected", async () => {
+    await expectCallableCode(invoke(ids.admin, "city", ids.invalidTimestampCity), "failed-precondition");
+    assert.equal((await db.doc(`service_cities/${ids.invalidTimestampCity}`).get()).get("isServiceActive"), false);
   });
 
   await t.test("missing boundary reference is rejected", async () => {
