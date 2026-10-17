@@ -44,3 +44,18 @@ test('rejects array in place of a document-ID keyed collection', () => {
     /service_countries/,
   );
 });
+
+test('rejects non-object snapshot root', () => {
+  assert.throws(() => auditSnapshot(null), /Snapshot root must be a JSON object/);
+});
+
+test('rejects null or array document values with collection and document ID', () => {
+  const snapshot = {
+    service_countries: { india: { isActive: false } },
+    service_states: { broken: null },
+    service_cities: {},
+    service_areas: {},
+    service_localities: {},
+  };
+  assert.throws(() => auditSnapshot(snapshot), /service_states\/broken/);
+});
