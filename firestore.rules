@@ -987,6 +987,30 @@ service cloud.firestore {
         && data.name.size() <= 150;
     }
 
+    // Parent existence and linkage are enforced on every new hierarchy record.
+    // Inactive parents are allowed for draft setup; activation has stricter callable guards.
+    function hasCountry(countryId) {
+      return exists(/databases/$(database)/documents/service_countries/$(countryId));
+    }
+
+    function hasStateForCountry(stateId, countryId) {
+      return exists(/databases/$(database)/documents/service_states/$(stateId))
+        && get(/databases/$(database)/documents/service_states/$(stateId)).data.countryId == countryId;
+    }
+
+    function hasCityForParents(cityId, countryId, stateId) {
+      return exists(/databases/$(database)/documents/service_cities/$(cityId))
+        && get(/databases/$(database)/documents/service_cities/$(cityId)).data.countryId == countryId
+        && get(/databases/$(database)/documents/service_cities/$(cityId)).data.stateId == stateId;
+    }
+
+    function hasAreaForParents(areaId, countryId, stateId, cityId) {
+      return exists(/databases/$(database)/documents/service_areas/$(areaId))
+        && get(/databases/$(database)/documents/service_areas/$(areaId)).data.countryId == countryId
+        && get(/databases/$(database)/documents/service_areas/$(areaId)).data.stateId == stateId
+        && get(/databases/$(database)/documents/service_areas/$(areaId)).data.cityId == cityId;
+    }
+
     function validBoundaryLocation(data) {
       return data.locationId is string
         && data.locationId.size() > 0
@@ -1292,6 +1316,7 @@ service cloud.firestore {
         && request.resource.data.countryId is string
         && request.resource.data.countryId.size() > 0
         && validLocationName(request.resource.data)
+        && hasCountry(request.resource.data.countryId)
         && request.resource.data.isActive == false
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time;
@@ -1344,6 +1369,8 @@ service cloud.firestore {
         && request.resource.data.stateId is string
         && request.resource.data.stateId.size() > 0
         && validLocationName(request.resource.data)
+        && hasCountry(request.resource.data.countryId)
+        && hasStateForCountry(request.resource.data.stateId, request.resource.data.countryId)
         && request.resource.data.isServiceActive == false
         && validCityActivation(request.resource.data, cityId)
         && request.resource.data.createdAt == request.time
@@ -1435,6 +1462,9 @@ service cloud.firestore {
         && request.resource.data.cityId is string
         && request.resource.data.cityId.size() > 0
         && validLocationName(request.resource.data)
+        && hasCountry(request.resource.data.countryId)
+        && hasStateForCountry(request.resource.data.stateId, request.resource.data.countryId)
+        && hasCityForParents(request.resource.data.cityId, request.resource.data.countryId, request.resource.data.stateId)
         && request.resource.data.isServiceActive == false
         && validAreaActivation(request.resource.data, areaId)
         && request.resource.data.createdAt == request.time
@@ -1528,6 +1558,10 @@ service cloud.firestore {
         && request.resource.data.areaId is string
         && request.resource.data.areaId.size() > 0
         && validLocationName(request.resource.data)
+        && hasCountry(request.resource.data.countryId)
+        && hasStateForCountry(request.resource.data.stateId, request.resource.data.countryId)
+        && hasCityForParents(request.resource.data.cityId, request.resource.data.countryId, request.resource.data.stateId)
+        && hasAreaForParents(request.resource.data.areaId, request.resource.data.countryId, request.resource.data.stateId, request.resource.data.cityId)
         && validOptionalString(request.resource.data, 'pincode')
         && request.resource.data.isServiceActive == false
         && request.resource.data.createdAt == request.time
