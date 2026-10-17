@@ -126,3 +126,21 @@ test('reports declared complete snapshot scope only when all collections and cou
   assert.equal(report.snapshotScope.status, 'INCOMPLETE_OR_UNVERIFIED');
   assert.deepEqual(report.snapshotScope.countMismatches, ['service_areas']);
 });
+
+
+test('rejects invalid export timestamps and unknown collection names in scope metadata', () => {
+  const names = ['service_countries','service_states','service_cities','service_areas','service_localities','service_location_boundaries'];
+  const snapshot = Object.fromEntries(names.map(name => [name, {}]));
+  snapshot.snapshotMetadata = {
+    sourceProjectId: 'synthetic-project',
+    exportedAt: 'yesterday',
+    collectionsIncluded: [...names, 'unexpected_collection'],
+    completeCollections: names,
+    recordCounts: Object.fromEntries(names.map(name => [name, 0])),
+  };
+  const scope = auditSnapshot(snapshot).snapshotScope;
+  assert.equal(scope.status, 'INCOMPLETE_OR_UNVERIFIED');
+  assert.equal(scope.invalidExportTimestamp, true);
+  assert.deepEqual(scope.unknownCollections, ['unexpected_collection']);
+  assert.equal(scope.exportedAt, null);
+});
