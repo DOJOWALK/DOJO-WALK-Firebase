@@ -15,6 +15,7 @@ const ids = {
   support: `review-support-${suffix}`,
   city: `review-city-${suffix}`,
   cityBoundary: `review-city-boundary-${suffix}`,
+  parentCityBoundary: `review-parent-city-boundary-${suffix}`,
   area: `review-area-${suffix}`,
   areaBoundary: `review-area-boundary-${suffix}`,
   outsideArea: `review-outside-area-${suffix}`,
@@ -66,6 +67,7 @@ test("trusted boundary review enforces auth, role, geometry and Area containment
     `admin_users/${ids.support}`,
     `service_cities/${ids.city}`,
     `service_location_boundaries/${ids.cityBoundary}`,
+    `service_location_boundaries/${ids.parentCityBoundary}`,
     `service_areas/${ids.area}`,
     `service_location_boundaries/${ids.areaBoundary}`,
     `service_areas/${ids.outsideArea}`,
@@ -83,14 +85,17 @@ test("trusted boundary review enforces auth, role, geometry and Area containment
     db.doc(`admin_users/${ids.support}`).set({ role: "support", isActive: true }),
     db.doc(`service_cities/${ids.city}`).set({
       countryId: "test-country", stateId: "test-state", isServiceActive: true,
-      verifiedBoundaryId: ids.cityBoundary,
+      verifiedBoundaryId: ids.parentCityBoundary,
     }),
-    db.doc(`service_location_boundaries/${ids.cityBoundary}`).set({
+    db.doc(`service_location_boundaries/${ids.parentCityBoundary}`).set({
       ...pendingBoundary(ids.city, "city", points(28.50, 77.30, 28.60, 77.40)),
       verificationStatus: "verified",
       verifiedBy: ids.admin,
       verifiedAt: new Date(),
     }),
+    db.doc(`service_location_boundaries/${ids.cityBoundary}`).set(
+      pendingBoundary(ids.city, "city", points(28.50, 77.30, 28.60, 77.40)),
+    ),
     db.doc(`service_areas/${ids.area}`).set({ cityId: ids.city }),
     db.doc(`service_location_boundaries/${ids.areaBoundary}`).set(
       pendingBoundary(ids.area, "area", points(28.52, 77.32, 28.54, 77.34)),
