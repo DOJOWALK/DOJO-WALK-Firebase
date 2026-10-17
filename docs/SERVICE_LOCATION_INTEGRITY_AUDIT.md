@@ -65,3 +65,6 @@ Run the repository's test suite with `npm test`. A clean synthetic fixture is no
 
 ## Metadata validation added in Step 100
 The auditor also checks that `exportedAt` looks like an ISO-style timestamp and parses as a date, that collection-list entries name only the six required collections, and that declared record counts are non-negative integers matching the snapshot. The report exposes `invalidExportTimestamp`, `unknownCollections`, and `malformedCollectionLists` for diagnosis. `recordCounts` must be an object containing only the six required collection names; unknown keys or a malformed count map set `malformedRecordCounts` and `unknownRecordCountKeys` and prevent `DECLARED_COMPLETE`. These checks validate formatting and internal consistency only; they do not authenticate the export source or prove completeness.
+
+
+`collectionsIncluded` and `completeCollections` must contain unique collection names. Duplicate entries are reported in `duplicateCollectionEntries` and force `INCOMPLETE_OR_UNVERIFIED`; duplicate declarations are malformed metadata even if all required names are present.
