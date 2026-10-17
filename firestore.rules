@@ -1527,10 +1527,6 @@ service cloud.firestore {
         && request.resource.data.cityId.size() > 0
         && request.resource.data.areaId is string
         && request.resource.data.areaId.size() > 0
-        && request.resource.data.countryId == resource.data.countryId
-        && request.resource.data.stateId == resource.data.stateId
-        && request.resource.data.cityId == resource.data.cityId
-        && request.resource.data.areaId == resource.data.areaId
         && validLocationName(request.resource.data)
         && validOptionalString(request.resource.data, 'pincode')
         && request.resource.data.isServiceActive == false
@@ -1567,6 +1563,10 @@ service cloud.firestore {
         && request.resource.data.cityId.size() > 0
         && request.resource.data.areaId is string
         && request.resource.data.areaId.size() > 0
+        && request.resource.data.countryId == resource.data.countryId
+        && request.resource.data.stateId == resource.data.stateId
+        && request.resource.data.cityId == resource.data.cityId
+        && request.resource.data.areaId == resource.data.areaId
         && validLocationName(request.resource.data)
         && validOptionalString(request.resource.data, 'pincode')
         && request.resource.data.isServiceActive is bool
