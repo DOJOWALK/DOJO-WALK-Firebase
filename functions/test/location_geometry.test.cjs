@@ -193,3 +193,14 @@ test("antimeridian-crossing ring is rejected rather than misread as a world-span
     { lat: -10, lng: 179 },
   ])), /BOUNDARY_ANTIMERIDIAN_CROSSING_UNSUPPORTED/);
 });
+
+test("small representable polygon far from coordinate origin is accepted", () => {
+  // At this offset, the original absolute-coordinate shoelace products were
+  // large relative to the tiny polygon area and could cancel numerically.
+  assert.doesNotThrow(() => polygonFromBoundary(boundary("small-offset-polygon", "area", [
+    { lat: 28.6139, lng: 77.2090 },
+    { lat: 28.6139, lng: 77.2090001 },
+    { lat: 28.6139001, lng: 77.2090001 },
+    { lat: 28.6139001, lng: 77.2090 },
+  ])));
+});
