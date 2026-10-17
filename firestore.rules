@@ -1467,7 +1467,7 @@ service cloud.firestore {
         && request.resource.data.cityId.size() > 0
         && validLocationName(request.resource.data)
         && request.resource.data.isServiceActive is bool
-        && (!request.resource.data.isServiceActive || resource.data.isServiceActive == true)
+        && request.resource.data.isServiceActive == resource.data.isServiceActive
         && (
           !resource.data.isServiceActive
           || (
