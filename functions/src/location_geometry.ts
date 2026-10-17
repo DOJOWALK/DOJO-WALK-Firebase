@@ -61,6 +61,13 @@ export function polygonFromBoundary(boundary: BoundaryDoc): Feature<Polygon> {
 }
 
 function assertSimpleNonZeroAreaRing(ring: number[][]): void {
+  // A zero-length edge is malformed even when the overall ring has non-zero area.
+  for (let i = 0; i < ring.length - 1; i++) {
+    if (ring[i][0] === ring[i + 1][0] && ring[i][1] === ring[i + 1][1]) {
+      throw new Error("BOUNDARY_POLYGON_INVALID");
+    }
+  }
+
   // ring is closed at this point. Shoelace area catches collinear/zero-area rings.
   let twiceArea = 0;
   for (let i = 0; i < ring.length - 1; i++) {
