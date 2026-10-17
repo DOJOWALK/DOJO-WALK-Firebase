@@ -14,6 +14,7 @@ const ids = {
   admin: `review-admin-${suffix}`,
   support: `review-support-${suffix}`,
   city: `review-city-${suffix}`,
+  reviewCity: `review-owner-city-${suffix}`,
   cityBoundary: `review-city-boundary-${suffix}`,
   parentCityBoundary: `review-parent-city-boundary-${suffix}`,
   area: `review-area-${suffix}`,
@@ -66,6 +67,7 @@ test("trusted boundary review enforces auth, role, geometry and Area containment
     `admin_users/${ids.admin}`,
     `admin_users/${ids.support}`,
     `service_cities/${ids.city}`,
+    `service_cities/${ids.reviewCity}`,
     `service_location_boundaries/${ids.cityBoundary}`,
     `service_location_boundaries/${ids.parentCityBoundary}`,
     `service_areas/${ids.area}`,
@@ -87,6 +89,9 @@ test("trusted boundary review enforces auth, role, geometry and Area containment
       countryId: "test-country", stateId: "test-state", isServiceActive: true,
       verifiedBoundaryId: ids.parentCityBoundary,
     }),
+    db.doc(`service_cities/${ids.reviewCity}`).set({
+      countryId: "test-country", stateId: "test-state", isServiceActive: false,
+    }),
     db.doc(`service_location_boundaries/${ids.parentCityBoundary}`).set({
       ...pendingBoundary(ids.city, "city", points(28.50, 77.30, 28.60, 77.40)),
       verificationStatus: "verified",
@@ -94,7 +99,7 @@ test("trusted boundary review enforces auth, role, geometry and Area containment
       verifiedAt: new Date(),
     }),
     db.doc(`service_location_boundaries/${ids.cityBoundary}`).set(
-      pendingBoundary(ids.city, "city", points(28.50, 77.30, 28.60, 77.40)),
+      pendingBoundary(ids.reviewCity, "city", points(28.50, 77.30, 28.60, 77.40)),
     ),
     db.doc(`service_areas/${ids.area}`).set({ cityId: ids.city }),
     db.doc(`service_location_boundaries/${ids.areaBoundary}`).set(
@@ -114,6 +119,8 @@ test("trusted boundary review enforces auth, role, geometry and Area containment
   const verifiedCity = await db.doc(`service_location_boundaries/${ids.cityBoundary}`).get();
   assert.equal(verifiedCity.get("verifiedBy"), ids.admin);
   assert.equal(verifiedCity.get("verificationStatus"), "verified");
+  const reviewCity = await db.doc(`service_cities/${ids.reviewCity}`).get();
+  assert.equal(reviewCity.get("verifiedBoundaryId"), ids.cityBoundary);
 
   const areaReview = await invoke(ids.admin, ids.areaBoundary);
   assert.equal(areaReview.decision, "verified");
