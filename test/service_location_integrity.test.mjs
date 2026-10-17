@@ -254,6 +254,35 @@ test('rejects impossible calendar dates and out-of-range time components in snap
 
 
 
+
+test('covers negative timezone offset bounds and fractional-second timestamps', () => {
+  const names = ['service_countries','service_states','service_cities','service_areas','service_localities','service_location_boundaries'];
+  const snapshot = Object.fromEntries(names.map(name => [name, {}]));
+  snapshot.snapshotMetadata = {
+    sourceProjectId: 'synthetic-project',
+    exportedAt: '2026-10-17T12:00:00-14:00',
+    collectionsIncluded: names,
+    completeCollections: names,
+    recordCounts: Object.fromEntries(names.map(name => [name, 0])),
+  };
+
+  let scope = auditSnapshot(snapshot).snapshotScope;
+  assert.equal(scope.invalidExportTimestamp, false, '-14:00 is accepted');
+
+  snapshot.snapshotMetadata.exportedAt = '2026-10-17T12:00:00-14:01';
+  scope = auditSnapshot(snapshot).snapshotScope;
+  assert.equal(scope.invalidExportTimestamp, true, '-14:01 is rejected');
+
+  snapshot.snapshotMetadata.exportedAt = '2026-10-17T12:00:00-15:00';
+  scope = auditSnapshot(snapshot).snapshotScope;
+  assert.equal(scope.invalidExportTimestamp, true, '-15:00 is rejected');
+
+  snapshot.snapshotMetadata.exportedAt = '2026-10-17T12:00:00.123Z';
+  scope = auditSnapshot(snapshot).snapshotScope;
+  assert.equal(scope.invalidExportTimestamp, false, 'fractional seconds with explicit UTC timezone are accepted');
+  assert.equal(scope.exportedAt, '2026-10-17T12:00:00.123Z');
+});
+
 test('validates leap years using Gregorian rules for years below 100 and century years', () => {
   const names = ['service_countries','service_states','service_cities','service_areas','service_localities','service_location_boundaries'];
   const snapshot = Object.fromEntries(names.map(name => [name, {}]));
