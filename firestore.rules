@@ -570,6 +570,7 @@ service cloud.firestore {
         && validOptionalString(request.resource.data, 'gender');
 
       allow update: if isOwner(walkerUid)
+        && resource.data.get('applicationSubmitted', false) == false
         && request.resource.data.diff(resource.data)
           .affectedKeys()
           .hasOnly([
