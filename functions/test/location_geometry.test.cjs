@@ -129,3 +129,38 @@ test("small but representable polygon is not rejected by a fixed degree-squared 
     { lat: 1e-7, lng: 0 },
   ])));
 });
+
+test("explicitly closed and implicitly closed rings are both accepted", () => {
+  const openRing = boundary("implicit-close", "area", [
+    { lat: 1, lng: 1 },
+    { lat: 1, lng: 3 },
+    { lat: 3, lng: 3 },
+    { lat: 3, lng: 1 },
+  ]);
+  const closedRing = boundary("explicit-close", "area", [
+    { lat: 1, lng: 1 },
+    { lat: 1, lng: 3 },
+    { lat: 3, lng: 3 },
+    { lat: 3, lng: 1 },
+    { lat: 1, lng: 1 },
+  ]);
+  assert.doesNotThrow(() => polygonFromBoundary(openRing));
+  assert.doesNotThrow(() => polygonFromBoundary(closedRing));
+});
+
+test("reversing polygon winding does not change boundary acceptance", () => {
+  const counterClockwise = boundary("counter-clockwise", "area", [
+    { lat: 1, lng: 1 },
+    { lat: 1, lng: 3 },
+    { lat: 3, lng: 3 },
+    { lat: 3, lng: 1 },
+  ]);
+  const clockwise = boundary("clockwise", "area", [
+    { lat: 3, lng: 1 },
+    { lat: 3, lng: 3 },
+    { lat: 1, lng: 3 },
+    { lat: 1, lng: 1 },
+  ]);
+  assert.doesNotThrow(() => polygonFromBoundary(counterClockwise));
+  assert.doesNotThrow(() => polygonFromBoundary(clockwise));
+});
