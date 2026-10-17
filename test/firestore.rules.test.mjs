@@ -779,3 +779,27 @@ test('Partner cannot submit the same application twice', async () => {
     updatedAt: serverTimestamp(),
   }));
 });
+
+
+test('Partner cannot edit KYC or profile fields after submission', async () => {
+  const uid = 'partner-post-submit-kyc-edit';
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), `walkers/${uid}`), partnerWalkerDraft(uid));
+  });
+  const db = env.authenticatedContext(uid).firestore();
+  const walkerRef = doc(db, `walkers/${uid}`);
+  await assertSucceeds(updateDoc(walkerRef, {
+    status: 'under_review',
+    applicationSubmitted: true,
+    submittedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(walkerRef, {
+    documents: { identityPhotoUrl: 'https://example.invalid/id.jpg' },
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(walkerRef, {
+    fullName: 'Changed After Submit',
+    updatedAt: serverTimestamp(),
+  }));
+});
