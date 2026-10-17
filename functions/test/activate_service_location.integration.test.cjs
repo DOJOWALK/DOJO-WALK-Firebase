@@ -29,6 +29,7 @@ const ids = {
   invalidBoundary: `it-invalid-boundary-${suffix}`,
   invalidTimestampCity: `it-invalid-timestamp-city-${suffix}`,
   invalidTimestampBoundary: `it-invalid-timestamp-boundary-${suffix}`,
+  invalidBoundaryIdCity: `it-invalid-boundary-id-city-${suffix}`,
   noBoundaryCity: `it-no-boundary-city-${suffix}`,
   wrongTypeCity: `it-wrong-type-city-${suffix}`,
   wrongTypeBoundary: `it-wrong-type-boundary-${suffix}`,
@@ -98,6 +99,7 @@ test("callable integration: auth, boundary validation, City and Area activation"
     `service_location_boundaries/${ids.areaBoundary}`,
     `service_location_boundaries/${ids.invalidBoundary}`,
     `service_cities/${ids.invalidTimestampCity}`,
+    `service_cities/${ids.invalidBoundaryIdCity}`,
     `service_location_boundaries/${ids.invalidTimestampBoundary}`,
     `service_cities/${ids.noBoundaryCity}`,
     `service_cities/${ids.wrongTypeCity}`,
@@ -151,6 +153,10 @@ test("callable integration: auth, boundary validation, City and Area activation"
       isServiceActive: false, countryId: ids.country, stateId: ids.state,
       verifiedBoundaryId: ids.invalidTimestampBoundary,
     }),
+    db.doc(`service_cities/${ids.invalidBoundaryIdCity}`).set({
+      isServiceActive: false, countryId: ids.country, stateId: ids.state,
+      verifiedBoundaryId: "../bad-id",
+    }),
     db.doc(`service_location_boundaries/${ids.invalidTimestampBoundary}`).set({
       ...boundary(ids.invalidTimestampCity, "city", polygonPoints(0, 0, 10, 10)),
       verifiedAt: "verified-yesterday",
@@ -201,6 +207,11 @@ test("callable integration: auth, boundary validation, City and Area activation"
   await t.test("invalid callable arguments are rejected", async () => {
     await expectCallableCode(invoke(ids.admin, "country", ids.city), "invalid-argument");
     await expectCallableCode(invoke(ids.admin, "city", "../bad-id"), "invalid-argument");
+  });
+
+  await t.test("malformed boundary document ID is rejected as failed-precondition", async () => {
+    await expectCallableCode(invoke(ids.admin, "city", ids.invalidBoundaryIdCity), "failed-precondition");
+    assert.equal((await db.doc(`service_cities/${ids.invalidBoundaryIdCity}`).get()).get("isServiceActive"), false);
   });
 
   await t.test("verified boundary with a non-timestamp verifiedAt is rejected", async () => {
