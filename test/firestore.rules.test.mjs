@@ -488,6 +488,22 @@ test('clients cannot directly deactivate Country, State, City, or Area', async (
   await assertFails(updateDoc(doc(db, 'service_areas/area-status'), {
     isServiceActive: false, updatedAt: serverTimestamp(),
   }));
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'service_localities/locality-status'), {
+      countryId: 'country-status', stateId: 'state-status', cityId: 'city-status',
+      areaId: 'area-status', name: 'Locality', isServiceActive: true,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+  });
+  await assertFails(updateDoc(doc(db, 'service_localities/locality-status'), {
+    isServiceActive: false, updatedAt: serverTimestamp(),
+  }));
+  await assertFails(setDoc(doc(db, 'service_localities/locality-created-active'), {
+    countryId: 'country-status', stateId: 'state-status', cityId: 'city-status',
+    areaId: 'area-status', name: 'Active Locality', isServiceActive: true,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  }));
 });
 
 test('clients cannot create an already-active Country or State', async () => {
