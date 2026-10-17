@@ -1378,6 +1378,14 @@ service cloud.firestore {
         && validLocationName(request.resource.data)
         && request.resource.data.isServiceActive is bool
         && (!request.resource.data.isServiceActive || resource.data.isServiceActive == true)
+        && (
+          !resource.data.isServiceActive
+          || (
+            request.resource.data.countryId == resource.data.countryId
+            && request.resource.data.stateId == resource.data.stateId
+            && request.resource.data.verifiedBoundaryId == resource.data.verifiedBoundaryId
+          )
+        )
         && validCityActivation(request.resource.data, cityId)
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.updatedAt == request.time
@@ -1458,6 +1466,15 @@ service cloud.firestore {
         && validLocationName(request.resource.data)
         && request.resource.data.isServiceActive is bool
         && (!request.resource.data.isServiceActive || resource.data.isServiceActive == true)
+        && (
+          !resource.data.isServiceActive
+          || (
+            request.resource.data.countryId == resource.data.countryId
+            && request.resource.data.stateId == resource.data.stateId
+            && request.resource.data.cityId == resource.data.cityId
+            && request.resource.data.verifiedBoundaryId == resource.data.verifiedBoundaryId
+          )
+        )
         && validAreaActivation(request.resource.data, areaId)
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.updatedAt == request.time
