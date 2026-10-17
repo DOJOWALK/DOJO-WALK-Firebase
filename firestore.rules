@@ -1523,7 +1523,7 @@ service cloud.firestore {
         && request.resource.data.areaId.size() > 0
         && validLocationName(request.resource.data)
         && validOptionalString(request.resource.data, 'pincode')
-        && request.resource.data.isServiceActive is bool
+        && request.resource.data.isServiceActive == false
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time
         && (
@@ -1560,6 +1560,7 @@ service cloud.firestore {
         && validLocationName(request.resource.data)
         && validOptionalString(request.resource.data, 'pincode')
         && request.resource.data.isServiceActive is bool
+        && request.resource.data.isServiceActive == resource.data.isServiceActive
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.updatedAt == request.time
         && (
