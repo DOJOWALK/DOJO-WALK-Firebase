@@ -1,8 +1,16 @@
 export function auditSnapshot(snapshot) {
   const collections = ['service_countries','service_states','service_cities','service_areas','service_localities'];
+  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
+    throw new Error('Snapshot root must be a JSON object.');
+  }
   for (const name of collections) {
     if (!snapshot[name] || typeof snapshot[name] !== 'object' || Array.isArray(snapshot[name])) {
       throw new Error(`Snapshot must include object collection "${name}" keyed by document ID.`);
+    }
+    for (const [id, doc] of Object.entries(snapshot[name])) {
+      if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
+        throw new Error(`Document "${name}/${id}" must be a JSON object.`);
+      }
     }
   }
   const issues = [];
