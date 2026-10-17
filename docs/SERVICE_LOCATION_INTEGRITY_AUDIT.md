@@ -109,3 +109,8 @@ The City/Area activation callable now requires `verifiedAt` to be a valid JavaSc
 ## Step 112 — Boundary document ID validation
 
 City and Area activation now validates the referenced boundary document ID against the same conservative ID character/length policy before constructing a Firestore document path. Parent City boundary IDs receive the same check. The emulator integration suite verifies a City with a slash-containing boundary ID is rejected with `failed-precondition` and remains inactive instead of producing an unexpected path-construction error. This is input/path validation only and does not establish boundary provenance.
+
+
+## Step 113 — Zero-length polygon edge rejection
+
+The geometry validator now rejects consecutive duplicate vertices that create a zero-length edge, even when the overall polygon has non-zero area. A regression test uses a ring with a duplicated consecutive vertex and expects `BOUNDARY_POLYGON_INVALID`. This is synthetic geometry validation only; it does not validate authoritative source boundaries.
