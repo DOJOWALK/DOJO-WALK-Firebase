@@ -81,3 +81,26 @@ test("Firestore GeoPoint-shaped Area is checked against City containment", () =>
   ]);
   assert.doesNotThrow(() => assertAreaCoveredByCity(firestoreArea, firestoreCity));
 });
+
+test("non-adjacent repeated vertex that makes a polygon touch itself is rejected", () => {
+  // The same coordinate appears twice in the middle of the ring. These
+  // non-adjacent edges touch at that coordinate, so the ring is not simple.
+  assert.throws(() => polygonFromBoundary(boundary("repeated-nonadjacent-vertex", "area", [
+    { lat: 0, lng: 0 },
+    { lat: 0, lng: 4 },
+    { lat: 4, lng: 4 },
+    { lat: 0, lng: 4 },
+    { lat: 4, lng: 0 },
+  ])), /BOUNDARY_POLYGON_INVALID/);
+});
+
+test("non-adjacent vertex touching another edge is rejected", () => {
+  // The point (lat: 2, lng: 2) lies on the first edge but is not its endpoint.
+  assert.throws(() => polygonFromBoundary(boundary("vertex-on-edge", "area", [
+    { lat: 0, lng: 0 },
+    { lat: 0, lng: 4 },
+    { lat: 4, lng: 4 },
+    { lat: 2, lng: 0 },
+    { lat: 4, lng: 0 },
+  ])), /BOUNDARY_POLYGON_INVALID/);
+});
