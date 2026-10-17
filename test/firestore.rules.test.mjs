@@ -814,3 +814,28 @@ test('Partner cannot edit KYC or profile fields after submission', async () => {
     updatedAt: serverTimestamp(),
   }));
 });
+
+
+test('Partner cannot change nested KYC or address after submission', async () => {
+  const uid = 'partner-post-submit-nested-kyc-address';
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), `walkers/${uid}`), partnerWalkerDraft(uid));
+  });
+  const db = env.authenticatedContext(uid).firestore();
+  const walkerRef = doc(db, `walkers/${uid}`);
+  await assertSucceeds(updateDoc(walkerRef, {
+    status: 'under_review',
+    applicationSubmitted: true,
+    submittedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    onboardingStep: 'submitted',
+  }));
+  await assertFails(updateDoc(walkerRef, {
+    kyc: { selfie: { storagePath: 'changed/selfie.jpg' } },
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(walkerRef, {
+    currentAddress: { houseNumber: 'changed' },
+    updatedAt: serverTimestamp(),
+  }));
+});
