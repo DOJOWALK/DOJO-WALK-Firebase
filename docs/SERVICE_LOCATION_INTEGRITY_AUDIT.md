@@ -2,19 +2,20 @@
 
 ## Purpose and safety
 
-The audit script reads a JSON snapshot from a local file and emits a JSON report. It does **not** connect to Firebase, export data, mutate Firestore, activate locations, or verify map polygons. A successful sample run proves only that the tool executes against the sample.
+The audit script reads a JSON snapshot from a local file and emits a JSON report. It does **not** connect to Firebase, export data, mutate Firestore, or activate locations. It checks active City/Area boundary references, verification metadata, and basic coordinate validity, but does not replace full polygon geometry validation or authoritative map review. A successful sample run proves only that the tool executes against the sample.
 
 Do not export or access production data until the project owner has explicitly authorized a read-only export and the export method/access scope has been approved. Protect the snapshot and report as potentially sensitive operational data; do not commit real exports to Git.
 
 ## Required snapshot shape
 
-Provide all five collections as objects keyed by Firestore document ID:
+Provide all six collections as objects keyed by Firestore document ID:
 
 - `service_countries`
 - `service_states`
 - `service_cities`
 - `service_areas`
 - `service_localities`
+- `service_location_boundaries`
 
 Preserve document IDs and hierarchy/status fields exactly as exported. Country/State use `isActive`; City/Area/Locality use `isServiceActive`. Do not normalize or repair records before auditing. If a collection was not exported, do not substitute an empty object; obtain a complete export or document the scope limitation separately.
 
@@ -38,7 +39,7 @@ node scripts/audit_service_location_integrity.mjs /secure/path/location-snapshot
 
 ## Scope and limitations
 
-This is a structural hierarchy audit: missing parents, mismatched parent IDs, and active children beneath inactive/missing ancestors. It does not establish that the snapshot is current/complete, reconcile rows with the latest official LGD data, verify authoritative contiguous polygons, or prove production behavior. Record export timestamp, source/project, collection counts, operator/authorization, and checksum in a separate controlled audit record. Never publish sensitive document contents in the report.
+This is a structural hierarchy and boundary-reference audit: missing parents, mismatched parent IDs, active children beneath inactive/missing ancestors, and basic checks on active City/Area boundary references, verification metadata, and coordinates. It does not establish that the snapshot is current/complete, reconcile rows with the latest official LGD data, verify authoritative contiguous polygons, or prove production behavior. Record export timestamp, source/project, collection counts, operator/authorization, and checksum in a separate controlled audit record. Never publish sensitive document contents in the report.
 
 ## Validation
 
