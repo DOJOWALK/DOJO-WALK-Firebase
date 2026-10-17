@@ -102,6 +102,9 @@ export const reviewServiceLocationBoundary = onCall({ region: "asia-south1" }, a
         currentBoundary.get("verificationStatus") !== "pending") {
       throw new HttpsError("failed-precondition", "Only the current pending boundary for its owner can be reviewed.");
     }
+    if (decision === "verified" && currentLocation.get("isServiceActive") === true) {
+      throw new HttpsError("failed-precondition", "Deactivate the location before replacing its verified boundary.");
+    }
 
     let parentBoundary: BoundaryDoc | undefined;
     if (decision === "verified") {
@@ -149,6 +152,13 @@ export const reviewServiceLocationBoundary = onCall({ region: "asia-south1" }, a
       updatedAt: timestamp,
       ...(decision === "verified" ? { validationMethod: "trusted-server-turf", validationVersion: 1 } : {}),
     });
+    if (decision === "verified") {
+      // Bind the reviewed polygon to its owning inactive location atomically.
+      tx.update(locationRef, {
+        verifiedBoundaryId: boundaryId,
+        updatedAt: timestamp,
+      });
+    }
     tx.create(auditRef, {
       actorUid: uid,
       locationId,
