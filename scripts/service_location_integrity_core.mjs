@@ -105,7 +105,12 @@ export function auditSnapshot(snapshot) {
     const validNames = value => value.every(name => typeof name === 'string' && collections.includes(name));
     const unknownCollections = [...new Set([...included, ...complete].filter(name => typeof name === 'string' && !collections.includes(name)))];
     const unknownRecordCountKeys = Object.keys(declared).filter(name => !collections.includes(name)).sort();
-    const malformedCollectionLists = !includedIsArray || !completeIsArray || !validNames(included) || !validNames(complete);
+    const duplicateCollectionEntries = [
+      ...[...new Set(included.filter(name => typeof name === 'string' && included.indexOf(name) !== included.lastIndexOf(name)))].map(name => `collectionsIncluded:${name}`),
+      ...[...new Set(complete.filter(name => typeof name === 'string' && complete.indexOf(name) !== complete.lastIndexOf(name)))].map(name => `completeCollections:${name}`),
+    ].sort();
+    const malformedCollectionLists = !includedIsArray || !completeIsArray ||
+      !validNames(included) || !validNames(complete) || duplicateCollectionEntries.length > 0;
     const malformedRecordCounts = !recordCountsIsObject || unknownRecordCountKeys.length > 0;
     const missingCollections = collections.filter(name => !included.includes(name) || !complete.includes(name));
     const countMismatches = collections.filter(name =>
@@ -126,6 +131,7 @@ export function auditSnapshot(snapshot) {
       missingCollections,
       unknownCollections,
       malformedCollectionLists,
+      duplicateCollectionEntries,
       malformedRecordCounts,
       unknownRecordCountKeys,
       invalidExportTimestamp: !hasValidExportTime,
