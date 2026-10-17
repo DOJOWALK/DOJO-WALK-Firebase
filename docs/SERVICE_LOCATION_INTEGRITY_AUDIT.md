@@ -61,3 +61,7 @@ This is a structural hierarchy and boundary-reference audit: missing parents, mi
 ## Validation
 
 Run the repository's test suite with `npm test`. A clean synthetic fixture is not evidence that live Firestore records are clean.
+
+
+## Metadata validation added in Step 100
+The auditor also checks that `exportedAt` looks like an ISO-style timestamp and parses as a date, that collection-list entries name only the six required collections, and that declared record counts are non-negative integers matching the snapshot. The report exposes `invalidExportTimestamp`, `unknownCollections`, and `malformedCollectionLists` for diagnosis. These checks validate formatting and internal consistency only; they do not authenticate the export source or prove completeness.
