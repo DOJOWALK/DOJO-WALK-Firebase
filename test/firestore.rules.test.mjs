@@ -388,3 +388,66 @@ test('clients cannot create, update, or delete service location activation audit
   }));
   await assertFails(deleteDoc(doc(db, 'service_location_activation_audit/audit-existing')));
 });
+
+
+// Regression: the Admin client verifies a boundary and binds the owning
+// inactive City's verifiedBoundaryId in one Firestore transaction.
+test('Admin-style transaction atomically verifies boundary and binds inactive City', async () => {
+  const db = env.authenticatedContext('super-active').firestore();
+  const cityRef = doc(db, 'service_cities/city-transaction');
+  const boundaryRef = doc(db, 'service_location_boundaries/city-transaction-boundary');
+
+  await assertSucceeds(setDoc(cityRef, {
+    countryId: 'india', stateId: 'up', name: 'Transaction City',
+    isServiceActive: false,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(setDoc(boundaryRef, {
+    locationId: 'city-transaction',
+    locationType: 'city',
+    points: [
+      { lat: 28.5, lng: 77.3 },
+      { lat: 28.6, lng: 77.3 },
+      { lat: 28.6, lng: 77.4 },
+    ],
+    sourceType: 'governmentGis',
+    sourceName: 'Test official source',
+    sourceReference: 'CITY-TRANSACTION-REF',
+    verificationStatus: 'pending',
+    verifiedBy: null,
+    verifiedAt: null,
+    verificationNotes: null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }));
+
+  await assertSucceeds((async () => {
+    const { runTransaction } = await import('firebase/firestore');
+    return runTransaction(db, async (transaction) => {
+      const boundarySnapshot = await transaction.get(boundaryRef);
+      const citySnapshot = await transaction.get(cityRef);
+      assert.equal(boundarySnapshot.data().verificationStatus, 'pending');
+      assert.equal(citySnapshot.data().isServiceActive, false);
+
+      transaction.update(boundaryRef, {
+        verificationStatus: 'verified',
+        verifiedBy: 'super-active',
+        verifiedAt: serverTimestamp(),
+        verificationNotes: 'Combined Admin transaction regression',
+        updatedAt: serverTimestamp(),
+      });
+      transaction.update(cityRef, {
+        verifiedBoundaryId: 'city-transaction-boundary',
+        updatedAt: serverTimestamp(),
+      });
+    });
+  })());
+
+  const [savedBoundary, savedCity] = await Promise.all([
+    getDoc(boundaryRef),
+    getDoc(cityRef),
+  ]);
+  assert.equal(savedBoundary.data().verificationStatus, 'verified');
+  assert.equal(savedCity.data().verifiedBoundaryId, 'city-transaction-boundary');
+  assert.equal(savedCity.data().isServiceActive, false);
+});
