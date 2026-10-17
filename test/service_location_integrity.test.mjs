@@ -253,6 +253,29 @@ test('rejects impossible calendar dates and out-of-range time components in snap
 });
 
 
+
+test('validates leap years using Gregorian rules for years below 100 and century years', () => {
+  const names = ['service_countries','service_states','service_cities','service_areas','service_localities','service_location_boundaries'];
+  const snapshot = Object.fromEntries(names.map(name => [name, {}]));
+  snapshot.snapshotMetadata = {
+    sourceProjectId: 'synthetic-project',
+    exportedAt: '0000-02-29T12:00:00Z',
+    collectionsIncluded: names,
+    completeCollections: names,
+    recordCounts: Object.fromEntries(names.map(name => [name, 0])),
+  };
+  let scope = auditSnapshot(snapshot).snapshotScope;
+  assert.equal(scope.invalidExportTimestamp, false, 'year 0000 is a leap year under Gregorian leap-year rules');
+
+  snapshot.snapshotMetadata.exportedAt = '1900-02-29T12:00:00Z';
+  scope = auditSnapshot(snapshot).snapshotScope;
+  assert.equal(scope.invalidExportTimestamp, true, '1900 is not a leap year');
+
+  snapshot.snapshotMetadata.exportedAt = '2000-02-29T12:00:00Z';
+  scope = auditSnapshot(snapshot).snapshotScope;
+  assert.equal(scope.invalidExportTimestamp, false, '2000 is a leap year');
+});
+
 test('enforces ISO timezone offset bounds in snapshot timestamps', () => {
   const names = ['service_countries','service_states','service_cities','service_areas','service_localities','service_location_boundaries'];
   const snapshot = Object.fromEntries(names.map(name => [name, {}]));
