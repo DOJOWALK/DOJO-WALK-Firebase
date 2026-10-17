@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Emulator tests for DOJO WALK Firestore Security Rules",
   "scripts": {
-    "test": "node --test test/firestore.rules.test.mjs"
+    "test": "node --test test/*.test.mjs"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^4.0.1",
