@@ -18,6 +18,9 @@ const ids = {
   admin: `it-admin-${suffix}`,
   country: `it-country-${suffix}`,
   state: `it-state-${suffix}`,
+  otherCountry: `it-other-country-${suffix}`,
+  inactiveState: `it-inactive-state-${suffix}`,
+  mismatchedState: `it-mismatched-state-${suffix}`,
   city: `it-city-${suffix}`,
   area: `it-area-${suffix}`,
   invalidCity: `it-invalid-city-${suffix}`,
@@ -27,6 +30,12 @@ const ids = {
   noBoundaryCity: `it-no-boundary-city-${suffix}`,
   wrongTypeCity: `it-wrong-type-city-${suffix}`,
   wrongTypeBoundary: `it-wrong-type-boundary-${suffix}`,
+  missingStateCity: `it-missing-state-city-${suffix}`,
+  missingStateBoundary: `it-missing-state-boundary-${suffix}`,
+  inactiveStateCity: `it-inactive-state-city-${suffix}`,
+  inactiveStateBoundary: `it-inactive-state-boundary-${suffix}`,
+  mismatchedStateCity: `it-mismatched-state-city-${suffix}`,
+  mismatchedStateBoundary: `it-mismatched-state-boundary-${suffix}`,
   inactiveParentCity: `it-inactive-parent-city-${suffix}`,
   inactiveParentArea: `it-inactive-parent-area-${suffix}`,
   inactiveParentAreaBoundary: `it-inactive-parent-area-boundary-${suffix}`,
@@ -77,6 +86,9 @@ test("callable integration: auth, boundary validation, City and Area activation"
     `admin_users/${ids.admin}`,
     `service_countries/${ids.country}`,
     `service_states/${ids.state}`,
+    `service_countries/${ids.otherCountry}`,
+    `service_states/${ids.inactiveState}`,
+    `service_states/${ids.mismatchedState}`,
     `service_cities/${ids.city}`,
     `service_areas/${ids.area}`,
     `service_cities/${ids.invalidCity}`,
@@ -85,6 +97,12 @@ test("callable integration: auth, boundary validation, City and Area activation"
     `service_location_boundaries/${ids.invalidBoundary}`,
     `service_cities/${ids.noBoundaryCity}`,
     `service_cities/${ids.wrongTypeCity}`,
+    `service_cities/${ids.missingStateCity}`,
+    `service_location_boundaries/${ids.missingStateBoundary}`,
+    `service_cities/${ids.inactiveStateCity}`,
+    `service_location_boundaries/${ids.inactiveStateBoundary}`,
+    `service_cities/${ids.mismatchedStateCity}`,
+    `service_location_boundaries/${ids.mismatchedStateBoundary}`,
     `service_location_boundaries/${ids.wrongTypeBoundary}`,
     `service_cities/${ids.inactiveParentCity}`,
     `service_areas/${ids.inactiveParentArea}`,
@@ -104,6 +122,9 @@ test("callable integration: auth, boundary validation, City and Area activation"
     db.doc(`admin_users/${ids.admin}`).set({ isActive: true, role: "super_admin" }),
     db.doc(`service_countries/${ids.country}`).set({ isActive: true }),
     db.doc(`service_states/${ids.state}`).set({ countryId: ids.country, isActive: true }),
+    db.doc(`service_countries/${ids.otherCountry}`).set({ isActive: true }),
+    db.doc(`service_states/${ids.inactiveState}`).set({ countryId: ids.country, isActive: false }),
+    db.doc(`service_states/${ids.mismatchedState}`).set({ countryId: ids.otherCountry, isActive: true }),
     db.doc(`service_cities/${ids.city}`).set({
       isServiceActive: false, countryId: ids.country, stateId: ids.state, verifiedBoundaryId: ids.cityBoundary,
     }),
@@ -127,6 +148,12 @@ test("callable integration: auth, boundary validation, City and Area activation"
     db.doc(`service_location_boundaries/${ids.wrongTypeBoundary}`).set(
       boundary(ids.wrongTypeCity, "area", polygonPoints(2, 2, 4, 4)),
     ),
+    db.doc(`service_cities/${ids.missingStateCity}`).set({ isServiceActive: false, countryId: ids.country, verifiedBoundaryId: ids.missingStateBoundary }),
+    db.doc(`service_location_boundaries/${ids.missingStateBoundary}`).set(boundary(ids.missingStateCity, "city", polygonPoints(0, 0, 10, 10))),
+    db.doc(`service_cities/${ids.inactiveStateCity}`).set({ isServiceActive: false, countryId: ids.country, stateId: ids.inactiveState, verifiedBoundaryId: ids.inactiveStateBoundary }),
+    db.doc(`service_location_boundaries/${ids.inactiveStateBoundary}`).set(boundary(ids.inactiveStateCity, "city", polygonPoints(0, 0, 10, 10))),
+    db.doc(`service_cities/${ids.mismatchedStateCity}`).set({ isServiceActive: false, countryId: ids.country, stateId: ids.mismatchedState, verifiedBoundaryId: ids.mismatchedStateBoundary }),
+    db.doc(`service_location_boundaries/${ids.mismatchedStateBoundary}`).set(boundary(ids.mismatchedStateCity, "city", polygonPoints(0, 0, 10, 10))),
     db.doc(`service_cities/${ids.inactiveParentCity}`).set({
       isServiceActive: false, verifiedBoundaryId: ids.cityBoundary,
     }),
@@ -188,6 +215,16 @@ test("callable integration: auth, boundary validation, City and Area activation"
     await expectCallableCode(invoke(ids.admin, "city", ids.invalidCity), "failed-precondition");
     const location = await db.doc(`service_cities/${ids.invalidCity}`).get();
     assert.equal(location.get("isServiceActive"), false);
+  });
+
+  await t.test("City activation rejects missing State reference", async () => {
+    await expectCallableCode(invoke(ids.admin, "city", ids.missingStateCity), "failed-precondition");
+  });
+  await t.test("City activation rejects inactive State", async () => {
+    await expectCallableCode(invoke(ids.admin, "city", ids.inactiveStateCity), "failed-precondition");
+  });
+  await t.test("City activation rejects State linked to another Country", async () => {
+    await expectCallableCode(invoke(ids.admin, "city", ids.mismatchedStateCity), "failed-precondition");
   });
 
   await t.test("active super_admin can activate a City with a valid verified boundary", async () => {
