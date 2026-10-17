@@ -309,14 +309,6 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
       }
     }
 
-    tx.update(targetRef, {
-      [statusField]: isActive,
-      activationGuardAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-    if (isActive && locationType === "state" && parentRef) {
-      tx.update(parentRef, { activationGuardAt: FieldValue.serverTimestamp() });
-    }
     if (isActive && locationType === "city" && parentRef) {
       const countryId = target.get("countryId");
       if (typeof countryId !== "string" || parentSnap?.get("countryId") !== countryId) {
@@ -327,7 +319,18 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
       if (!countrySnap.exists || countrySnap.get("isActive") !== true) {
         throw new HttpsError("failed-precondition", "City Country must be active first.");
       }
-      tx.update(countryRef, { activationGuardAt: FieldValue.serverTimestamp() });
+    }
+
+    tx.update(targetRef, {
+      [statusField]: isActive,
+      activationGuardAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    if (isActive && locationType === "state" && parentRef) {
+      tx.update(parentRef, { activationGuardAt: FieldValue.serverTimestamp() });
+    }
+    if (isActive && locationType === "city" && parentRef) {
+      tx.update(countryRef!, { activationGuardAt: FieldValue.serverTimestamp() });
       tx.update(parentRef, { activationGuardAt: FieldValue.serverTimestamp() });
     }
     if (isActive && locationType === "locality") {
