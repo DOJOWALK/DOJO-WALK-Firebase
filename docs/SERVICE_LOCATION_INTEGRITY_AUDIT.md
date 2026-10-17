@@ -89,3 +89,8 @@ The timestamp auditor calculates month lengths using Gregorian leap-year rules d
 
 Regression tests now cover the negative side of the offset range: `-14:00` is accepted, while `-14:01` and `-15:00` are rejected. A timestamp with fractional seconds and an explicit UTC timezone is also checked. This remains format validation only; it does not authenticate export provenance or prove the source export is complete.
 
+
+
+## Step 109 — Fractional-second precision boundaries
+
+Regression coverage now checks fractional seconds with one digit and nine digits, and rejects a decimal point with no following digits. These are syntax/parse compatibility checks only; accepted timestamps still do not authenticate export provenance or prove completeness.
