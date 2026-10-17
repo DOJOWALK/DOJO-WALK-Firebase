@@ -94,3 +94,8 @@ Regression tests now cover the negative side of the offset range: `-14:00` is ac
 ## Step 109 — Fractional-second precision boundaries
 
 Regression coverage now checks fractional seconds with one digit and nine digits, and rejects a decimal point with no following digits. These are syntax/parse compatibility checks only; accepted timestamps still do not authenticate export provenance or prove completeness.
+
+
+## Step 110 — Invalid polygon regression coverage
+
+Geometry regression tests now explicitly reject a self-intersecting bow-tie ring and a collinear/zero-area ring. This supplements the existing Turf validity and Area-within-City checks. These synthetic tests do not establish that any real-world boundary source is authoritative, contiguous, or aligned with current official administrative boundaries.
