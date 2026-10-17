@@ -104,3 +104,8 @@ Geometry regression tests now explicitly reject a self-intersecting bow-tie ring
 ## Step 111 — Verified-boundary timestamp type validation
 
 The City/Area activation callable now requires `verifiedAt` to be a valid JavaScript Date or a Firestore Timestamp-like object whose `toDate()` returns a valid Date. Truthy strings and malformed timestamp values are rejected as unverified metadata. The emulator integration suite includes a boundary with a string timestamp and asserts activation fails while the City remains inactive. This protects metadata shape only; it does not prove that the verification event or source itself is authentic.
+
+
+## Step 112 — Boundary document ID validation
+
+City and Area activation now validates the referenced boundary document ID against the same conservative ID character/length policy before constructing a Firestore document path. Parent City boundary IDs receive the same check. The emulator integration suite verifies a City with a slash-containing boundary ID is rejected with `failed-precondition` and remains inactive instead of producing an unexpected path-construction error. This is input/path validation only and does not establish boundary provenance.
