@@ -1,0 +1,19 @@
+{
+  "_exampleOnly": true,
+  "_note": "Synthetic fixture only. These are not real or exported DOJO WALK records. Replace this file with an authorized, complete read-only snapshot before drawing conclusions about existing data.",
+  "service_countries": {
+    "example-country": { "name": "Example Country", "isActive": false }
+  },
+  "service_states": {
+    "example-state": { "name": "Example State", "countryId": "example-country", "isActive": false }
+  },
+  "service_cities": {
+    "example-city": { "name": "Example City", "countryId": "example-country", "stateId": "example-state", "isServiceActive": false }
+  },
+  "service_areas": {
+    "example-area": { "name": "Example Area", "countryId": "example-country", "stateId": "example-state", "cityId": "example-city", "isServiceActive": false }
+  },
+  "service_localities": {
+    "example-locality": { "name": "Example Locality", "countryId": "example-country", "stateId": "example-state", "cityId": "example-city", "areaId": "example-area", "isServiceActive": false }
+  }
+}
