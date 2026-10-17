@@ -128,6 +128,29 @@ test('reports declared complete snapshot scope only when all collections and cou
 });
 
 
+test('rejects non-array collection-list declarations in snapshot metadata', () => {
+  const names = ['service_countries','service_states','service_cities','service_areas','service_localities','service_location_boundaries'];
+  const snapshot = Object.fromEntries(names.map(name => [name, {}]));
+  const counts = Object.fromEntries(names.map(name => [name, 0]));
+  snapshot.snapshotMetadata = {
+    sourceProjectId: 'synthetic-project',
+    exportedAt: '2026-10-17T00:00:00Z',
+    collectionsIncluded: names,
+    completeCollections: names,
+    recordCounts: counts,
+  };
+  snapshot.snapshotMetadata.collectionsIncluded = { service_countries: true };
+  let scope = auditSnapshot(snapshot).snapshotScope;
+  assert.equal(scope.status, 'INCOMPLETE_OR_UNVERIFIED');
+  assert.equal(scope.malformedCollectionLists, true);
+
+  snapshot.snapshotMetadata.collectionsIncluded = names;
+  snapshot.snapshotMetadata.completeCollections = 'all collections';
+  scope = auditSnapshot(snapshot).snapshotScope;
+  assert.equal(scope.status, 'INCOMPLETE_OR_UNVERIFIED');
+  assert.equal(scope.malformedCollectionLists, true);
+});
+
 test('rejects invalid export timestamps and unknown collection names in scope metadata', () => {
   const names = ['service_countries','service_states','service_cities','service_areas','service_localities','service_location_boundaries'];
   const snapshot = Object.fromEntries(names.map(name => [name, {}]));
