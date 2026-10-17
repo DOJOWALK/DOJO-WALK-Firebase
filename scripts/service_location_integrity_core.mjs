@@ -83,9 +83,42 @@ export function auditSnapshot(snapshot) {
   const issueCountsByType = Object.fromEntries(
     [...new Set(issues.map(issue => issue.type))].sort().map(type => [type, issues.filter(issue => issue.type === type).length]),
   );
+  const metadata = snapshot.snapshotMetadata;
+  let snapshotScope = {
+    status: 'UNVERIFIED',
+    sourceProjectId: null,
+    exportedAt: null,
+    collectionsIncluded: [],
+    completeCollections: [],
+    declaredRecordCounts: {},
+    countMismatches: [],
+    missingCollections: [...collections],
+  };
+  if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+    const included = Array.isArray(metadata.collectionsIncluded) ? metadata.collectionsIncluded : [];
+    const complete = Array.isArray(metadata.completeCollections) ? metadata.completeCollections : [];
+    const declared = metadata.recordCounts && typeof metadata.recordCounts === 'object' && !Array.isArray(metadata.recordCounts)
+      ? metadata.recordCounts : {};
+    const missingCollections = collections.filter(name => !included.includes(name) || !complete.includes(name));
+    const countMismatches = collections.filter(name =>
+      !Number.isInteger(declared[name]) || declared[name] !== counts[name]);
+    const hasIdentity = typeof metadata.sourceProjectId === 'string' && metadata.sourceProjectId.trim() &&
+      typeof metadata.exportedAt === 'string' && metadata.exportedAt.trim();
+    snapshotScope = {
+      status: hasIdentity && missingCollections.length === 0 && countMismatches.length === 0 ? 'DECLARED_COMPLETE' : 'INCOMPLETE_OR_UNVERIFIED',
+      sourceProjectId: hasIdentity ? metadata.sourceProjectId : null,
+      exportedAt: hasIdentity ? metadata.exportedAt : null,
+      collectionsIncluded: included,
+      completeCollections: complete,
+      declaredRecordCounts: declared,
+      countMismatches,
+      missingCollections,
+    };
+  }
   return {
     audit: 'DOJO WALK service-location hierarchy integrity',
     mode: 'read-only offline snapshot; no Firebase connection; no source writes',
+    snapshotScope,
     counts,
     totalRecords: Object.values(counts).reduce((sum,n) => sum + n, 0),
     issueCount: issues.length,
