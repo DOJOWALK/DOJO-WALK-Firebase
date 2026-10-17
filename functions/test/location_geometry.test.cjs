@@ -164,3 +164,32 @@ test("reversing polygon winding does not change boundary acceptance", () => {
   assert.doesNotThrow(() => polygonFromBoundary(counterClockwise));
   assert.doesNotThrow(() => polygonFromBoundary(clockwise));
 });
+
+test("unclosed ring is explicitly closed and accepted", () => {
+  // Input rings may omit the repeated final coordinate; the validator closes it.
+  assert.doesNotThrow(() => polygonFromBoundary(boundary("unclosed-ring", "area", [
+    { lat: 0, lng: 0 },
+    { lat: 0, lng: 2 },
+    { lat: 2, lng: 2 },
+    { lat: 2, lng: 0 },
+  ])));
+});
+
+test("valid polygon with reversed winding is accepted", () => {
+  // The validator requires a simple, non-zero-area ring, not a fixed winding.
+  assert.doesNotThrow(() => polygonFromBoundary(boundary("reverse-winding", "area", [
+    { lat: 0, lng: 0 },
+    { lat: 2, lng: 0 },
+    { lat: 2, lng: 2 },
+    { lat: 0, lng: 2 },
+  ])));
+});
+
+test("antimeridian-crossing ring is rejected rather than misread as a world-spanning polygon", () => {
+  assert.throws(() => polygonFromBoundary(boundary("dateline-crossing", "area", [
+    { lat: 10, lng: 179 },
+    { lat: 10, lng: -179 },
+    { lat: -10, lng: -179 },
+    { lat: -10, lng: 179 },
+  ])), /BOUNDARY_ANTIMERIDIAN_CROSSING_UNSUPPORTED/);
+});
