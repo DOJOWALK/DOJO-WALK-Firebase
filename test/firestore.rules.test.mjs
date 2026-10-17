@@ -794,6 +794,17 @@ test('Partner cannot edit KYC or profile fields after submission', async () => {
     submittedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   }));
+  // Partner app stores uploaded KYC files under kyc.documents.*.
+  await assertFails(updateDoc(walkerRef, {
+    kyc: {
+      documents: {
+        aadhaar_front: {
+          storagePath: 'walkers/partner-post-submit-kyc-edit/changed-front.jpg',
+        },
+      },
+    },
+    updatedAt: serverTimestamp(),
+  }));
   await assertFails(updateDoc(walkerRef, {
     documents: { identityPhotoUrl: 'https://example.invalid/id.jpg' },
     updatedAt: serverTimestamp(),
