@@ -28,3 +28,19 @@ test('clean complete inactive hierarchy has no issues', () => {
   };
   assert.equal(auditSnapshot(snapshot).issueCount, 0);
 });
+
+test('rejects snapshots missing any required collection', () => {
+  assert.throws(
+    () => auditSnapshot({ service_countries: {}, service_states: {}, service_cities: {}, service_areas: {} }),
+    /service_localities/,
+  );
+});
+
+test('rejects array in place of a document-ID keyed collection', () => {
+  assert.throws(
+    () => auditSnapshot({
+      service_countries: [], service_states: {}, service_cities: {}, service_areas: {}, service_localities: {},
+    }),
+    /service_countries/,
+  );
+});
