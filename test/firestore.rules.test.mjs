@@ -40,6 +40,14 @@ beforeEach(async () => {
     await setDoc(doc(db, 'admin_users/location-active'), {
       role: 'admin', isActive: true,
     });
+    await setDoc(doc(db, 'service_countries/india'), {
+      name: 'India', code: 'IN', isActive: false,
+      createdAt: new Date('2026-01-01T00:00:00Z'), updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+    await setDoc(doc(db, 'service_states/up'), {
+      countryId: 'india', name: 'Uttar Pradesh', isActive: false,
+      createdAt: new Date('2026-01-01T00:00:00Z'), updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
     await setDoc(doc(db, 'service_location_boundaries/city-boundary'), {
       locationId: 'city-1',
       locationType: 'city',
@@ -72,6 +80,33 @@ beforeEach(async () => {
       createdAt: new Date('2026-01-01T00:00:00Z'), updatedAt: new Date('2026-01-01T00:00:00Z'),
     });
   });
+});
+
+test('new hierarchy records require existing, correctly linked ancestors', async () => {
+  const db = env.authenticatedContext('super-active').firestore();
+  const base = { name: 'Draft', isActive: false, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+  await assertFails(setDoc(doc(db, 'service_states/missing-country-state'), {
+    ...base, countryId: 'missing-country',
+  }));
+  await assertFails(setDoc(doc(db, 'service_cities/missing-state-city'), {
+    ...base, countryId: 'india', stateId: 'missing-state',
+    isServiceActive: false,
+  }));
+  await assertFails(setDoc(doc(db, 'service_cities/mismatched-city'), {
+    ...base, countryId: 'other-country', stateId: 'up',
+    isServiceActive: false,
+  }));
+  await assertFails(setDoc(doc(db, 'service_areas/missing-city-area'), {
+    ...base, countryId: 'india', stateId: 'up', cityId: 'missing-city',
+    isServiceActive: false,
+  }));
+  await assertFails(setDoc(doc(db, 'service_localities/missing-area-locality'), {
+    ...base, countryId: 'india', stateId: 'up', cityId: 'city-parent', areaId: 'missing-area',
+    isServiceActive: false,
+  }));
+  await assertSucceeds(setDoc(doc(db, 'service_states/valid-new-state'), {
+    ...base, countryId: 'india',
+  }));
 });
 
 test('unauthenticated reads and writes to service locations are denied', async () => {
