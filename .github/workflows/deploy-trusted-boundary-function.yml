@@ -1,10 +1,10 @@
-name: Manual Deploy Trusted Boundary Review Function
+name: Manual Deploy Trusted Location Functions
 
 on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: "Type DEPLOY_REVIEW_FUNCTION to authorize deploying this callable"
+        description: "Type DEPLOY_TRUSTED_LOCATION_FUNCTIONS to authorize deploying the trusted location callables"
         required: true
         type: string
       target_project:
@@ -21,8 +21,8 @@ concurrency:
 
 jobs:
   deploy:
-    name: Test and deploy only reviewServiceLocationBoundary
-    if: ${{ github.ref == 'refs/heads/main' && inputs.confirmation == 'DEPLOY_REVIEW_FUNCTION' && inputs.target_project == 'dojo-platform-b68a3' }}
+    name: Test and deploy trusted location callables
+    if: ${{ github.ref == 'refs/heads/main' && inputs.confirmation == 'DEPLOY_TRUSTED_LOCATION_FUNCTIONS' && inputs.target_project == 'dojo-platform-b68a3' }}
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 25
@@ -61,11 +61,11 @@ jobs:
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
           echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/firebase-service-account.json" >> "$GITHUB_ENV"
 
-      - name: Deploy only reviewServiceLocationBoundary
-        run: npx --yes firebase-tools deploy --only functions:reviewServiceLocationBoundary --project dojo-platform-b68a3 --non-interactive
+      - name: Deploy trusted location callables only
+        run: npx --yes firebase-tools deploy --only functions:reviewServiceLocationBoundary,functions:activateServiceLocation,functions:setServiceLocationStatus --project dojo-platform-b68a3 --non-interactive
 
       - name: Post-deploy reminder
         run: |
           echo "Function deployment command completed."
-          echo "Verify the deployed callable, region asia-south1, logs, and authorized/unauthorized behavior before deploying Firestore Rules."
+          echo "Verify all three deployed callables, region asia-south1, logs, and authorized/unauthorized behavior before deploying Firestore Rules."
           echo "This workflow does not deploy Firestore Rules or activate/import any locations."
