@@ -177,14 +177,16 @@ test('admin can bind a verified boundary to an inactive Area under an active Cit
     name: 'Example Area', isServiceActive: false,
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   }));
-  await assertSucceeds(setDoc(doc(db, 'service_location_boundaries/area-boundary'), {
-    locationId: 'area-1', locationType: 'area',
-    points: [{ lat: 28.51, lng: 77.31 }, { lat: 28.52, lng: 77.31 }, { lat: 28.52, lng: 77.32 }],
-    sourceType: 'governmentGis', sourceName: 'Test official area source',
-    sourceReference: 'AREA-BIND-REF', verificationStatus: 'verified',
-    verifiedBy: 'super-active', verifiedAt: serverTimestamp(),
-    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
-  }));
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'service_location_boundaries/area-boundary'), {
+      locationId: 'area-1', locationType: 'area',
+      points: [{ lat: 28.51, lng: 77.31 }, { lat: 28.52, lng: 77.31 }, { lat: 28.52, lng: 77.32 }],
+      sourceType: 'governmentGis', sourceName: 'Test official area source',
+      sourceReference: 'AREA-BIND-REF', verificationStatus: 'verified',
+      verifiedBy: 'super-active', verifiedAt: new Date('2026-01-01T00:00:00Z'),
+      createdAt: new Date('2026-01-01T00:00:00Z'), updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+  });
   await assertSucceeds(updateDoc(doc(db, 'service_areas/area-1'), {
     verifiedBoundaryId: 'area-boundary',
     updatedAt: serverTimestamp(),
