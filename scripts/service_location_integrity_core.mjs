@@ -1,5 +1,5 @@
 export function auditSnapshot(snapshot) {
-  const collections = ['service_countries','service_states','service_cities','service_areas','service_localities'];
+  const collections = ['service_countries','service_states','service_cities','service_areas','service_localities','service_location_boundaries'];
   if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
     throw new Error('Snapshot root must be a JSON object.');
   }
@@ -16,12 +16,40 @@ export function auditSnapshot(snapshot) {
   const issues = [];
   const counts = Object.fromEntries(collections.map(name => [name, Object.keys(snapshot[name]).length]));
   const add = (type,id,code,detail) => issues.push({type,id,code,detail});
-  const c=snapshot.service_countries, s=snapshot.service_states, ci=snapshot.service_cities, a=snapshot.service_areas, l=snapshot.service_localities;
+  const c=snapshot.service_countries, s=snapshot.service_states, ci=snapshot.service_cities, a=snapshot.service_areas, l=snapshot.service_localities, b=snapshot.service_location_boundaries;
+  const validateBoundary = (type, id, doc) => {
+    const boundaryId = doc.verifiedBoundaryId;
+    if (typeof boundaryId !== 'string' || !boundaryId || !b[boundaryId]) {
+      add(type,id,'MISSING_VERIFIED_BOUNDARY',`verifiedBoundaryId "${boundaryId ?? ''}" does not resolve`);
+      return;
+    }
+    const boundary = b[boundaryId];
+    if (boundary.locationId !== id || boundary.locationType !== type || boundary.verificationStatus !== 'verified' ||
+        typeof boundary.sourceName !== 'string' || !boundary.sourceName.trim() ||
+        typeof boundary.sourceReference !== 'string' || !boundary.sourceReference.trim() ||
+        typeof boundary.verifiedBy !== 'string' || !boundary.verifiedBy.trim() || !boundary.verifiedAt) {
+      add(type,id,'BOUNDARY_VERIFICATION_METADATA_INVALID',`Boundary "${boundaryId}" is not a fully verified boundary for this location`);
+    }
+    if (!Array.isArray(boundary.points) || boundary.points.length < 3) {
+      add(type,id,'BOUNDARY_POINTS_INVALID',`Boundary "${boundaryId}" must contain at least three points`);
+      return;
+    }
+    const points = boundary.points.map(p => {
+      if (!p || typeof p !== 'object' || Array.isArray(p)) return null;
+      const lat = typeof p.lat === 'number' ? p.lat : p.latitude;
+      const lng = typeof p.lng === 'number' ? p.lng : p.longitude;
+      return Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 ? `${lat},${lng}` : null;
+    });
+    if (points.some(p => p === null) || new Set(points).size < 3) {
+      add(type,id,'BOUNDARY_COORDINATES_INVALID',`Boundary "${boundaryId}" has invalid or fewer than three distinct coordinates`);
+    }
+  };
   for (const [id,d] of Object.entries(s)) {
     if (!c[d.countryId]) add('state',id,'MISSING_COUNTRY',`countryId "${d.countryId ?? ''}" does not resolve`);
     if (d.isActive===true && c[d.countryId]?.isActive!==true) add('state',id,'ACTIVE_UNDER_INACTIVE_COUNTRY','Active State has no active Country ancestor');
   }
   for (const [id,d] of Object.entries(ci)) {
+    if (d.isServiceActive === true) validateBoundary('city',id,d);
     const st=s[d.stateId];
     if (!c[d.countryId]) add('city',id,'MISSING_COUNTRY',`countryId "${d.countryId ?? ''}" does not resolve`);
     if (!st) add('city',id,'MISSING_STATE',`stateId "${d.stateId ?? ''}" does not resolve`);
@@ -29,6 +57,7 @@ export function auditSnapshot(snapshot) {
     if (d.isServiceActive===true && (c[d.countryId]?.isActive!==true || st?.isActive!==true)) add('city',id,'ACTIVE_UNDER_INACTIVE_ANCESTOR','Active City has an inactive or missing Country/State ancestor');
   }
   for (const [id,d] of Object.entries(a)) {
+    if (d.isServiceActive === true) validateBoundary('area',id,d);
     const st=s[d.stateId], city=ci[d.cityId];
     if (!c[d.countryId]) add('area',id,'MISSING_COUNTRY',`countryId "${d.countryId ?? ''}" does not resolve`);
     if (!st) add('area',id,'MISSING_STATE',`stateId "${d.stateId ?? ''}" does not resolve`);
