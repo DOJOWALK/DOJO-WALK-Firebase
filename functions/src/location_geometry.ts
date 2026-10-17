@@ -46,6 +46,15 @@ export function polygonFromBoundary(boundary: BoundaryDoc): Feature<Polygon> {
   const last = ring[ring.length - 1];
   if (first[0] !== last[0] || first[1] !== last[1]) ring.push([...first]);
 
+  // This service currently stores ordinary longitude/latitude polygons and does
+  // not unwrap antimeridian-crossing rings. Reject a longitude jump over 180°
+  // so a dateline-crossing boundary cannot silently become a near-world polygon.
+  for (let i = 0; i < ring.length - 1; i++) {
+    if (Math.abs(ring[i + 1][0] - ring[i][0]) > 180) {
+      throw new Error("BOUNDARY_ANTIMERIDIAN_CROSSING_UNSUPPORTED");
+    }
+  }
+
   // Turf's validity helper does not consistently reject degenerate rings
   // across supported dependency versions. Apply deterministic ring checks first.
   assertSimpleNonZeroAreaRing(ring);
