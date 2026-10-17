@@ -1307,6 +1307,7 @@ service cloud.firestore {
           ])
         && request.resource.data.countryId is string
         && request.resource.data.countryId.size() > 0
+        && request.resource.data.countryId == resource.data.countryId
         && validLocationName(request.resource.data)
         && request.resource.data.isActive is bool
         && request.resource.data.isActive == resource.data.isActive
@@ -1377,6 +1378,8 @@ service cloud.firestore {
         && request.resource.data.countryId.size() > 0
         && request.resource.data.stateId is string
         && request.resource.data.stateId.size() > 0
+        && request.resource.data.countryId == resource.data.countryId
+        && request.resource.data.stateId == resource.data.stateId
         && validLocationName(request.resource.data)
         && request.resource.data.isServiceActive is bool
         && request.resource.data.isServiceActive == resource.data.isServiceActive
@@ -1465,6 +1468,9 @@ service cloud.firestore {
         && request.resource.data.stateId.size() > 0
         && request.resource.data.cityId is string
         && request.resource.data.cityId.size() > 0
+        && request.resource.data.countryId == resource.data.countryId
+        && request.resource.data.stateId == resource.data.stateId
+        && request.resource.data.cityId == resource.data.cityId
         && validLocationName(request.resource.data)
         && request.resource.data.isServiceActive is bool
         && request.resource.data.isServiceActive == resource.data.isServiceActive
@@ -1521,6 +1527,10 @@ service cloud.firestore {
         && request.resource.data.cityId.size() > 0
         && request.resource.data.areaId is string
         && request.resource.data.areaId.size() > 0
+        && request.resource.data.countryId == resource.data.countryId
+        && request.resource.data.stateId == resource.data.stateId
+        && request.resource.data.cityId == resource.data.cityId
+        && request.resource.data.areaId == resource.data.areaId
         && validLocationName(request.resource.data)
         && validOptionalString(request.resource.data, 'pincode')
         && request.resource.data.isServiceActive == false
