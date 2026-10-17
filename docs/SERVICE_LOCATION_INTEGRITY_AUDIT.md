@@ -70,3 +70,8 @@ The auditor also checks that `exportedAt` looks like an ISO-style timestamp and 
 `collectionsIncluded` and `completeCollections` must contain unique collection names. Duplicate entries are reported in `duplicateCollectionEntries` and force `INCOMPLETE_OR_UNVERIFIED`; duplicate declarations are malformed metadata even if all required names are present.
 
 Snapshot metadata `exportedAt` must be an ISO-style timestamp with seconds and an explicit timezone (`Z` or an offset such as `+05:30`). Timestamps without a timezone are rejected so export time is not interpreted ambiguously across machines.
+
+
+## Step 105 — Strict export timestamp calendar/time validation
+
+The offline snapshot auditor requires an explicit timezone and rejects impossible calendar dates, invalid day-of-month values, hours above 23, minutes/seconds above 59, and malformed timezone offsets. A leap-day timestamp is covered as a valid regression case. This validates timestamp syntax/components only; it does not authenticate the export or establish the exporter's clock accuracy.
