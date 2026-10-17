@@ -99,20 +99,29 @@ export function auditSnapshot(snapshot) {
     const complete = Array.isArray(metadata.completeCollections) ? metadata.completeCollections : [];
     const declared = metadata.recordCounts && typeof metadata.recordCounts === 'object' && !Array.isArray(metadata.recordCounts)
       ? metadata.recordCounts : {};
+    const validNames = value => value.every(name => typeof name === 'string' && collections.includes(name));
+    const unknownCollections = [...new Set([...included, ...complete].filter(name => !collections.includes(name)))];
+    const malformedCollectionLists = !validNames(included) || !validNames(complete);
     const missingCollections = collections.filter(name => !included.includes(name) || !complete.includes(name));
     const countMismatches = collections.filter(name =>
-      !Number.isInteger(declared[name]) || declared[name] !== counts[name]);
-    const hasIdentity = typeof metadata.sourceProjectId === 'string' && metadata.sourceProjectId.trim() &&
-      typeof metadata.exportedAt === 'string' && metadata.exportedAt.trim();
+      !Number.isInteger(declared[name]) || declared[name] < 0 || declared[name] !== counts[name]);
+    const hasProjectId = typeof metadata.sourceProjectId === 'string' && metadata.sourceProjectId.trim().length > 0;
+    const parsedExportTime = typeof metadata.exportedAt === 'string' ? Date.parse(metadata.exportedAt) : NaN;
+    const hasValidExportTime = Number.isFinite(parsedExportTime) && /^\\d{4}-\\d{2}-\\d{2}T/.test(metadata.exportedAt);
+    const hasIdentity = hasProjectId && hasValidExportTime;
     snapshotScope = {
-      status: hasIdentity && missingCollections.length === 0 && countMismatches.length === 0 ? 'DECLARED_COMPLETE' : 'INCOMPLETE_OR_UNVERIFIED',
-      sourceProjectId: hasIdentity ? metadata.sourceProjectId : null,
-      exportedAt: hasIdentity ? metadata.exportedAt : null,
+      status: hasIdentity && !malformedCollectionLists && unknownCollections.length === 0 &&
+        missingCollections.length === 0 && countMismatches.length === 0 ? 'DECLARED_COMPLETE' : 'INCOMPLETE_OR_UNVERIFIED',
+      sourceProjectId: hasProjectId ? metadata.sourceProjectId : null,
+      exportedAt: hasValidExportTime ? metadata.exportedAt : null,
       collectionsIncluded: included,
       completeCollections: complete,
       declaredRecordCounts: declared,
       countMismatches,
       missingCollections,
+      unknownCollections,
+      malformedCollectionLists,
+      invalidExportTimestamp: !hasValidExportTime,
     };
   }
   return {
