@@ -190,3 +190,19 @@ test('rejects invalid export timestamps and unknown collection names in scope me
   assert.deepEqual(scope.unknownCollections, ['unexpected_collection']);
   assert.equal(scope.exportedAt, null);
 });
+
+test('rejects duplicate collection entries in snapshot scope metadata', () => {
+  const names = ['service_countries','service_states','service_cities','service_areas','service_localities','service_location_boundaries'];
+  const snapshot = Object.fromEntries(names.map(name => [name, {}]));
+  snapshot.snapshotMetadata = {
+    sourceProjectId: 'synthetic-project',
+    exportedAt: '2026-10-17T00:00:00Z',
+    collectionsIncluded: [...names, 'service_countries'],
+    completeCollections: [...names, 'service_areas'],
+    recordCounts: Object.fromEntries(names.map(name => [name, 0])),
+  };
+  const scope = auditSnapshot(snapshot).snapshotScope;
+  assert.equal(scope.status, 'INCOMPLETE_OR_UNVERIFIED');
+  assert.equal(scope.malformedCollectionLists, true);
+  assert.deepEqual(scope.duplicateCollectionEntries, ['collectionsIncluded:service_countries', 'completeCollections:service_areas']);
+});
