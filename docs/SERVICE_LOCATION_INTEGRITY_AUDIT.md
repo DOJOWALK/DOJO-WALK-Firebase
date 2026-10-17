@@ -80,3 +80,8 @@ The offline snapshot auditor requires an explicit timezone and rejects impossibl
 ## Step 106 — Timezone offset bounds
 
 Snapshot export timestamps now reject offsets larger than ±14:00 and reject non-zero minutes at a 14-hour offset. Regression tests cover +15:00 and +14:01 rejection and +14:00 acceptance. This is format validation only and does not authenticate export provenance.
+
+## Step 107 — Gregorian leap-year edge cases
+
+The timestamp auditor calculates month lengths using Gregorian leap-year rules directly rather than relying on JavaScript `Date.UTC` for years 0000–0099, which applies a legacy 1900-year adjustment. Regression coverage checks year 0000 and year 2000 as leap years and 1900 as a non-leap year. These checks remain limited to timestamp syntax/calendar validity and do not authenticate export provenance.
+
