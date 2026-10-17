@@ -99,3 +99,8 @@ Regression coverage now checks fractional seconds with one digit and nine digits
 ## Step 110 — Invalid polygon regression coverage
 
 Geometry regression tests now explicitly reject a self-intersecting bow-tie ring and a collinear/zero-area ring. This supplements the existing Turf validity and Area-within-City checks. These synthetic tests do not establish that any real-world boundary source is authoritative, contiguous, or aligned with current official administrative boundaries.
+
+
+## Step 111 — Verified-boundary timestamp type validation
+
+The City/Area activation callable now requires `verifiedAt` to be a valid JavaScript Date or a Firestore Timestamp-like object whose `toDate()` returns a valid Date. Truthy strings and malformed timestamp values are rejected as unverified metadata. The emulator integration suite includes a boundary with a string timestamp and asserts activation fails while the City remains inactive. This protects metadata shape only; it does not prove that the verification event or source itself is authentic.
