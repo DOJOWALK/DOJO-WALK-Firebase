@@ -165,6 +165,11 @@ export const activateServiceLocation = onCall({ region: "asia-south1" }, async (
       }
     }
 
+    // Touch every ancestor in this transaction so a concurrent ancestor
+    // deactivation conflicts and retries against the newly active descendant.
+    tx.update(countryRef, { activationGuardAt: FieldValue.serverTimestamp() });
+    tx.update(stateRef, { activationGuardAt: FieldValue.serverTimestamp() });
+    if (parentRef) tx.update(parentRef, { activationGuardAt: FieldValue.serverTimestamp() });
     tx.update(locationRef, { isServiceActive: true, updatedAt: FieldValue.serverTimestamp() });
     const auditRef = db.collection("service_location_activation_audit").doc();
     tx.create(auditRef, {
