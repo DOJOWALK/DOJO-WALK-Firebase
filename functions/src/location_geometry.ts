@@ -78,11 +78,17 @@ function assertSimpleNonZeroAreaRing(ring: number[][]): void {
   }
 
   // ring is closed at this point. Shoelace area catches collinear/zero-area rings.
+  // Translate to the first vertex before applying the shoelace formula.
+  // This avoids subtracting large, nearly equal longitude/latitude products
+  // for small polygons located far from (0, 0).
+  const [originX, originY] = ring[0];
   let twiceArea = 0;
   let areaProductMagnitude = 0;
   for (let i = 0; i < ring.length - 1; i++) {
-    const [x1, y1] = ring[i];
-    const [x2, y2] = ring[i + 1];
+    const x1 = ring[i][0] - originX;
+    const y1 = ring[i][1] - originY;
+    const x2 = ring[i + 1][0] - originX;
+    const y2 = ring[i + 1][1] - originY;
     const left = x1 * y2;
     const right = x2 * y1;
     twiceArea += left - right;
