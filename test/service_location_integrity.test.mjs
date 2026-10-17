@@ -281,6 +281,20 @@ test('covers negative timezone offset bounds and fractional-second timestamps', 
   scope = auditSnapshot(snapshot).snapshotScope;
   assert.equal(scope.invalidExportTimestamp, false, 'fractional seconds with explicit UTC timezone are accepted');
   assert.equal(scope.exportedAt, '2026-10-17T12:00:00.123Z');
+
+  for (const timestamp of [
+    '2026-10-17T12:00:00.1Z',
+    '2026-10-17T12:00:00.123456789Z',
+  ]) {
+    snapshot.snapshotMetadata.exportedAt = timestamp;
+    scope = auditSnapshot(snapshot).snapshotScope;
+    assert.equal(scope.invalidExportTimestamp, false, `valid fractional precision is accepted: ${timestamp}`);
+    assert.equal(scope.exportedAt, timestamp);
+  }
+
+  snapshot.snapshotMetadata.exportedAt = '2026-10-17T12:00:00.Z';
+  scope = auditSnapshot(snapshot).snapshotScope;
+  assert.equal(scope.invalidExportTimestamp, true, 'a decimal point must be followed by at least one fractional digit');
 });
 
 test('validates leap years using Gregorian rules for years below 100 and century years', () => {
