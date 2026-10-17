@@ -7,7 +7,7 @@ on:
       - "firebase.json"
       - "package.json"
       - "test/**"
-      - ".github/workflows/test-firestore-rules.yml"
+      - ".github/workflows/**"
   push:
     branches:
       - main
@@ -16,13 +16,25 @@ on:
       - "firebase.json"
       - "package.json"
       - "test/**"
-      - ".github/workflows/test-firestore-rules.yml"
+      - ".github/workflows/**"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  workflow-lint:
+    name: Validate GitHub Actions workflow YAML
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Lint all workflow files
+        uses: reviewdog/action-actionlint@v1
+        with:
+          reporter: github-check
+          fail_on_error: "true"
+
   emulator-tests:
     name: Firestore Rules Emulator Tests
     runs-on: ubuntu-latest
