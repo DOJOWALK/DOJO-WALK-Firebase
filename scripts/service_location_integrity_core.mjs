@@ -126,7 +126,7 @@ export function auditSnapshot(snapshot) {
       const zone = exportedAtMatch[7], offsetHour = Number(exportedAtMatch[9]), offsetMinute = Number(exportedAtMatch[10]);
       const daysInMonth = month >= 1 && month <= 12 ? new Date(Date.UTC(year, month, 0)).getUTCDate() : 0;
       if (day < 1 || day > daysInMonth || hour > 23 || minute > 59 || second > 59) return false;
-      if (zone !== 'Z' && (offsetHour > 23 || offsetMinute > 59)) return false;
+      if (zone !== 'Z' && (offsetHour > 14 || offsetMinute > 59 || (offsetHour === 14 && offsetMinute !== 0))) return false;
       return true;
     })();
     const parsedExportTime = typeof metadata.exportedAt === 'string' ? Date.parse(metadata.exportedAt) : NaN;
