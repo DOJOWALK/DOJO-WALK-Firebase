@@ -1,0 +1,35 @@
+name: Test Trusted Boundary Functions
+
+on:
+  pull_request:
+    paths:
+      - "functions/**"
+      - ".github/workflows/test-trusted-functions.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "functions/**"
+      - ".github/workflows/test-trusted-functions.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  geometry-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: functions/package.json
+      - name: Install Functions dependencies
+        run: npm install --prefix functions --no-audit --no-fund
+      - name: Run geometry regression tests
+        run: npm test --prefix functions
+      - name: Syntax-check callable function
+        run: node --check functions/index.js
