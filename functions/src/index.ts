@@ -69,8 +69,8 @@ export const activateServiceLocation = onCall({ region: "asia-south1" }, async (
   const initial = await locationRef.get();
   if (!initial.exists) throw new HttpsError("not-found", "Service location was not found.");
   const boundaryId = initial.get("verifiedBoundaryId");
-  if (typeof boundaryId !== "string" || !boundaryId) {
-    throw new HttpsError("failed-precondition", "Location must reference its verified boundary.");
+  if (typeof boundaryId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(boundaryId)) {
+    throw new HttpsError("failed-precondition", "Location must reference a valid verified boundary ID.");
   }
   const boundaryRef = db.doc(`service_location_boundaries/${boundaryId}`);
   const boundarySnap = await boundaryRef.get();
@@ -108,8 +108,8 @@ export const activateServiceLocation = onCall({ region: "asia-south1" }, async (
       throw new HttpsError("failed-precondition", "Area Country and State must match its parent City.");
     }
     const parentBoundaryId = parentSnap.get("verifiedBoundaryId");
-    if (typeof parentBoundaryId !== "string" || !parentBoundaryId) {
-      throw new HttpsError("failed-precondition", "Parent City must reference a verified boundary.");
+    if (typeof parentBoundaryId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(parentBoundaryId)) {
+      throw new HttpsError("failed-precondition", "Parent City must reference a valid verified boundary ID.");
     }
     parentBoundaryRef = db.doc(`service_location_boundaries/${parentBoundaryId}`);
     const parentBoundarySnap = await parentBoundaryRef.get();
