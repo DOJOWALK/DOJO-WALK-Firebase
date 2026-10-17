@@ -206,3 +206,24 @@ test('rejects duplicate collection entries in snapshot scope metadata', () => {
   assert.equal(scope.malformedCollectionLists, true);
   assert.deepEqual(scope.duplicateCollectionEntries, ['collectionsIncluded:service_countries', 'completeCollections:service_areas']);
 });
+
+test('requires an explicit timezone in snapshot export timestamps', () => {
+  const names = ['service_countries','service_states','service_cities','service_areas','service_localities','service_location_boundaries'];
+  const snapshot = Object.fromEntries(names.map(name => [name, {}]));
+  snapshot.snapshotMetadata = {
+    sourceProjectId: 'synthetic-project',
+    exportedAt: '2026-10-17T12:00:00',
+    collectionsIncluded: names,
+    completeCollections: names,
+    recordCounts: Object.fromEntries(names.map(name => [name, 0])),
+  };
+  let scope = auditSnapshot(snapshot).snapshotScope;
+  assert.equal(scope.status, 'INCOMPLETE_OR_UNVERIFIED');
+  assert.equal(scope.invalidExportTimestamp, true);
+  assert.equal(scope.exportedAt, null);
+
+  snapshot.snapshotMetadata.exportedAt = '2026-10-17T12:00:00+05:30';
+  scope = auditSnapshot(snapshot).snapshotScope;
+  assert.equal(scope.invalidExportTimestamp, false);
+  assert.equal(scope.exportedAt, '2026-10-17T12:00:00+05:30');
+});
