@@ -624,3 +624,108 @@ test('clients cannot create an already-active Country or State', async () => {
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   }));
 });
+
+
+function partnerWalkerDraft(uid, overrides = {}) {
+  const stamp = new Date('2026-01-01T00:00:00Z');
+  return {
+    userId: uid,
+    fullName: 'Test Walker',
+    phone: '+919876543210',
+    dateOfBirth: new Date('1990-01-01T00:00:00Z'),
+    city: 'Greater Noida',
+    state: 'Uttar Pradesh',
+    area: 'Gaur City',
+    zoneName: 'Gaur City 1',
+    zoneNames: ['Gaur City 1'],
+    zones: ['legacy-zone-1'],
+    travelMode: 'walking',
+    status: 'in_progress',
+    isActive: false,
+    isApproved: false,
+    verificationStatus: 'pending',
+    applicationSubmitted: false,
+    createdAt: stamp,
+    updatedAt: stamp,
+    ...overrides,
+  };
+}
+
+test('Partner owner can create the exact initial onboarding draft payload', async () => {
+  const uid = 'partner-create-owner';
+  const db = env.authenticatedContext(uid).firestore();
+  const payload = partnerWalkerDraft(uid, {
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  await assertSucceeds(setDoc(doc(db, `walkers/${uid}`), payload));
+});
+
+test('Partner cannot create a walker document for another UID', async () => {
+  const db = env.authenticatedContext('partner-owner-a').firestore();
+  const payload = partnerWalkerDraft('partner-owner-b', {
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  await assertFails(setDoc(doc(db, 'walkers/partner-owner-b'), payload));
+});
+
+test('Partner owner can update existing in-progress draft location fields', async () => {
+  const uid = 'partner-location-owner';
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), `walkers/${uid}`), partnerWalkerDraft(uid));
+  });
+  const db = env.authenticatedContext(uid).firestore();
+  await assertSucceeds(updateDoc(doc(db, `walkers/${uid}`), {
+    city: 'Noida',
+    state: 'Uttar Pradesh',
+    area: 'Sector 62',
+    zoneName: 'Sector 62',
+    zoneNames: ['Sector 62'],
+    zones: ['legacy-zone-62'],
+    travelMode: 'motorcycle',
+    updatedAt: serverTimestamp(),
+  }));
+});
+
+test('Partner owner cannot change approval or status fields during draft editing', async () => {
+  const uid = 'partner-protected-owner';
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), `walkers/${uid}`), partnerWalkerDraft(uid));
+  });
+  const db = env.authenticatedContext(uid).firestore();
+  await assertFails(updateDoc(doc(db, `walkers/${uid}`), {
+    isApproved: true,
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(db, `walkers/${uid}`), {
+    status: 'approved',
+    updatedAt: serverTimestamp(),
+  }));
+});
+
+test('Partner cannot mark an application submitted through an ordinary draft update', async () => {
+  const uid = 'partner-submit-guard-owner';
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), `walkers/${uid}`), partnerWalkerDraft(uid));
+  });
+  const db = env.authenticatedContext(uid).firestore();
+  await assertFails(updateDoc(doc(db, `walkers/${uid}`), {
+    applicationSubmitted: true,
+    updatedAt: serverTimestamp(),
+  }));
+});
+
+test('Partner can submit an in-progress application only through the explicit review transition', async () => {
+  const uid = 'partner-submit-transition-owner';
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), `walkers/${uid}`), partnerWalkerDraft(uid));
+  });
+  const db = env.authenticatedContext(uid).firestore();
+  await assertSucceeds(updateDoc(doc(db, `walkers/${uid}`), {
+    status: 'under_review',
+    applicationSubmitted: true,
+    submittedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }));
+});
