@@ -10,6 +10,19 @@ function asBoundary(data: FirebaseFirestore.DocumentData | undefined): BoundaryD
   return (data ?? {}) as BoundaryDoc;
 }
 
+function isValidVerificationTimestamp(value: unknown): boolean {
+  if (value instanceof Date) return Number.isFinite(value.getTime());
+  if (!value || typeof value !== "object") return false;
+  const toDate = (value as { toDate?: unknown }).toDate;
+  if (typeof toDate !== "function") return false;
+  try {
+    const date = toDate.call(value);
+    return date instanceof Date && Number.isFinite(date.getTime());
+  } catch {
+    return false;
+  }
+}
+
 function requireVerifiedBoundary(
   boundaryData: FirebaseFirestore.DocumentData | undefined,
   boundaryId: string,
@@ -22,7 +35,7 @@ function requireVerifiedBoundary(
       typeof boundary.sourceName !== "string" || !boundary.sourceName.trim() ||
       typeof boundary.sourceReference !== "string" || !boundary.sourceReference.trim() ||
       typeof boundary.verifiedBy !== "string" || !boundary.verifiedBy.trim() ||
-      !boundary.verifiedAt) {
+      !isValidVerificationTimestamp(boundary.verifiedAt)) {
     throw new HttpsError("failed-precondition", "A matching verified boundary is required.");
   }
   try {
