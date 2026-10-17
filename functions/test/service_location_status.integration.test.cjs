@@ -74,10 +74,10 @@ test("status callable enforces admin access and active-child guards", async (t) 
     assert.deepEqual(result, { ok: true, locationId: ids.inactiveArea, locationType: "area", isActive: false });
   });
   await t.test("Country and State activation require active parent chain", async () => {
+    await db.doc(`service_states/${ids.state}`).update({ isActive: false });
     await db.doc(`service_countries/${ids.country}`).update({ isActive: false });
     await expectCode(invoke(ids.admin, "state", ids.state, true), "failed-precondition");
     await db.doc(`service_countries/${ids.country}`).update({ isActive: true });
-    await db.doc(`service_states/${ids.state}`).update({ isActive: false });
     const result = await invoke(ids.admin, "state", ids.state, true);
     assert.equal(result.isActive, true);
     assert.equal((await db.doc(`service_states/${ids.state}`).get()).get("isActive"), true);
