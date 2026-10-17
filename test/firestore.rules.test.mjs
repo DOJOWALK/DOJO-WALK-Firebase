@@ -729,3 +729,53 @@ test('Partner can submit an in-progress application only through the explicit re
     updatedAt: serverTimestamp(),
   }));
 });
+
+
+test('Partner submission rejects an invalid target status', async () => {
+  const uid = 'partner-invalid-target-status';
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), `walkers/${uid}`), partnerWalkerDraft(uid));
+  });
+  const db = env.authenticatedContext(uid).firestore();
+  await assertFails(updateDoc(doc(db, `walkers/${uid}`), {
+    status: 'approved',
+    applicationSubmitted: true,
+    submittedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }));
+});
+
+test('Partner submission rejects unauthorized extra fields', async () => {
+  const uid = 'partner-submit-extra-field';
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), `walkers/${uid}`), partnerWalkerDraft(uid));
+  });
+  const db = env.authenticatedContext(uid).firestore();
+  await assertFails(updateDoc(doc(db, `walkers/${uid}`), {
+    status: 'under_review',
+    applicationSubmitted: true,
+    submittedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    isAdmin: true,
+  }));
+});
+
+test('Partner cannot submit the same application twice', async () => {
+  const uid = 'partner-submit-twice';
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), `walkers/${uid}`), partnerWalkerDraft(uid));
+  });
+  const db = env.authenticatedContext(uid).firestore();
+  await assertSucceeds(updateDoc(doc(db, `walkers/${uid}`), {
+    status: 'under_review',
+    applicationSubmitted: true,
+    submittedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(db, `walkers/${uid}`), {
+    status: 'under_review',
+    applicationSubmitted: true,
+    submittedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }));
+});
