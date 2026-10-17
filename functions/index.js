@@ -12,7 +12,7 @@ const LOCATION_COLLECTIONS = {
   area: 'service_areas',
 };
 
-exports.verifyServiceLocationBoundary = onCall({ enforceAppCheck: true }, async (request) => {
+exports.verifyServiceLocationBoundary = onCall(async (request) => {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Sign in as an administrator first.');
   }
