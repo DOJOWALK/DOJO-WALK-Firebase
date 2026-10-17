@@ -83,3 +83,39 @@ test("status callable enforces admin access and active-child guards", async (t) 
     assert.equal((await db.doc(`service_states/${ids.state}`).get()).get("isActive"), true);
   });
 });
+
+
+test("concurrent Country deactivation and State activation cannot both succeed", async (t) => {
+  const suffix = randomUUID().replace(/-/g, "").slice(0, 12);
+  const adminId = `status-race-admin-${suffix}`;
+  const countryId = `status-race-country-${suffix}`;
+  const stateId = `status-race-state-${suffix}`;
+  t.after(async () => {
+    await Promise.all([
+      db.doc(`admin_users/${adminId}`).delete().catch(() => undefined),
+      db.doc(`service_countries/${countryId}`).delete().catch(() => undefined),
+      db.doc(`service_states/${stateId}`).delete().catch(() => undefined),
+    ]);
+  });
+  await Promise.all([
+    db.doc(`admin_users/${adminId}`).set({ isActive: true, role: "super_admin" }),
+    db.doc(`service_countries/${countryId}`).set({ isActive: true }),
+    db.doc(`service_states/${stateId}`).set({ countryId, isActive: false }),
+  ]);
+  const results = await Promise.allSettled([
+    invoke(adminId, "country", countryId, false),
+    invoke(adminId, "state", stateId, true),
+  ]);
+  const country = await db.doc(`service_countries/${countryId}`).get();
+  const state = await db.doc(`service_states/${stateId}`).get();
+  assert.equal(
+    results.filter((result) => result.status === "fulfilled").length,
+    1,
+    "exactly one competing transition should succeed",
+  );
+  if (state.get("isActive") === true) {
+    assert.equal(country.get("isActive"), true, "active State must never have an inactive Country");
+  } else {
+    assert.equal(country.get("isActive"), false, "if Country deactivation wins, State must remain inactive");
+  }
+});
