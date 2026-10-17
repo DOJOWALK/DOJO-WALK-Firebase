@@ -75,3 +75,8 @@ Snapshot metadata `exportedAt` must be an ISO-style timestamp with seconds and a
 ## Step 105 — Strict export timestamp calendar/time validation
 
 The offline snapshot auditor requires an explicit timezone and rejects impossible calendar dates, invalid day-of-month values, hours above 23, minutes/seconds above 59, and malformed timezone offsets. A leap-day timestamp is covered as a valid regression case. This validates timestamp syntax/components only; it does not authenticate the export or establish the exporter's clock accuracy.
+
+
+## Step 106 — Timezone offset bounds
+
+Snapshot export timestamps now reject offsets larger than ±14:00 and reject non-zero minutes at a 14-hour offset. Regression tests cover +15:00 and +14:01 rejection and +14:00 acceptance. This is format validation only and does not authenticate export provenance.
