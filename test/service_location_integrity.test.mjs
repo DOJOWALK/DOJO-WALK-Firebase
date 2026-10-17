@@ -251,3 +251,24 @@ test('rejects impossible calendar dates and out-of-range time components in snap
   assert.equal(scope.invalidExportTimestamp, false);
   assert.equal(scope.exportedAt, '2024-02-29T23:59:59Z');
 });
+
+
+test('enforces ISO timezone offset bounds in snapshot timestamps', () => {
+  const names = ['service_countries','service_states','service_cities','service_areas','service_localities','service_location_boundaries'];
+  const snapshot = Object.fromEntries(names.map(name => [name, {}]));
+  snapshot.snapshotMetadata = {
+    sourceProjectId: 'synthetic-project',
+    exportedAt: '2026-10-17T12:00:00+15:00',
+    collectionsIncluded: names,
+    completeCollections: names,
+    recordCounts: Object.fromEntries(names.map(name => [name, 0])),
+  };
+  let scope = auditSnapshot(snapshot).snapshotScope;
+  assert.equal(scope.invalidExportTimestamp, true);
+  snapshot.snapshotMetadata.exportedAt = '2026-10-17T12:00:00+14:01';
+  scope = auditSnapshot(snapshot).snapshotScope;
+  assert.equal(scope.invalidExportTimestamp, true);
+  snapshot.snapshotMetadata.exportedAt = '2026-10-17T12:00:00+14:00';
+  scope = auditSnapshot(snapshot).snapshotScope;
+  assert.equal(scope.invalidExportTimestamp, false);
+});
