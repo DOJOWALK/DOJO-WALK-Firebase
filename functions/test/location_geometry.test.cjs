@@ -100,7 +100,7 @@ test("non-adjacent vertex touching another edge is rejected", () => {
     { lat: 0, lng: 0 },
     { lat: 0, lng: 4 },
     { lat: 4, lng: 4 },
-    { lat: 2, lng: 0 },
+    { lat: 0, lng: 2 },
     { lat: 4, lng: 0 },
   ])), /BOUNDARY_POLYGON_INVALID/);
 });
