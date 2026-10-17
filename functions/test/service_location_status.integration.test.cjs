@@ -130,3 +130,55 @@ test("concurrent Country deactivation and State activation cannot both succeed",
     assert.equal(country.get("isActive"), false, "if Country deactivation wins, State must remain inactive");
   }
 });
+
+
+test("concurrent Area deactivation and Locality activation cannot both succeed", async (t) => {
+  const suffix = randomUUID().replace(/-/g, "").slice(0, 12);
+  const ids = {
+    admin: `status-locality-race-admin-${suffix}`,
+    country: `status-locality-race-country-${suffix}`,
+    state: `status-locality-race-state-${suffix}`,
+    city: `status-locality-race-city-${suffix}`,
+    area: `status-locality-race-area-${suffix}`,
+    locality: `status-locality-race-locality-${suffix}`,
+  };
+  const paths = [
+    `admin_users/${ids.admin}`, `service_countries/${ids.country}`,
+    `service_states/${ids.state}`, `service_cities/${ids.city}`,
+    `service_areas/${ids.area}`, `service_localities/${ids.locality}`,
+  ];
+  t.after(async () => {
+    await Promise.all(paths.map((path) => db.doc(path).delete().catch(() => undefined)));
+  });
+  await Promise.all([
+    db.doc(`admin_users/${ids.admin}`).set({ isActive: true, role: "super_admin" }),
+    db.doc(`service_countries/${ids.country}`).set({ isActive: true }),
+    db.doc(`service_states/${ids.state}`).set({ countryId: ids.country, isActive: true }),
+    db.doc(`service_cities/${ids.city}`).set({
+      countryId: ids.country, stateId: ids.state, isServiceActive: true,
+    }),
+    db.doc(`service_areas/${ids.area}`).set({
+      countryId: ids.country, stateId: ids.state, cityId: ids.city, isServiceActive: true,
+    }),
+    db.doc(`service_localities/${ids.locality}`).set({
+      countryId: ids.country, stateId: ids.state, cityId: ids.city,
+      areaId: ids.area, isServiceActive: false,
+    }),
+  ]);
+  const results = await Promise.allSettled([
+    invoke(ids.admin, "area", ids.area, false),
+    invoke(ids.admin, "locality", ids.locality, true),
+  ]);
+  const area = await db.doc(`service_areas/${ids.area}`).get();
+  const locality = await db.doc(`service_localities/${ids.locality}`).get();
+  assert.equal(
+    results.filter((result) => result.status === "fulfilled").length,
+    1,
+    "exactly one competing transition should succeed",
+  );
+  if (locality.get("isServiceActive") === true) {
+    assert.equal(area.get("isServiceActive"), true, "active Locality must never have an inactive Area");
+  } else {
+    assert.equal(area.get("isServiceActive"), false, "if Area deactivation wins, Locality must remain inactive");
+  }
+});
