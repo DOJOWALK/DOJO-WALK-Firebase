@@ -77,5 +77,20 @@ export function auditSnapshot(snapshot) {
     else if (area.countryId!==d.countryId || area.stateId!==d.stateId || area.cityId!==d.cityId) add('locality',id,'AREA_ANCESTRY_MISMATCH','Locality Country/State/City IDs do not match its Area');
     if (d.isServiceActive===true && (c[d.countryId]?.isActive!==true || st?.isActive!==true || city?.isServiceActive!==true || area?.isServiceActive!==true)) add('locality',id,'ACTIVE_UNDER_INACTIVE_ANCESTOR','Active Locality has an inactive or missing ancestor');
   }
-  return {audit:'DOJO WALK service-location hierarchy integrity',mode:'read-only offline snapshot; no Firebase connection; no source writes',counts,totalRecords:Object.values(counts).reduce((sum,n)=>sum+n,0),issueCount:issues.length,issues};
+  const issueCountsByCode = Object.fromEntries(
+    [...new Set(issues.map(issue => issue.code))].sort().map(code => [code, issues.filter(issue => issue.code === code).length]),
+  );
+  const issueCountsByType = Object.fromEntries(
+    [...new Set(issues.map(issue => issue.type))].sort().map(type => [type, issues.filter(issue => issue.type === type).length]),
+  );
+  return {
+    audit: 'DOJO WALK service-location hierarchy integrity',
+    mode: 'read-only offline snapshot; no Firebase connection; no source writes',
+    counts,
+    totalRecords: Object.values(counts).reduce((sum,n) => sum + n, 0),
+    issueCount: issues.length,
+    issueCountsByCode,
+    issueCountsByType,
+    issues,
+  };
 }
