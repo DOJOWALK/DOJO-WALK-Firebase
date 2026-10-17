@@ -157,6 +157,56 @@ test('direct city activation with a mismatched boundary is denied', async () => 
   }));
 });
 
+test('admin can bind a verified boundary to an inactive City', async () => {
+  const db = env.authenticatedContext('super-active').firestore();
+  await assertSucceeds(setDoc(doc(db, 'service_cities/city-1'), {
+    countryId: 'india', stateId: 'up', name: 'Example City',
+    isServiceActive: false,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(updateDoc(doc(db, 'service_cities/city-1'), {
+    verifiedBoundaryId: 'city-boundary',
+    updatedAt: serverTimestamp(),
+  }));
+});
+
+test('admin can bind a verified boundary to an inactive Area under an active City', async () => {
+  const db = env.authenticatedContext('super-active').firestore();
+  await assertSucceeds(setDoc(doc(db, 'service_areas/area-1'), {
+    countryId: 'india', stateId: 'up', cityId: 'city-parent',
+    name: 'Example Area', isServiceActive: false,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(setDoc(doc(db, 'service_location_boundaries/area-boundary'), {
+    locationId: 'area-1', locationType: 'area',
+    points: [{ lat: 28.51, lng: 77.31 }, { lat: 28.52, lng: 77.31 }, { lat: 28.52, lng: 77.32 }],
+    sourceType: 'governmentGis', sourceName: 'Test official area source',
+    sourceReference: 'AREA-BIND-REF', verificationStatus: 'verified',
+    verifiedBy: 'super-active', verifiedAt: serverTimestamp(),
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(updateDoc(doc(db, 'service_areas/area-1'), {
+    verifiedBoundaryId: 'area-boundary',
+    updatedAt: serverTimestamp(),
+  }));
+});
+
+test('active City boundary reference cannot be rebound by a client transaction', async () => {
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'service_cities/city-active-ref'), {
+      countryId: 'india', stateId: 'up', name: 'Active City',
+      verifiedBoundaryId: 'city-boundary', isServiceActive: true,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+  });
+  const db = env.authenticatedContext('super-active').firestore();
+  await assertFails(updateDoc(doc(db, 'service_cities/city-active-ref'), {
+    verifiedBoundaryId: 'replacement-boundary',
+    updatedAt: serverTimestamp(),
+  }));
+});
+
 test('verified boundary cannot be edited or deleted', async () => {
   const db = env.authenticatedContext('super-active').firestore();
   await assertFails(updateDoc(doc(db, 'service_location_boundaries/city-boundary'), {
