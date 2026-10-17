@@ -611,6 +611,7 @@ service cloud.firestore {
         && request.resource.data.get('isActive', false) == resource.data.get('isActive', false)
         && request.resource.data.get('isApproved', false) == resource.data.get('isApproved', false)
         && request.resource.data.get('verificationStatus', '') == resource.data.get('verificationStatus', '')
+        && request.resource.data.get('applicationSubmitted', false) == resource.data.get('applicationSubmitted', false)
         && validOptionalString(request.resource.data, 'fullName')
         && validOptionalString(request.resource.data, 'email')
         && validOptionalString(request.resource.data, 'gender')
