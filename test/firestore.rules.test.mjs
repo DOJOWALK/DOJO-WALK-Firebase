@@ -506,6 +506,46 @@ test('clients cannot directly deactivate Country, State, City, or Area', async (
   }));
 });
 
+test('service location parent links cannot be changed after creation', async () => {
+  await env.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    const stamp = new Date('2026-01-01T00:00:00Z');
+    await setDoc(doc(db, 'service_states/state-parent-locked'), {
+      countryId: 'country-a', name: 'State', isActive: false,
+      createdAt: stamp, updatedAt: stamp,
+    });
+    await setDoc(doc(db, 'service_cities/city-parent-locked'), {
+      countryId: 'country-a', stateId: 'state-parent-locked',
+      name: 'City', isServiceActive: false,
+      createdAt: stamp, updatedAt: stamp,
+    });
+    await setDoc(doc(db, 'service_areas/area-parent-locked'), {
+      countryId: 'country-a', stateId: 'state-parent-locked',
+      cityId: 'city-parent-locked', name: 'Area', isServiceActive: false,
+      createdAt: stamp, updatedAt: stamp,
+    });
+    await setDoc(doc(db, 'service_localities/locality-parent-locked'), {
+      countryId: 'country-a', stateId: 'state-parent-locked',
+      cityId: 'city-parent-locked', areaId: 'area-parent-locked',
+      name: 'Locality', isServiceActive: false,
+      createdAt: stamp, updatedAt: stamp,
+    });
+  });
+  const db = env.authenticatedContext('super-active').firestore();
+  await assertFails(updateDoc(doc(db, 'service_states/state-parent-locked'), {
+    countryId: 'country-b', updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(db, 'service_cities/city-parent-locked'), {
+    stateId: 'state-b', updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(db, 'service_areas/area-parent-locked'), {
+    cityId: 'city-b', updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(db, 'service_localities/locality-parent-locked'), {
+    areaId: 'area-b', updatedAt: serverTimestamp(),
+  }));
+});
+
 test('clients cannot create an already-active Country or State', async () => {
   const db = env.authenticatedContext('super-active').firestore();
   await assertFails(setDoc(doc(db, 'service_countries/country-created-active'), {
