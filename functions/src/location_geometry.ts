@@ -83,10 +83,10 @@ function assertSimpleNonZeroAreaRing(ring: number[][]): void {
   const cross = (a: number[], b: number[], c: number[]) =>
     (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
   const onSegment = (a: number[], b: number[], p: number[]) =>
-    p[0] >= Math.min(a[0], b[0]) - 1e-12 &&
-    p[0] <= Math.max(a[0], b[0]) + 1e-12 &&
-    p[1] >= Math.min(a[1], b[1]) - 1e-12 &&
-    p[1] <= Math.max(a[1], b[1]) + 1e-12;
+    p[0] >= Math.min(a[0], b[0]) &&
+    p[0] <= Math.max(a[0], b[0]) &&
+    p[1] >= Math.min(a[1], b[1]) &&
+    p[1] <= Math.max(a[1], b[1]);
   const intersects = (a: number[], b: number[], c: number[], d: number[]) => {
     const abC = cross(a, b, c);
     const abD = cross(a, b, d);
