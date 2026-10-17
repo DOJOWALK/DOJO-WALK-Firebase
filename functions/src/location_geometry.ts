@@ -70,12 +70,19 @@ function assertSimpleNonZeroAreaRing(ring: number[][]): void {
 
   // ring is closed at this point. Shoelace area catches collinear/zero-area rings.
   let twiceArea = 0;
+  let areaProductMagnitude = 0;
   for (let i = 0; i < ring.length - 1; i++) {
     const [x1, y1] = ring[i];
     const [x2, y2] = ring[i + 1];
-    twiceArea += x1 * y2 - x2 * y1;
+    const left = x1 * y2;
+    const right = x2 * y1;
+    twiceArea += left - right;
+    areaProductMagnitude += Math.abs(left) + Math.abs(right);
   }
-  if (!Number.isFinite(twiceArea) || Math.abs(twiceArea) <= 1e-12) {
+  // Compare area against accumulated floating-point round-off, not a fixed
+  // degree-squared epsilon that rejects small but representable polygons.
+  const areaErrorBound = Number.EPSILON * 16 * areaProductMagnitude;
+  if (!Number.isFinite(twiceArea) || Math.abs(twiceArea) <= areaErrorBound) {
     throw new Error("BOUNDARY_POLYGON_INVALID");
   }
 
