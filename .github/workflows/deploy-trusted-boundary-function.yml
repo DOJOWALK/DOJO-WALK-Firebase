@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: 'Type DEPLOY_REVIEW_FUNCTION to authorize deploying this callable'
+        description: "Type DEPLOY_REVIEW_FUNCTION to authorize deploying this callable"
         required: true
         type: string
       target_project:
-        description: 'Must match the intended Firebase project ID'
+        description: "Must match the intended Firebase project ID"
         required: true
         type: string
 
@@ -21,21 +21,23 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy only reviewServiceLocationBoundary
-    if: ${{ inputs.confirmation == 'DEPLOY_REVIEW_FUNCTION' && inputs.target_project == 'dojo-platform-b68a3' }}
+    name: Test and deploy only reviewServiceLocationBoundary
+    if: ${{ github.ref == 'refs/heads/main' && inputs.confirmation == 'DEPLOY_REVIEW_FUNCTION' && inputs.target_project == 'dojo-platform-b68a3' }}
     runs-on: ubuntu-latest
     environment: production
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
-      - name: Checkout
+      - name: Checkout main
         uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
-      - name: Setup Java for Firebase tooling
+      - name: Setup Java for Firestore Emulator
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -45,9 +47,9 @@ jobs:
         working-directory: functions
         run: npm ci --no-audit --no-fund
 
-      - name: Build and run local geometry tests
+      - name: Build and run Functions tests with Firestore Emulator
         working-directory: functions
-        run: npm test
+        run: npx --yes firebase-tools emulators:exec --only firestore --project demo-dojo-rules-tests "npm test"
 
       - name: Authenticate Firebase
         env:
