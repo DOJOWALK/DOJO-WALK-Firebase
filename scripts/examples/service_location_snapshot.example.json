@@ -13,6 +13,7 @@
   "service_areas": {
     "example-area": { "name": "Example Area", "countryId": "example-country", "stateId": "example-state", "cityId": "example-city", "isServiceActive": false }
   },
+  "service_location_boundaries": {},
   "service_localities": {
     "example-locality": { "name": "Example Locality", "countryId": "example-country", "stateId": "example-state", "cityId": "example-city", "areaId": "example-area", "isServiceActive": false }
   }
