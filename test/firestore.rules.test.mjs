@@ -270,3 +270,69 @@ test('area cannot be activated when its parent city is inactive', async () => {
     isServiceActive: true, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   }));
 });
+
+
+test('active city identity and verified boundary reference cannot be changed by clients', async () => {
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'service_cities/city-1'), {
+      countryId: 'india', stateId: 'up', name: 'Active City',
+      verifiedBoundaryId: 'city-boundary', isServiceActive: true,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+  });
+  const db = env.authenticatedContext('super-active').firestore();
+  await assertFails(updateDoc(doc(db, 'service_cities/city-1'), {
+    stateId: 'delhi', updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(db, 'service_cities/city-1'), {
+    verifiedBoundaryId: 'another-boundary', updatedAt: serverTimestamp(),
+  }));
+});
+
+test('active area parent and verified boundary reference cannot be changed by clients', async () => {
+  await env.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'service_location_boundaries/active-area-boundary'), {
+      locationId: 'active-area', locationType: 'area',
+      points: [{ lat: 28.51, lng: 77.31 }, { lat: 28.52, lng: 77.31 }, { lat: 28.52, lng: 77.32 }],
+      sourceType: 'governmentGis', sourceName: 'Test official area source',
+      sourceReference: 'ACTIVE-AREA-REF', verificationStatus: 'verified',
+      verifiedBy: 'super-active', verifiedAt: new Date('2026-01-01T00:00:00Z'),
+      createdAt: new Date('2026-01-01T00:00:00Z'), updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+    await setDoc(doc(db, 'service_areas/active-area'), {
+      countryId: 'india', stateId: 'up', cityId: 'city-parent', name: 'Active Area',
+      verifiedBoundaryId: 'active-area-boundary', isServiceActive: true,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+  });
+  const db = env.authenticatedContext('super-active').firestore();
+  await assertFails(updateDoc(doc(db, 'service_areas/active-area'), {
+    cityId: 'other-city', updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(db, 'service_areas/active-area'), {
+    verifiedBoundaryId: 'another-area-boundary', updatedAt: serverTimestamp(),
+  }));
+});
+
+test('clients cannot create, update, or delete service location activation audit records', async () => {
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'service_location_activation_audit/audit-existing'), {
+      actorUid: 'super-active', locationId: 'city-1', locationType: 'city',
+      boundaryId: 'city-boundary', result: 'activated',
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+    });
+  });
+  const db = env.authenticatedContext('super-active').firestore();
+  const record = {
+    actorUid: 'super-active', locationId: 'city-1', locationType: 'city',
+    boundaryId: 'city-boundary', result: 'activated', createdAt: serverTimestamp(),
+  };
+  await assertFails(setDoc(doc(db, 'service_location_activation_audit/audit-forged'), record));
+  await assertFails(updateDoc(doc(db, 'service_location_activation_audit/audit-existing'), {
+    result: 'forged', 
+  }));
+  await assertFails(deleteDoc(doc(db, 'service_location_activation_audit/audit-existing')));
+});
