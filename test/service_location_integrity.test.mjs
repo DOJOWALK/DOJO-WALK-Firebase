@@ -151,6 +151,29 @@ test('rejects non-array collection-list declarations in snapshot metadata', () =
   assert.equal(scope.malformedCollectionLists, true);
 });
 
+test('rejects malformed record-count metadata and unknown count keys', () => {
+  const names = ['service_countries','service_states','service_cities','service_areas','service_localities','service_location_boundaries'];
+  const snapshot = Object.fromEntries(names.map(name => [name, {}]));
+  const counts = Object.fromEntries(names.map(name => [name, 0]));
+  snapshot.snapshotMetadata = {
+    sourceProjectId: 'synthetic-project',
+    exportedAt: '2026-10-17T00:00:00Z',
+    collectionsIncluded: names,
+    completeCollections: names,
+    recordCounts: { ...counts, unexpected_collection: 0 },
+  };
+  let scope = auditSnapshot(snapshot).snapshotScope;
+  assert.equal(scope.status, 'INCOMPLETE_OR_UNVERIFIED');
+  assert.equal(scope.malformedRecordCounts, true);
+  assert.deepEqual(scope.unknownRecordCountKeys, ['unexpected_collection']);
+
+  snapshot.snapshotMetadata.recordCounts = 'not-a-count-map';
+  scope = auditSnapshot(snapshot).snapshotScope;
+  assert.equal(scope.status, 'INCOMPLETE_OR_UNVERIFIED');
+  assert.equal(scope.malformedRecordCounts, true);
+  assert.deepEqual(scope.unknownRecordCountKeys, []);
+});
+
 test('rejects invalid export timestamps and unknown collection names in scope metadata', () => {
   const names = ['service_countries','service_states','service_cities','service_areas','service_localities','service_location_boundaries'];
   const snapshot = Object.fromEntries(names.map(name => [name, {}]));
