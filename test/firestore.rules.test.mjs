@@ -242,6 +242,43 @@ test('active City boundary reference cannot be rebound by a client transaction',
   }));
 });
 
+
+test('clients cannot directly verify or reject a pending boundary', async () => {
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'service_location_boundaries/pending-review-boundary'), {
+      locationId: 'city-pending',
+      locationType: 'city',
+      points: [{ lat: 28.5, lng: 77.3 }, { lat: 28.6, lng: 77.3 }, { lat: 28.6, lng: 77.4 }],
+      sourceType: 'governmentGis',
+      sourceName: 'Test official source',
+      sourceReference: 'TEST-PENDING-REF',
+      verificationStatus: 'pending',
+      verifiedBy: null,
+      verifiedAt: null,
+      verificationNotes: null,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+  });
+
+  const db = env.authenticatedContext('super-active').firestore();
+  const boundary = doc(db, 'service_location_boundaries/pending-review-boundary');
+  await assertFails(updateDoc(boundary, {
+    verificationStatus: 'verified',
+    verifiedBy: 'super-active',
+    verifiedAt: serverTimestamp(),
+    verificationNotes: 'Direct client verification attempt',
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(boundary, {
+    verificationStatus: 'rejected',
+    verifiedBy: 'super-active',
+    verifiedAt: null,
+    verificationNotes: 'Direct client rejection attempt',
+    updatedAt: serverTimestamp(),
+  }));
+});
+
 test('verified boundary cannot be edited or deleted', async () => {
   const db = env.authenticatedContext('super-active').firestore();
   await assertFails(updateDoc(doc(db, 'service_location_boundaries/city-boundary'), {
