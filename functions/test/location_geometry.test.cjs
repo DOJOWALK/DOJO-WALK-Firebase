@@ -120,3 +120,12 @@ test("near-parallel edges with a tiny positive gap are not treated as intersecti
     { lat: 0, lng: 4 },
   ])));
 });
+
+test("small but representable polygon is not rejected by a fixed degree-squared area threshold", () => {
+  assert.doesNotThrow(() => polygonFromBoundary(boundary("small-representable-polygon", "area", [
+    { lat: 0, lng: 0 },
+    { lat: 0, lng: 1e-7 },
+    { lat: 1e-7, lng: 1e-7 },
+    { lat: 1e-7, lng: 0 },
+  ])));
+});
