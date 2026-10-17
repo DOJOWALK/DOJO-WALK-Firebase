@@ -95,13 +95,15 @@ export function auditSnapshot(snapshot) {
     missingCollections: [...collections],
   };
   if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
-    const included = Array.isArray(metadata.collectionsIncluded) ? metadata.collectionsIncluded : [];
-    const complete = Array.isArray(metadata.completeCollections) ? metadata.completeCollections : [];
+    const includedIsArray = Array.isArray(metadata.collectionsIncluded);
+    const completeIsArray = Array.isArray(metadata.completeCollections);
+    const included = includedIsArray ? metadata.collectionsIncluded : [];
+    const complete = completeIsArray ? metadata.completeCollections : [];
     const declared = metadata.recordCounts && typeof metadata.recordCounts === 'object' && !Array.isArray(metadata.recordCounts)
       ? metadata.recordCounts : {};
     const validNames = value => value.every(name => typeof name === 'string' && collections.includes(name));
-    const unknownCollections = [...new Set([...included, ...complete].filter(name => !collections.includes(name)))];
-    const malformedCollectionLists = !validNames(included) || !validNames(complete);
+    const unknownCollections = [...new Set([...included, ...complete].filter(name => typeof name === 'string' && !collections.includes(name)))];
+    const malformedCollectionLists = !includedIsArray || !completeIsArray || !validNames(included) || !validNames(complete);
     const missingCollections = collections.filter(name => !included.includes(name) || !complete.includes(name));
     const countMismatches = collections.filter(name =>
       !Number.isInteger(declared[name]) || declared[name] < 0 || declared[name] !== counts[name]);
