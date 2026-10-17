@@ -37,6 +37,18 @@ test("fewer than three distinct points are rejected", () => {
   ])), /BOUNDARY_NEEDS_THREE_DISTINCT_POINTS/);
 });
 
+test("self-intersecting bow-tie boundary is rejected", () => {
+  assert.throws(() => polygonFromBoundary(boundary("bow-tie", "area", [
+    { lat: 0, lng: 0 }, { lat: 2, lng: 2 }, { lat: 0, lng: 2 }, { lat: 2, lng: 0 },
+  ])), /BOUNDARY_POLYGON_INVALID/);
+});
+
+test("collinear boundary points are rejected as an invalid polygon", () => {
+  assert.throws(() => polygonFromBoundary(boundary("collinear", "area", [
+    { lat: 0, lng: 0 }, { lat: 1, lng: 1 }, { lat: 2, lng: 2 },
+  ])), /BOUNDARY_POLYGON_INVALID/);
+});
+
 test("Firestore GeoPoint-shaped latitude/longitude boundary is accepted", () => {
   const firestoreCity = boundary("city-firestore", "city", [
     { latitude: 0, longitude: 0 },
