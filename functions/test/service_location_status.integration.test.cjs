@@ -9,7 +9,7 @@ const { getFirestore } = require("firebase-admin/firestore");
 const { setServiceLocationStatus } = require("../lib/index");
 const db = getFirestore();
 const suffix = randomUUID().replace(/-/g, "").slice(0, 12);
-const ids = Object.fromEntries(["admin","ordinary","country","state","city","area","locality","inactiveArea"]
+const ids = Object.fromEntries(["admin","ordinary","country","state","city","area","locality","inactiveArea","pendingLocality"]
   .map((key) => [key, `status-${key}-${suffix}`]));
 
 async function invoke(uid, locationType, locationId, isActive) {
@@ -30,7 +30,7 @@ test("status callable enforces admin access and active-child guards", async (t) 
     `admin_users/${ids.admin}`, `admin_users/${ids.ordinary}`,
     `service_countries/${ids.country}`, `service_states/${ids.state}`,
     `service_cities/${ids.city}`, `service_areas/${ids.area}`,
-    `service_areas/${ids.inactiveArea}`, `service_localities/${ids.locality}`,
+    `service_areas/${ids.inactiveArea}`, `service_localities/${ids.locality}`, `service_localities/${ids.pendingLocality}`,
   ];
   t.after(async () => {
     await Promise.all(paths.map((path) => db.doc(path).delete().catch(() => undefined)));
@@ -46,7 +46,8 @@ test("status callable enforces admin access and active-child guards", async (t) 
     db.doc(`service_cities/${ids.city}`).set({ countryId: ids.country, stateId: ids.state, isServiceActive: true }),
     db.doc(`service_areas/${ids.area}`).set({ countryId: ids.country, stateId: ids.state, cityId: ids.city, isServiceActive: true }),
     db.doc(`service_areas/${ids.inactiveArea}`).set({ countryId: ids.country, stateId: ids.state, cityId: ids.city, isServiceActive: false }),
-    db.doc(`service_localities/${ids.locality}`).set({ areaId: ids.area, isServiceActive: true }),
+    db.doc(`service_localities/${ids.locality}`).set({ countryId: ids.country, stateId: ids.state, cityId: ids.city, areaId: ids.area, isServiceActive: true }),
+    db.doc(`service_localities/${ids.pendingLocality}`).set({ countryId: ids.country, stateId: ids.state, cityId: ids.city, areaId: ids.area, isServiceActive: false }),
   ]);
 
   await t.test("rejects unauthenticated and non-admin callers", async () => {
@@ -81,6 +82,16 @@ test("status callable enforces admin access and active-child guards", async (t) 
     const result = await invoke(ids.admin, "state", ids.state, true);
     assert.equal(result.isActive, true);
     assert.equal((await db.doc(`service_states/${ids.state}`).get()).get("isActive"), true);
+  });
+
+  await t.test("Locality activation validates and guard-locks the complete active ancestry", async () => {
+    const result = await invoke(ids.admin, "locality", ids.pendingLocality, true);
+    assert.equal(result.isActive, true);
+    assert.equal((await db.doc(`service_localities/${ids.pendingLocality}`).get()).get("isServiceActive"), true);
+    await db.doc(`service_localities/${ids.pendingLocality}`).update({ isServiceActive: false });
+    await db.doc(`service_areas/${ids.inactiveArea}`).update({ isServiceActive: false });
+    await db.doc(`service_localities/${ids.pendingLocality}`).update({ areaId: ids.inactiveArea });
+    await expectCode(invoke(ids.admin, "locality", ids.pendingLocality, true), "failed-precondition");
   });
 });
 
