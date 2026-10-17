@@ -118,7 +118,7 @@ test('unauthenticated reads and writes to service locations are denied', async (
 
 test('active super_admin can create a valid country', async () => {
   const db = env.authenticatedContext('super-active').firestore();
-  await assertSucceeds(setDoc(doc(db, 'service_countries/india'), {
+  await assertSucceeds(setDoc(doc(db, 'service_countries/india-new'), {
     name: 'India', code: 'IN', isActive: false,
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   }));
