@@ -23,7 +23,7 @@ async function createAdmin() {
 }
 
 function indexId(collection, parentIds, name) {
-  const id = serviceLocationNameIndexId(collection, parentIds, name.trim().toLowerCase().replace(/\\s+/g, " "));
+  const id = serviceLocationNameIndexId(collection, parentIds, name.trim().toLowerCase().replace(/\s+/g, " "));
   indexes.add(id);
   return id;
 }
