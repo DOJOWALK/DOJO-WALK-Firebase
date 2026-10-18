@@ -493,6 +493,28 @@ test("callable rejects duplicate names and removes the old index on rename", asy
   assert.equal(duplicateIndex.get("documentId"), second.locationId);
 });
 
+test("country creation rejects case-insensitive and whitespace-normalized duplicates", async () => {
+  const uid = await createAdmin();
+  const existingName = `Create-Normalized-${randomUUID()}`;
+  const existing = await saveCountry(uid, existingName);
+  const duplicateName = `  ${existingName.toUpperCase()}   `;
+
+  await assert.rejects(
+    () => saveCountry(uid, duplicateName),
+    (error) => error && error.code === "already-exists",
+  );
+
+  const indexId = countryIndexId(existingName);
+  const index = await db.doc(`service_location_name_indexes/${indexId}`).get();
+  const location = await db.doc(`service_countries/${existing.locationId}`).get();
+
+  assert.equal(index.exists, true);
+  assert.equal(index.get("documentId"), existing.locationId);
+  assert.equal(index.get("name"), existingName.trim().toLowerCase());
+  assert.equal(location.exists, true);
+  assert.equal(location.get("name"), existingName);
+});
+
 test.after(async () => {
   const deletes = [];
   for (const uid of createdAdmins) deletes.push(db.doc(`admin_users/${uid}`).delete());
