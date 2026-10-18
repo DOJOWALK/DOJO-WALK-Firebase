@@ -390,6 +390,18 @@ test('import audit validates bounded strings, actor, and immutable create-only r
   await assertFails(setDoc(doc(superDb, 'service_location_imports/empty-source'), {
     ...record, source: '',
   }));
+  await assertFails(setDoc(doc(superDb, 'service_location_imports/blank-source'), {
+    ...record, source: '   ',
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_imports/blank-filename'), {
+    ...record, fileName: '   ',
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_imports/blank-status'), {
+    ...record, status: '   ',
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_imports/blank-verification'), {
+    ...record, verificationStatus: '   ',
+  }));
   await assertFails(setDoc(doc(superDb, 'service_location_imports/long-source'), {
     ...record, source: 'x'.repeat(81),
   }));
