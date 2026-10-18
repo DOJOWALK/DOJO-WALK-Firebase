@@ -11,6 +11,43 @@ export const DISTRICT_SCHEMA_COLLECTIONS = {
   area: "service_areas",
 } as const;
 
+export type CityDistrictCompatibility =
+  | "LEGACY_NO_DISTRICT"
+  | "DISTRICT_LINKED"
+  | "BROKEN_PARENT_CHAIN";
+
+/**
+ * Classify stored City ancestry without guessing a District from display names.
+ * This is a read-only helper; callers must supply trusted documents fetched
+ * from the database and still validate active status/authorization separately.
+ */
+export function classifyCityDistrictCompatibility(input: {
+  city: { countryId?: unknown; stateId?: unknown; districtId?: unknown };
+  district?: { countryId?: unknown; stateId?: unknown } | null;
+  expectedCountryId: string;
+  expectedStateId: string;
+}): CityDistrictCompatibility {
+  const { city, district, expectedCountryId, expectedStateId } = input;
+  if (
+    city.countryId !== expectedCountryId ||
+    city.stateId !== expectedStateId
+  ) return "BROKEN_PARENT_CHAIN";
+
+  if (city.districtId === undefined || city.districtId === null || city.districtId === "") {
+    return district ? "BROKEN_PARENT_CHAIN" : "LEGACY_NO_DISTRICT";
+  }
+
+  if (
+    typeof city.districtId !== "string" ||
+    !SAFE_LOCATION_ID.test(city.districtId) ||
+    !district ||
+    district.countryId !== expectedCountryId ||
+    district.stateId !== expectedStateId
+  ) return "BROKEN_PARENT_CHAIN";
+
+  return "DISTRICT_LINKED";
+}
+
 export interface DistrictParentChain {
   countryId: string;
   stateId: string;
