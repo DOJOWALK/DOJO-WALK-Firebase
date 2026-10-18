@@ -36,19 +36,30 @@ export function classifyDistrictIndexPair(input: {
   districtAware: NameIndexSnapshot;
 }): DistrictIndexPairClassification {
   const { legacy, districtAware } = input;
-  const ownerMatches = (index: NameIndexSnapshot, parents: readonly string[]) =>
+  const tupleMatches = (index: NameIndexSnapshot, parents: readonly string[]) =>
     index.exists &&
-    index.documentId === input.expectedDocumentId &&
     index.collectionPath === input.expectedCollection &&
     index.name === input.expectedName.trim().toLowerCase().replace(/\s+/g, " ") &&
     Array.isArray(index.parentIds) &&
     JSON.stringify(index.parentIds) === JSON.stringify(parents);
 
-  if (legacy.exists && !ownerMatches(legacy, input.legacyParentIds)) {
-    return { status: "LEGACY_OWNER_MISMATCH", safeToMigrate: false, reason: "Legacy index does not match the expected document, collection, name, or parent tuple." };
+  if (legacy.exists && !tupleMatches(legacy, input.legacyParentIds)) {
+    return { status: "LEGACY_OWNER_MISMATCH", safeToMigrate: false, reason: "Legacy index does not match the expected collection, name, or parent tuple." };
   }
-  if (districtAware.exists && !ownerMatches(districtAware, input.districtParentIds)) {
-    return { status: "DISTRICT_OWNER_MISMATCH", safeToMigrate: false, reason: "District-aware index does not match the expected document, collection, name, or parent tuple." };
+  if (districtAware.exists && !tupleMatches(districtAware, input.districtParentIds)) {
+    return { status: "DISTRICT_OWNER_MISMATCH", safeToMigrate: false, reason: "District-aware index does not match the expected collection, name, or parent tuple." };
+  }
+  if (legacy.exists && legacy.documentId !== input.expectedDocumentId && !districtAware.exists) {
+    return { status: "LEGACY_OWNER_MISMATCH", safeToMigrate: false, reason: "Legacy index points to a different location document." };
+  }
+  if (districtAware.exists && districtAware.documentId !== input.expectedDocumentId && !legacy.exists) {
+    return { status: "DISTRICT_OWNER_MISMATCH", safeToMigrate: false, reason: "District-aware index points to a different location document." };
+  }
+  if (legacy.exists && districtAware.exists && legacy.documentId !== districtAware.documentId) {
+    return { status: "CONFLICT_DIFFERENT_DOCUMENT", safeToMigrate: false, reason: "The two index documents point to different location documents." };
+  }
+  if (legacy.exists && districtAware.exists && legacy.documentId !== input.expectedDocumentId) {
+    return { status: "LEGACY_OWNER_MISMATCH", safeToMigrate: false, reason: "Both indexes point to the same document, but not the expected location document." };
   }
   if (!legacy.exists && !districtAware.exists) {
     return { status: "MISSING_BOTH", safeToMigrate: false, reason: "Neither canonical index exists; investigate before migration." };
