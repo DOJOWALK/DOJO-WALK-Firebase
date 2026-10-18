@@ -76,6 +76,30 @@ test("callable rejects a missing or inactive admin profile", async () => {
   );
 });
 
+test("inactive admin cannot rename an existing country or alter its index", async () => {
+  const activeUid = await createAdmin();
+  const inactiveUid = await createAdmin("admin", false);
+  const originalName = `Inactive-Rename-Original-${randomUUID()}`;
+  const replacementName = `Inactive-Rename-New-${randomUUID()}`;
+  const created = await saveCountry(activeUid, originalName);
+  const originalIndexId = countryIndexId(originalName);
+  const replacementIndexId = countryIndexId(replacementName);
+
+  await assert.rejects(
+    () => saveCountry(inactiveUid, replacementName, created.locationId),
+    (error) => error && error.code === "permission-denied",
+  );
+
+  const country = await db.doc(`service_countries/${created.locationId}`).get();
+  const originalIndex = await db.doc(`service_location_name_indexes/${originalIndexId}`).get();
+  const replacementIndex = await db.doc(`service_location_name_indexes/${replacementIndexId}`).get();
+
+  assert.equal(country.get("name"), originalName);
+  assert.equal(originalIndex.exists, true);
+  assert.equal(originalIndex.get("documentId"), created.locationId);
+  assert.equal(replacementIndex.exists, false);
+});
+
 test("callable rejects invalid payloads before writing a location", async () => {
   const uid = await createAdmin();
   const name = `Invalid-${randomUUID()}`;
