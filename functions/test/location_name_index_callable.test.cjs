@@ -236,6 +236,28 @@ test("viewer role cannot change an existing country's code", async () => {
   assert.equal(index.get("documentId"), created.locationId);
 });
 
+test("active admin can change a country code without breaking its name index", async () => {
+  const adminUid = await createAdmin("admin", true);
+  const name = `Admin-Code-Update-${randomUUID()}`;
+  const created = await saveCountry(adminUid, name);
+  const indexId = countryIndexId(name);
+
+  const result = await saveServiceLocationWithNameIndex.run(request(adminUid, {
+    locationType: "country",
+    locationId: created.locationId,
+    payload: { name, code: "XX" },
+  }));
+
+  const country = await db.doc(`service_countries/${created.locationId}`).get();
+  const index = await db.doc(`service_location_name_indexes/${indexId}`).get();
+
+  assert.equal(result.ok, true);
+  assert.equal(country.get("code"), "XX");
+  assert.equal(country.get("name"), name);
+  assert.equal(index.exists, true);
+  assert.equal(index.get("documentId"), created.locationId);
+  assert.equal(index.get("collectionPath"), "service_countries");
+});
 test("active super_admin can create a country and its name index", async () => {
   const superAdminUid = await createAdmin("super_admin", true);
   const name = `Super-Admin-Create-${randomUUID()}`;
