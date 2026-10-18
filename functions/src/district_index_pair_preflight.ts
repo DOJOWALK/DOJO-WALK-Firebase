@@ -54,7 +54,7 @@ export function classifyDistrictIndexPair(input: {
       typeof snapshot.collectionPath === "string" &&
       /^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(snapshot.collectionPath) &&
       typeof snapshot.name === "string" &&
-      snapshot.name === snapshot.name.trim().toLowerCase().replace(/\\s+/g, " ") &&
+      snapshot.name === snapshot.name.trim().toLowerCase().replace(/\s+/g, " ") &&
       snapshot.name.length > 0 && snapshot.name.length <= 120 &&
       Array.isArray(snapshot.parentIds) && snapshot.parentIds.length > 0 &&
       snapshot.parentIds.every((id) =>
