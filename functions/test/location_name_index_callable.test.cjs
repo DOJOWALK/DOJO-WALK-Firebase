@@ -563,6 +563,39 @@ test("country rename and code change update the location and name index together
   assert.equal(location.get("code"), "GB");
 });
 
+test("duplicate-name rename cannot partially apply a country code change", async () => {
+  const uid = await createAdmin();
+  const firstName = `Atomic-Duplicate-First-${randomUUID()}`;
+  const secondName = `Atomic-Duplicate-Second-${randomUUID()}`;
+  const first = await saveCountry(uid, firstName);
+  const second = await saveCountry(uid, secondName);
+  const firstIndexId = countryIndexId(firstName);
+  const secondIndexId = countryIndexId(secondName);
+
+  await assert.rejects(
+    () => saveServiceLocationWithNameIndex.run(request(uid, {
+      locationType: "country",
+      locationId: first.locationId,
+      payload: { name: secondName, code: "GB" },
+    })),
+    (error) => error && error.code === "already-exists",
+  );
+
+  const firstCountry = await db.doc(`service_countries/${first.locationId}`).get();
+  const secondCountry = await db.doc(`service_countries/${second.locationId}`).get();
+  const firstIndex = await db.doc(`service_location_name_indexes/${firstIndexId}`).get();
+  const secondIndex = await db.doc(`service_location_name_indexes/${secondIndexId}`).get();
+
+  assert.equal(firstCountry.get("name"), firstName);
+  assert.equal(firstCountry.get("code"), "IN");
+  assert.equal(secondCountry.get("name"), secondName);
+  assert.equal(secondCountry.get("code"), "IN");
+  assert.equal(firstIndex.exists, true);
+  assert.equal(firstIndex.get("documentId"), first.locationId);
+  assert.equal(secondIndex.exists, true);
+  assert.equal(secondIndex.get("documentId"), second.locationId);
+});
+
 test.after(async () => {
   const deletes = [];
   for (const uid of createdAdmins) deletes.push(db.doc(`admin_users/${uid}`).delete());
