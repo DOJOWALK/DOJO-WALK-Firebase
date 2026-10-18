@@ -844,6 +844,36 @@ test("normalized country name update to same key keeps the name index valid", as
   assert.equal(index.get("name"), name.toLowerCase());
 });
 
+test("country update rejects unauthorized fields without changing saved data", async () => {
+  const uid = await createAdmin();
+  const originalName = `Unauthorized-Field-Original-${randomUUID()}`;
+  const replacementName = `Unauthorized-Field-Replacement-${randomUUID()}`;
+  const created = await saveCountry(uid, originalName);
+  const originalIndexId = countryIndexId(originalName);
+  const replacementIndexId = countryIndexId(replacementName);
+
+  await assert.rejects(
+    () => saveServiceLocationWithNameIndex.run(request(uid, {
+      locationType: "country",
+      locationId: created.locationId,
+      payload: { name: replacementName, code: "GB", isAdmin: true },
+    })),
+    (error) => error && error.code === "invalid-argument",
+  );
+
+  const country = await db.doc(`service_countries/${created.locationId}`).get();
+  const originalIndex = await db.doc(`service_location_name_indexes/${originalIndexId}`).get();
+  const replacementIndex = await db.doc(`service_location_name_indexes/${replacementIndexId}`).get();
+
+  assert.equal(country.exists, true);
+  assert.equal(country.get("name"), originalName);
+  assert.equal(country.get("code"), "IN");
+  assert.equal(country.get("isAdmin"), undefined);
+  assert.equal(originalIndex.exists, true);
+  assert.equal(originalIndex.get("documentId"), created.locationId);
+  assert.equal(replacementIndex.exists, false);
+});
+
 test.after(async () => {
   const deletes = [];
   for (const uid of createdAdmins) deletes.push(db.doc(`admin_users/${uid}`).delete());
