@@ -90,6 +90,31 @@ test("callable rejects invalid payloads before writing a location", async () => 
   assert.equal((await db.doc(`service_location_name_indexes/${indexId}`).get()).exists, false);
 });
 
+test("callable cannot change a country's activation flag during an update", async () => {
+  const uid = await createAdmin();
+  const name = `Activation-Guard-${randomUUID()}`;
+  const created = await saveCountry(uid, name);
+  const indexId = countryIndexId(name);
+
+  await assert.rejects(
+    () => saveServiceLocationWithNameIndex.run(request(uid, {
+      locationType: "country",
+      locationId: created.locationId,
+      payload: { name, code: "IN", isActive: true },
+    })),
+    (error) => error && error.code === "invalid-argument",
+  );
+
+  const location = await db.doc(`service_countries/${created.locationId}`).get();
+  const index = await db.doc(`service_location_name_indexes/${indexId}`).get();
+
+  assert.equal(location.exists, true);
+  assert.equal(location.get("isActive"), false);
+  assert.equal(location.get("name"), name);
+  assert.equal(index.exists, true);
+  assert.equal(index.get("documentId"), created.locationId);
+});
+
 test("callable creates an inactive country and its name index atomically", async () => {
   const uid = await createAdmin();
   const name = `Callable-${randomUUID()}`;
