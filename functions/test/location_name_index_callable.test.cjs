@@ -908,6 +908,44 @@ test("country rename rejects an old name index owned by another location", async
   assert.equal(replacementIndex.exists, false);
 });
 
+
+test("country rename repairs a target name index already owned by that same location", async () => {
+  const uid = await createAdmin();
+  const originalName = `Repair-Index-Original-${randomUUID()}`;
+  const replacementName = `Repair-Index-Replacement-${randomUUID()}`;
+  const created = await saveCountry(uid, originalName);
+  const originalIndexId = countryIndexId(originalName);
+  const replacementIndexId = countryIndexId(replacementName);
+
+  await db.doc(`service_location_name_indexes/${replacementIndexId}`).set({
+    collectionPath: "service_states",
+    documentId: created.locationId,
+    name: "incorrect-index-name",
+    parentIds: ["incorrect-parent"],
+  });
+
+  const result = await saveServiceLocationWithNameIndex.run(request(uid, {
+    locationType: "country",
+    locationId: created.locationId,
+    payload: { name: replacementName, code: "GB" },
+  }));
+
+  const country = await db.doc(`service_countries/${created.locationId}`).get();
+  const originalIndex = await db.doc(`service_location_name_indexes/${originalIndexId}`).get();
+  const replacementIndex = await db.doc(`service_location_name_indexes/${replacementIndexId}`).get();
+
+  assert.equal(result.ok, true);
+  assert.equal(result.locationId, created.locationId);
+  assert.equal(country.get("name"), replacementName);
+  assert.equal(country.get("code"), "GB");
+  assert.equal(originalIndex.exists, false);
+  assert.equal(replacementIndex.exists, true);
+  assert.equal(replacementIndex.get("collectionPath"), "service_countries");
+  assert.equal(replacementIndex.get("documentId"), created.locationId);
+  assert.equal(replacementIndex.get("name"), replacementName.trim().toLowerCase());
+  assert.deepEqual(replacementIndex.get("parentIds"), []);
+});
+
 test.after(async () => {
   const deletes = [];
   for (const uid of createdAdmins) deletes.push(db.doc(`admin_users/${uid}`).delete());
