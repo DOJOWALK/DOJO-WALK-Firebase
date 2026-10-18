@@ -37,6 +37,9 @@ export function classifyDistrictIndexPair(input: {
   districtAware: NameIndexSnapshot;
 }): DistrictIndexPairClassification {
   const { legacy, districtAware } = input;
+  const validSnapshotShape = (value: unknown): value is NameIndexSnapshot =>
+    typeof value === "object" && value !== null &&
+    typeof (value as NameIndexSnapshot).exists === "boolean";
   const normalizedExpectedName = typeof input.expectedName === "string"
     ? input.expectedName.trim().toLowerCase().replace(/\s+/g, " ")
     : "";
@@ -47,7 +50,8 @@ export function classifyDistrictIndexPair(input: {
       typeof input.expectedDocumentId !== "string" ||
       !/^[A-Za-z0-9_-]{1,128}$/.test(input.expectedDocumentId) ||
       !normalizedExpectedName || normalizedExpectedName.length > 120 ||
-      !validIds(input.legacyParentIds) || !validIds(input.districtParentIds)) {
+      !validIds(input.legacyParentIds) || !validIds(input.districtParentIds) ||
+      !validSnapshotShape(legacy) || !validSnapshotShape(districtAware)) {
     return {
       status: "INPUT_INVALID",
       safeToMigrate: false,
