@@ -80,6 +80,30 @@ test("saving an existing State with the same name and parent is idempotent", asy
   assert.equal(index.get("documentId"), first.locationId);
 });
 
+test("updating an existing State cannot change its parent Country", async () => {
+  const uid = await createAdmin();
+  const countryA = await save(uid, "country", { name: `Immutable-Parent-A-${randomUUID()}`, code: "IA" });
+  const countryB = await save(uid, "country", { name: `Immutable-Parent-B-${randomUUID()}`, code: "IB" });
+  const name = `Immutable-State-${randomUUID()}`;
+  const state = await save(uid, "state", { countryId: countryA.locationId, name });
+  const originalIndexId = indexId("service_states", [countryA.locationId], name);
+
+  await assert.rejects(
+    () => save(uid, "state", { countryId: countryB.locationId, name }, state.locationId),
+    (error) => error && error.code === "failed-precondition",
+  );
+
+  const savedState = await db.doc(`service_states/${state.locationId}`).get();
+  const originalIndex = await db.doc(`service_location_name_indexes/${originalIndexId}`).get();
+  const newIndexId = indexId("service_states", [countryB.locationId], name);
+  const newIndex = await db.doc(`service_location_name_indexes/${newIndexId}`).get();
+
+  assert.equal(savedState.get("countryId"), countryA.locationId);
+  assert.equal(originalIndex.exists, true);
+  assert.equal(originalIndex.get("documentId"), state.locationId);
+  assert.equal(newIndex.exists, false);
+});
+
 test("State save rejects a parent Country that does not exist", async () => {
   const uid = await createAdmin();
   await assert.rejects(
