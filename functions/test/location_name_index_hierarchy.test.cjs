@@ -32,8 +32,14 @@ async function save(uid, locationType, payload, locationId) {
   const data = { locationType, payload };
   if (locationId) data.locationId = locationId;
   const result = await saveServiceLocationWithNameIndex.run(request(uid, data));
-  if (result.locationType === "country") countries.add(result.locationId);
-  if (result.locationType === "state") states.add(result.locationId);
+  if (result.locationType === "country") {
+    countries.add(result.locationId);
+    indexId("service_countries", [], payload.name);
+  }
+  if (result.locationType === "state") {
+    states.add(result.locationId);
+    indexId("service_states", [payload.countryId], payload.name);
+  }
   return result;
 }
 
