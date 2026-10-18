@@ -82,6 +82,32 @@ test("same State name is unique under one Country but allowed under another", as
   assert.equal(indexB.get("documentId"), stateB.locationId);
 });
 
+test("same City name is unique under one State but allowed under another", async () => {
+  const uid = await createAdmin();
+  const country = await save(uid, "country", { name: `City-Scope-Country-${randomUUID()}`, code: "CS" });
+  const stateA = await save(uid, "state", { countryId: country.locationId, name: `City-Scope-State-A-${randomUUID()}` });
+  const stateB = await save(uid, "state", { countryId: country.locationId, name: `City-Scope-State-B-${randomUUID()}` });
+  const name = `Shared-City-${randomUUID()}`;
+  const cityA = await save(uid, "city", {
+    countryId: country.locationId, stateId: stateA.locationId, name,
+  });
+
+  await assert.rejects(
+    () => save(uid, "city", { countryId: country.locationId, stateId: stateA.locationId, name }),
+    (error) => error && error.code === "already-exists",
+  );
+
+  const cityB = await save(uid, "city", {
+    countryId: country.locationId, stateId: stateB.locationId, name,
+  });
+  const indexA = await db.doc(`service_location_name_indexes/${indexId("service_cities", [country.locationId, stateA.locationId], name)}`).get();
+  const indexB = await db.doc(`service_location_name_indexes/${indexId("service_cities", [country.locationId, stateB.locationId], name)}`).get();
+
+  assert.notEqual(cityA.locationId, cityB.locationId);
+  assert.equal(indexA.get("documentId"), cityA.locationId);
+  assert.equal(indexB.get("documentId"), cityB.locationId);
+});
+
 test("saving an existing State with the same name and parent is idempotent", async () => {
   const uid = await createAdmin();
   const country = await save(uid, "country", { name: `Idempotent-Country-${randomUUID()}`, code: "IC" });
