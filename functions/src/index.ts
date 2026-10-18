@@ -669,6 +669,25 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
       throw new HttpsError("failed-precondition", "Area does not belong to the selected City, State and Country.");
     }
 
+    // A District-linked City must still point to a real District in the same
+    // Country/State before an Area or Locality can be saved. Keep the legacy
+    // name-index tuple unchanged until the coordinated index migration.
+    if (type === "area" || type === "locality") {
+      const cityData = type === "area" ? parentData[2] : parentData[2];
+      const districtId = cityData.districtId;
+      if (districtId !== undefined && districtId !== null && districtId !== "") {
+        if (typeof districtId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(districtId)) {
+          throw new HttpsError("failed-precondition", "City District link is invalid.");
+        }
+        const districtSnap = await tx.get(db.doc(`service_districts/${districtId}`));
+        if (!districtSnap.exists ||
+            districtSnap.get("countryId") !== parentIds[0] ||
+            districtSnap.get("stateId") !== parentIds[1]) {
+          throw new HttpsError("failed-precondition", "City District must belong to the selected State and Country.");
+        }
+      }
+    }
+
     const newIndexSnap = await tx.get(indexRef);
     const old = targetSnap.data() ?? {};
     const effectiveParentFields = type === "city"
