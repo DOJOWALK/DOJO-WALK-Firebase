@@ -37,7 +37,7 @@ function normalizeName(value) {
 async function readDoc(collection, id) {
   if (typeof id !== "string" || !id.trim()) return null;
   const snap = await db.collection(collection).doc(id).get();
-  return snap.exists ? { id: snap.id, ...snap.data() } : null;
+  return snap.exists ? { ...snap.data(), id: snap.id } : null;
 }
 
 async function run() {
@@ -69,7 +69,7 @@ async function run() {
       let legacyIndexId = null;
       let proposedIndexId = null;
       let proposedIndexOwnerId = null;
-      let legacyIndexMatches = false;
+      let legacyIndexMatches = false;\n      let proposedIndexMatches = false;
 
       try {
         if (![area.countryId, area.stateId, area.cityId].every(v => typeof v === "string" && v.trim())) {
@@ -162,7 +162,7 @@ async function run() {
     counts,
     generatedAt: new Date().toISOString(),
     records,
-    warning: "This scan is not an atomic database snapshot. Review classifications and rerun before any separately approved migration. No writes were performed.",
+    warning: "This scan is not an atomic database snapshot. Review classifications and rerun before any separately approved migration. No writes were performed.",\n    statusMeaning: {\n      READY: "parent chain and legacy index verified; proposed index is absent or matches this Area",\n      LEGACY_NO_DISTRICT: "City needs reviewed District mapping",\n      BROKEN_PARENT_CHAIN: "required parent or Area data is invalid",\n      INDEX_CONFLICT: "proposed index exists but does not safely match its expected owner/data",\n      LEGACY_INDEX_MISSING_OR_MISMATCHED: "legacy index missing or inconsistent",\n      READ_ERROR: "Firestore or helper read failed; investigate access/service errors before retrying",\n    },
   };
   const json = JSON.stringify(report, null, 2);
   if (outputPath) {
