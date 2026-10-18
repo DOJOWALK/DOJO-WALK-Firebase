@@ -63,9 +63,15 @@ test("district-aware index follows canonical JSON SHA-256 tuple format", () => {
   }, " Noida "), expected);
 });
 
-test("legacy city index generation is unchanged", () => {
+test("legacy city index generation keeps the two-parent tuple format", () => {
+  const tuple = JSON.stringify([
+    "service_cities",
+    ["country-1", "state-1"],
+    "noida",
+  ]);
+  const expected = createHash("sha256").update(Buffer.from(tuple, "utf8")).digest("hex");
   assert.equal(
-    serviceLocationNameIndexId("service_cities", ["country-1", "state-1"], "Noida"),
-    serviceLocationNameIndexId("service_cities", ["country-1", "state-1"], "Noida"),
+    serviceLocationNameIndexId("service_cities", ["country-1", "state-1"], " Noida "),
+    expected,
   );
 });
