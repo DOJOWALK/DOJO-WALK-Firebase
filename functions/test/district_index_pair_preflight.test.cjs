@@ -112,3 +112,33 @@ test("blocks District-aware-only index owned by another location", () => {
   assert.equal(r.status, "DISTRICT_OWNER_MISMATCH");
   assert.equal(r.safeToMigrate, false);
 });
+
+test("rejects empty expected name and malformed parent tuples", () => {
+  const emptyName = classifyDistrictIndexPair({
+    ...base, expectedName: "   ", legacy: index(base.legacyParentIds), districtAware: absent,
+  });
+  assert.equal(emptyName.status, "INPUT_INVALID");
+  assert.equal(emptyName.safeToMigrate, false);
+
+  const malformedParents = classifyDistrictIndexPair({
+    ...base, legacyParentIds: ["country-1", ""],
+    legacy: index(base.legacyParentIds), districtAware: absent,
+  });
+  assert.equal(malformedParents.status, "INPUT_INVALID");
+  assert.equal(malformedParents.safeToMigrate, false);
+});
+
+test("rejects oversized expected name and invalid expected document ID", () => {
+  const longName = classifyDistrictIndexPair({
+    ...base, expectedName: "x".repeat(121), legacy: index(base.legacyParentIds), districtAware: absent,
+  });
+  assert.equal(longName.status, "INPUT_INVALID");
+  assert.equal(longName.safeToMigrate, false);
+
+  const invalidId = classifyDistrictIndexPair({
+    ...base, expectedDocumentId: "area/child",
+    legacy: index(base.legacyParentIds), districtAware: absent,
+  });
+  assert.equal(invalidId.status, "INPUT_INVALID");
+  assert.equal(invalidId.safeToMigrate, false);
+});
