@@ -39,7 +39,7 @@ function indexId(name, stateId = ids.state, countryId = ids.country) {
   return serviceLocationNameIndexId(
     "service_districts",
     [countryId, stateId],
-    name.trim().toLowerCase().replace(/\\s+/g, " "),
+    name.trim().toLowerCase().replace(/\s+/g, " "),
   );
 }
 async function saveDistrict(uid, name, countryId = ids.country, stateId = ids.state, locationId) {
@@ -101,9 +101,10 @@ test("District save and status callable enforce trusted ancestry and child guard
   await t.test("District save atomically creates document and canonical index", async () => {
     const name = `Test District ${suffix}`;
     indexIds.add(indexId(name));
-    const result = await saveDistrict(ids.admin, name, ids.country, ids.state, ids.district);
+    const result = await saveDistrict(ids.admin, name, ids.country, ids.state);
+    ids.district = result.locationId;
     assert.equal(result.ok, true);
-    assert.equal(result.locationId, ids.district);
+    assert.ok(ids.district);
     assert.equal(result.locationType, "district");
     const district = await db.doc(`service_districts/${ids.district}`).get();
     const index = await db.doc(`service_location_name_indexes/${indexId(name)}`).get();
