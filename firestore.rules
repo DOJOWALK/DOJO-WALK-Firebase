@@ -1643,18 +1643,18 @@ service cloud.firestore {
           'verificationStatus'
         ])
         && request.resource.data.source is string
-        && request.resource.data.source.size() > 0
+        && request.resource.data.source.matches('.*\\S.*')
         && request.resource.data.source.size() <= 80
         && request.resource.data.fileName is string
-        && request.resource.data.fileName.size() > 0
+        && request.resource.data.fileName.matches('.*\\S.*')
         && request.resource.data.fileName.size() <= 180
         && request.resource.data.status is string
-        && request.resource.data.status.size() > 0
+        && request.resource.data.status.matches('.*\\S.*')
         && request.resource.data.status.size() <= 32
         && request.resource.data.importedBy == request.auth.uid
         && request.resource.data.importedAt == request.time
         && request.resource.data.verificationStatus is string
-        && request.resource.data.verificationStatus.size() > 0
+        && request.resource.data.verificationStatus.matches('.*\\S.*')
         && request.resource.data.verificationStatus.size() <= 32;
 
       allow update, delete: if false;
