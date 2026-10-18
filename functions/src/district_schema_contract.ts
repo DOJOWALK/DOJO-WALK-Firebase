@@ -60,9 +60,10 @@ export function districtParentChainIsConsistent(input: {
   district: { countryId?: unknown; stateId?: unknown };
   city?: { countryId?: unknown; stateId?: unknown; districtId?: unknown };
   area?: { countryId?: unknown; stateId?: unknown; districtId?: unknown; cityId?: unknown };
+  locality?: { countryId?: unknown; stateId?: unknown; districtId?: unknown; cityId?: unknown; areaId?: unknown };
   expected: DistrictParentChain;
 }): boolean {
-  const { district, city, area, expected } = input;
+  const { district, city, area, locality, expected } = input;
   if (
     district.countryId !== expected.countryId ||
     district.stateId !== expected.stateId
@@ -84,6 +85,18 @@ export function districtParentChainIsConsistent(input: {
       area.stateId !== expected.stateId ||
       area.districtId !== expected.districtId ||
       area.cityId !== expected.cityId ||
+      !expected.areaId
+    ) return false;
+  }
+
+  if (locality) {
+    if (
+      !area ||
+      locality.countryId !== expected.countryId ||
+      locality.stateId !== expected.stateId ||
+      locality.districtId !== expected.districtId ||
+      locality.cityId !== expected.cityId ||
+      locality.areaId !== expected.areaId ||
       !expected.areaId
     ) return false;
   }
