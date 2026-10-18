@@ -209,6 +209,33 @@ test("missing admin profile cannot rename a country or alter its index", async (
   assert.equal(replacementIndex.exists, false);
 });
 
+test("viewer role cannot change an existing country's code", async () => {
+  const activeUid = await createAdmin();
+  const viewerUid = await createAdmin("viewer", true);
+  const name = `Viewer-Code-Guard-${randomUUID()}`;
+  const created = await saveCountry(activeUid, name);
+  const indexId = countryIndexId(name);
+
+  await assert.rejects(
+    () => saveServiceLocationWithNameIndex.run(request(viewerUid, {
+      locationType: "country",
+      locationId: created.locationId,
+      payload: { name, code: "XX" },
+    })),
+    (error) => error && error.code === "permission-denied",
+  );
+
+  const country = await db.doc(`service_countries/${created.locationId}`).get();
+  const index = await db.doc(
+    `service_location_name_indexes/${indexId}`,
+  ).get();
+
+  assert.equal(country.get("name"), name);
+  assert.equal(country.get("code"), "IN");
+  assert.equal(index.exists, true);
+  assert.equal(index.get("documentId"), created.locationId);
+});
+
 test("inactive admin cannot rename an existing country or alter its index", async () => {
   const activeUid = await createAdmin();
   const inactiveUid = await createAdmin("admin", false);
