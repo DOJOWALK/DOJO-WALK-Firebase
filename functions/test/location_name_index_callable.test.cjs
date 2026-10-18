@@ -874,6 +874,40 @@ test("country update rejects unauthorized fields without changing saved data", a
   assert.equal(replacementIndex.exists, false);
 });
 
+test("country rename rejects an old name index owned by another location", async () => {
+  const uid = await createAdmin();
+  const originalName = `Corrupt-Index-Original-${randomUUID()}`;
+  const replacementName = `Corrupt-Index-Replacement-${randomUUID()}`;
+  const created = await saveCountry(uid, originalName);
+  const originalIndexId = countryIndexId(originalName);
+  const replacementIndexId = countryIndexId(replacementName);
+
+  await db.doc(`service_location_name_indexes/${originalIndexId}`).set({
+    collectionPath: "service_countries",
+    documentId: "different-location-id",
+    name: originalName.toLowerCase(),
+    parentIds: [],
+  });
+
+  await assert.rejects(
+    () => saveServiceLocationWithNameIndex.run(request(uid, {
+      locationType: "country",
+      locationId: created.locationId,
+      payload: { name: replacementName, code: "IN" },
+    })),
+    (error) => error && error.code === "failed-precondition",
+  );
+
+  const country = await db.doc(`service_countries/${created.locationId}`).get();
+  const originalIndex = await db.doc(`service_location_name_indexes/${originalIndexId}`).get();
+  const replacementIndex = await db.doc(`service_location_name_indexes/${replacementIndexId}`).get();
+
+  assert.equal(country.get("name"), originalName);
+  assert.equal(country.get("code"), "IN");
+  assert.equal(originalIndex.get("documentId"), "different-location-id");
+  assert.equal(replacementIndex.exists, false);
+});
+
 test.after(async () => {
   const deletes = [];
   for (const uid of createdAdmins) deletes.push(db.doc(`admin_users/${uid}`).delete());
