@@ -37,7 +37,7 @@ export function serviceLocationNameIndexId(
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(trimmed)) throw new Error("LOCATION_INDEX_PARENT_INVALID");
     return trimmed;
   });
-  const expectedParentCount: Record<string, number> = {
+  const expectedParentCount: Record<string, number | number[]> = {
     service_countries: 0,
     service_states: 1,
     service_districts: 2,
