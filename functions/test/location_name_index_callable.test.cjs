@@ -515,6 +515,26 @@ test("country creation rejects case-insensitive and whitespace-normalized duplic
   assert.equal(location.get("name"), existingName);
 });
 
+test("renaming a country to its own normalized name preserves its name index", async () => {
+  const uid = await createAdmin();
+  const originalName = `Self-Normalized-${randomUUID()}`;
+  const created = await saveCountry(uid, originalName);
+  const indexId = countryIndexId(originalName);
+  const equivalentName = `  ${originalName.toUpperCase()}   `;
+
+  const renamed = await saveCountry(uid, equivalentName, created.locationId);
+  const location = await db.doc(`service_countries/${created.locationId}`).get();
+  const index = await db.doc(`service_location_name_indexes/${indexId}`).get();
+
+  assert.equal(renamed.ok, true);
+  assert.equal(renamed.locationId, created.locationId);
+  assert.equal(location.exists, true);
+  assert.equal(location.get("name"), equivalentName);
+  assert.equal(index.exists, true);
+  assert.equal(index.get("documentId"), created.locationId);
+  assert.equal(index.get("name"), originalName.trim().toLowerCase());
+});
+
 test.after(async () => {
   const deletes = [];
   for (const uid of createdAdmins) deletes.push(db.doc(`admin_users/${uid}`).delete());
