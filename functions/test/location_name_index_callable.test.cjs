@@ -76,6 +76,21 @@ test("callable rejects a missing or inactive admin profile", async () => {
   );
 });
 
+test("viewer role cannot create a country or its name index", async () => {
+  const viewerUid = await createAdmin("viewer", true);
+  const name = `Viewer-Create-${randomUUID()}`;
+  const indexId = countryIndexId(name);
+
+  await assert.rejects(
+    () => saveCountry(viewerUid, name),
+    (error) => error && error.code === "permission-denied",
+  );
+
+  assert.equal((await db.doc(`service_location_name_indexes/${indexId}`).get()).exists, false);
+  const matching = await db.collection("service_countries").where("name", "==", name).get();
+  assert.equal(matching.empty, true);
+});
+
 test("viewer role cannot rename an existing country or alter its index", async () => {
   const activeUid = await createAdmin();
   const viewerUid = await createAdmin("viewer", true);
