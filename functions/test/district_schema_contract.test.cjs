@@ -103,3 +103,66 @@ test("rejects inconsistent Area ancestry", () => {
     },
   }), false);
 });
+
+test("rejects an Area attached to a different City even when District matches", () => {
+  assert.equal(districtParentChainIsConsistent({
+    district: { countryId: "country-1", stateId: "state-1" },
+    city: {
+      countryId: "country-1",
+      stateId: "state-1",
+      districtId: "district-1",
+    },
+    area: {
+      countryId: "country-1",
+      stateId: "state-1",
+      districtId: "district-1",
+      cityId: "city-other",
+    },
+    expected: {
+      countryId: "country-1",
+      stateId: "state-1",
+      districtId: "district-1",
+      cityId: "city-1",
+      areaId: "area-1",
+    },
+  }), false);
+});
+
+test("rejects an Area whose Country or State differs from the trusted chain", () => {
+  const expected = {
+    countryId: "country-1",
+    stateId: "state-1",
+    districtId: "district-1",
+    cityId: "city-1",
+    areaId: "area-1",
+  };
+  const city = {
+    countryId: "country-1",
+    stateId: "state-1",
+    districtId: "district-1",
+  };
+
+  assert.equal(districtParentChainIsConsistent({
+    district: { countryId: "country-1", stateId: "state-1" },
+    city,
+    area: {
+      countryId: "country-other",
+      stateId: "state-1",
+      districtId: "district-1",
+      cityId: "city-1",
+    },
+    expected,
+  }), false);
+
+  assert.equal(districtParentChainIsConsistent({
+    district: { countryId: "country-1", stateId: "state-1" },
+    city,
+    area: {
+      countryId: "country-1",
+      stateId: "state-other",
+      districtId: "district-1",
+      cityId: "city-1",
+    },
+    expected,
+  }), false);
+});
