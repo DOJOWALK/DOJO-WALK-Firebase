@@ -61,3 +61,8 @@ test("scanner checks proposed index consistency before reporting it", () => {
   assert.match(scanner, /proposedIndexMatches = !!proposed/);
   assert.match(scanner, /if \(proposedIndexOwnerId === localityId && !proposedIndexMatches\) status = "INDEX_CONFLICT"/);
 });
+
+test("scanner classifies blank and overlong Locality names as malformed data", () => {
+  assert.match(scanner, /typeof l\.name !== "string" \|\| !l\.name\.trim\(\) \|\| l\.name\.trim\(\)\.length > 120/);
+  assert.match(scanner, /"LOCALITY_NAME_INVALID"/);
+});
