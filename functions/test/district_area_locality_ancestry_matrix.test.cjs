@@ -4,6 +4,7 @@ const { randomUUID } = require("node:crypto");
 const { getFirestore } = require("firebase-admin/firestore");
 const { saveServiceLocationWithNameIndex } = require("../lib/index");
 const { serviceLocationNameIndexId } = require("../lib/location_name_index");
+const { districtAwareNameIndexId } = require("../lib/district_name_index_contract");
 
 const db = getFirestore();
 
@@ -74,7 +75,8 @@ function req(uid, locationType, payload) {
 }
 
 test("Area rejects District document belonging to another State without writes", async () => {
-  const f = await fixture({ districtStateMismatch: true });\n  const attemptedAreaName = `Rejected-Area-${randomUUID()}`;
+  const f = await fixture({ districtStateMismatch: true });
+  const attemptedAreaName = `Rejected-Area-${randomUUID()}`;
   try {
     await assert.rejects(
       () => saveServiceLocationWithNameIndex.run(req(f.uid, "area", {
@@ -130,7 +132,7 @@ test("valid District-linked Area keeps the existing legacy name-index tuple", as
     assert.equal(area.get("cityId"), f.cityId);
     assert.equal(area.get("districtId"), undefined);
     const legacyId = serviceLocationNameIndexId("service_areas", [f.countryId, f.stateId, f.cityId], areaName.toLowerCase());
-    const districtId = serviceLocationNameIndexId("service_areas", [f.countryId, f.stateId, f.districtId, f.cityId], areaName.toLowerCase());
+    const districtId = districtAwareNameIndexId("area", { countryId: f.countryId, stateId: f.stateId, districtId: f.districtId, cityId: f.cityId }, areaName.toLowerCase());
     assert.equal((await db.doc(`service_location_name_indexes/${legacyId}`).get()).get("documentId"), result.locationId);
     assert.equal((await db.doc(`service_location_name_indexes/${districtId}`).get()).exists, false);
     await db.doc(`service_areas/${result.locationId}`).delete();
@@ -150,7 +152,7 @@ test("Locality linked to a valid District City keeps the legacy Locality index t
     const locality = await db.doc(`service_localities/${result.locationId}`).get();
     assert.equal(locality.get("areaId"), f.areaId);
     const legacyId = serviceLocationNameIndexId("service_localities", [f.countryId, f.stateId, f.cityId, f.areaId], localityName.toLowerCase());
-    const districtId = serviceLocationNameIndexId("service_localities", [f.countryId, f.stateId, f.districtId, f.cityId, f.areaId], localityName.toLowerCase());
+    const districtId = districtAwareNameIndexId("locality", { countryId: f.countryId, stateId: f.stateId, districtId: f.districtId, cityId: f.cityId, areaId: f.areaId }, localityName.toLowerCase());
     assert.equal((await db.doc(`service_location_name_indexes/${legacyId}`).get()).get("documentId"), result.locationId);
     assert.equal((await db.doc(`service_location_name_indexes/${districtId}`).get()).exists, false);
     await db.doc(`service_localities/${result.locationId}`).delete();
