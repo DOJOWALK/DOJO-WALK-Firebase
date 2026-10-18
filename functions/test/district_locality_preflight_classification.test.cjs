@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { classifyAreaMigrationPreflight } = require("../lib/district_schema_contract");
+const { classifyAreaMigrationPreflight, classifyCityDistrictCompatibility } = require("../lib/district_schema_contract");
 const scanner = fs.readFileSync(path.join(__dirname, "../scripts/district_locality_migration_preflight.cjs"), "utf8");
 
 test("classification: Locality without District mapping is manual review", () => {
@@ -65,4 +65,31 @@ test("scanner checks proposed index consistency before reporting it", () => {
 test("scanner classifies blank and overlong Locality names as malformed data", () => {
   assert.match(scanner, /typeof l\.name !== "string" \|\| !l\.name\.trim\(\) \|\| l\.name\.trim\(\)\.length > 120/);
   assert.match(scanner, /"LOCALITY_NAME_INVALID"/);
+});
+
+test("City District classifier rejects a District from another State", () => {
+  assert.equal(classifyCityDistrictCompatibility({
+    city: { countryId: "country-1", stateId: "state-1", districtId: "district-1" },
+    district: { countryId: "country-1", stateId: "state-2" },
+    expectedCountryId: "country-1",
+    expectedStateId: "state-1",
+  }), "BROKEN_PARENT_CHAIN");
+});
+
+test("City District classifier does not guess a District for legacy City", () => {
+  assert.equal(classifyCityDistrictCompatibility({
+    city: { countryId: "country-1", stateId: "state-1" },
+    district: null,
+    expectedCountryId: "country-1",
+    expectedStateId: "state-1",
+  }), "LEGACY_NO_DISTRICT");
+});
+
+test("report documents every scanner classification", () => {
+  for (const status of [
+    "READY", "LEGACY_NO_DISTRICT", "BROKEN_PARENT_CHAIN",
+    "INDEX_CONFLICT", "LEGACY_INDEX_MISSING_OR_MISMATCHED", "READ_ERROR",
+  ]) {
+    assert.match(scanner, new RegExp(status + ":"));
+  }
 });
