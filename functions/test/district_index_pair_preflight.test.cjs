@@ -224,3 +224,9 @@ test("parent tuple comparison is order-sensitive and exact", () => {
   assert.equal(differentLength.status, "LEGACY_OWNER_MISMATCH");
   assert.equal(differentLength.safeToMigrate, false);
 });
+
+test("rejects null runtime preflight input without throwing", () => {
+  const r = classifyDistrictIndexPair(null);
+  assert.equal(r.status, "INPUT_INVALID");
+  assert.equal(r.safeToMigrate, false);
+});
