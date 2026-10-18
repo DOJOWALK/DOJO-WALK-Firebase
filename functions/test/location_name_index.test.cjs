@@ -5,6 +5,35 @@ const {
   normalizeServiceLocationName,
   serviceLocationNameIndexId,
 } = require("../lib/location_name_index");
+const { validateServiceLocationPayload } = require("../lib/location_name_index");
+
+test("validates parent IDs and trims them before persisting payload data", () => {
+  const normalized = validateServiceLocationPayload("state", {
+    countryId: " country-1 ",
+    name: " Uttar   Pradesh ",
+  });
+  assert.deepEqual(normalized, {
+    countryId: "country-1",
+    name: "Uttar   Pradesh",
+  });
+});
+
+test("payload validation rejects parent IDs containing path separators or embedded spaces", () => {
+  assert.throws(
+    () => validateServiceLocationPayload("state", {
+      countryId: "country/child",
+      name: "Uttar Pradesh",
+    }),
+    /LOCATION_INDEX_PARENT_INVALID/,
+  );
+  assert.throws(
+    () => validateServiceLocationPayload("state", {
+      countryId: "country id",
+      name: "Uttar Pradesh",
+    }),
+    /LOCATION_INDEX_PARENT_INVALID/,
+  );
+});
 
 test("normalizes name with trim, lowercase, and collapsed whitespace", () => {
   assert.equal(normalizeServiceLocationName("  Gaur   CITY  2 "), "gaur city 2");
