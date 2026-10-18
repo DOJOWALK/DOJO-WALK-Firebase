@@ -529,7 +529,7 @@ test("renaming a country to its own normalized name preserves its name index", a
   assert.equal(renamed.ok, true);
   assert.equal(renamed.locationId, created.locationId);
   assert.equal(location.exists, true);
-  assert.equal(location.get("name"), equivalentName);
+  assert.equal(location.get("name"), originalName.toUpperCase());
   assert.equal(index.exists, true);
   assert.equal(index.get("documentId"), created.locationId);
   assert.equal(index.get("name"), originalName.trim().toLowerCase());
