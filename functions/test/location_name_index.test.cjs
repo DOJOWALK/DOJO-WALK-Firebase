@@ -74,14 +74,36 @@ test("rejects empty or oversized parent IDs", () => {
   assert.throws(() => serviceLocationNameIndexId("service_states", ["x".repeat(129)], "Uttar Pradesh"), /LOCATION_INDEX_PARENT_INVALID/);
 });
 
-test("rejects an unimplemented District collection instead of silently indexing it", () => {
-  assert.throws(
-    () => serviceLocationNameIndexId("service_districts", ["country-1", "state-1"], "Gautam Buddha Nagar"),
-    /LOCATION_INDEX_COLLECTION_INVALID/,
+test("supports District index tuple with Country and State parents", () => {
+  const tuple = JSON.stringify([
+    "service_districts",
+    ["country-1", "state-1"],
+    "gautam buddha nagar",
+  ]);
+  const expected = createHash("sha256").update(Buffer.from(tuple, "utf8")).digest("hex");
+  assert.equal(
+    serviceLocationNameIndexId(
+      "service_districts",
+      ["country-1", "state-1"],
+      " Gautam   Buddha Nagar ",
+    ),
+    expected,
   );
 });
 
-test("rejects districtId on a City payload until the hierarchy contract is implemented", () => {
+test("validates a District payload with Country and State parents", () => {
+  assert.deepEqual(validateServiceLocationPayload("district", {
+    countryId: "country-1",
+    stateId: "state-1",
+    name: " Gautam Buddha Nagar ",
+  }), {
+    countryId: "country-1",
+    stateId: "state-1",
+    name: "Gautam Buddha Nagar",
+  });
+});
+
+test("still rejects districtId on City until district-aware City migration lands", () => {
   assert.throws(
     () => validateServiceLocationPayload("city", {
       countryId: "country-1",
