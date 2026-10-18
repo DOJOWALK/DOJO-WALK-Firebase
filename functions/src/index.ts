@@ -554,7 +554,7 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     country: ["name", "code"],
     state: ["countryId", "name"],
     district: ["countryId", "stateId", "name"],
-    city: ["countryId", "stateId", "name"],
+    city: ["countryId", "stateId", "districtId", "name"],
     area: ["countryId", "stateId", "cityId", "name"],
     locality: ["countryId", "stateId", "cityId", "areaId", "name", "pincode"],
   };
@@ -572,7 +572,7 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     country: [],
     state: ["countryId"],
     district: ["countryId", "stateId"],
-    city: ["countryId", "stateId"],
+    city: proposed.districtId === undefined ? ["countryId", "stateId"] : ["countryId", "stateId", "districtId"],
     area: ["countryId", "stateId", "cityId"],
     locality: ["countryId", "stateId", "cityId", "areaId"],
   };
@@ -584,7 +584,9 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     return value.trim();
   });
   const parentRefs = parentIds.map((id, i) => {
-    const parentType: ServiceLocationType[] = ["country", "state", "city", "area"];
+    const parentType: ServiceLocationType[] = type === "city" && proposed.districtId !== undefined
+      ? ["country", "state", "district"]
+      : ["country", "state", "city", "area"];
     return db.collection(SERVICE_LOCATION_COLLECTIONS[parentType[i]]).doc(id);
   });
   const normalizedName = (proposed.name as string).trim().toLowerCase().replace(/\s+/g, " ");
@@ -604,8 +606,14 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     }
     if (targetSnap.exists) {
       const current = targetSnap.data() ?? {};
-      const currentParents = parentFieldsByType[type].map((field) => current[field]);
-      const proposedParents = parentFieldsByType[type].map((field) => proposed[field]);
+      if (type === "city" && (current.districtId !== undefined) !== (proposed.districtId !== undefined)) {
+        throw new HttpsError("failed-precondition", "Adding or removing a City District requires a separate migration.");
+      }
+      const effectiveParentFields = type === "city"
+        ? (proposed.districtId === undefined ? ["countryId", "stateId"] : ["countryId", "stateId", "districtId"])
+        : parentFieldsByType[type];
+      const currentParents = effectiveParentFields.map((field) => current[field]);
+      const proposedParents = effectiveParentFields.map((field) => proposed[field]);
       if (currentParents.some((value, i) => value !== proposedParents[i])) {
         throw new HttpsError("failed-precondition", "Moving a location to a different parent is not supported.");
       }
@@ -623,6 +631,10 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     if (type === "city" && parentData[1].countryId !== parentIds[0]) {
       throw new HttpsError("failed-precondition", "State does not belong to the selected Country.");
     }
+    if (type === "city" && proposed.districtId !== undefined &&
+        (parentData[2].countryId !== parentIds[0] || parentData[2].stateId !== parentIds[1])) {
+      throw new HttpsError("failed-precondition", "District does not belong to the selected State and Country.");
+    }
     if (type === "area" && (parentData[1].countryId !== parentIds[0] ||
         parentData[2].stateId !== parentIds[1] || parentData[2].countryId !== parentIds[0])) {
       throw new HttpsError("failed-precondition", "City does not belong to the selected State and Country.");
@@ -636,8 +648,11 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
 
     const newIndexSnap = await tx.get(indexRef);
     const old = targetSnap.data() ?? {};
+    const effectiveParentFields = type === "city"
+      ? (proposed.districtId === undefined ? ["countryId", "stateId"] : ["countryId", "stateId", "districtId"])
+      : parentFieldsByType[type];
     const oldParentIds = targetSnap.exists
-      ? parentFieldsByType[type].map((field) => String(old[field] ?? ""))
+      ? effectiveParentFields.map((field) => String(old[field] ?? ""))
       : parentIds;
     let oldIndexRef: FirebaseFirestore.DocumentReference | undefined;
     let oldIndexSnap: FirebaseFirestore.DocumentSnapshot | undefined;
