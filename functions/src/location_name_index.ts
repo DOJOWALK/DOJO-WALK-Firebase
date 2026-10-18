@@ -49,3 +49,50 @@ export function serviceLocationNameIndexId(
   const canonicalTuple = JSON.stringify([collectionPath, normalizedParents, normalizedName]);
   return createHash("sha256").update(Buffer.from(canonicalTuple, "utf8")).digest("hex");
 }
+
+export const SERVICE_LOCATION_ALLOWED_FIELDS: Record<ServiceLocationType, readonly string[]> = {
+  country: ["name", "code", "isActive"],
+  state: ["countryId", "name", "isActive"],
+  city: ["countryId", "stateId", "name", "boundary", "boundarySource", "boundaryVerified", "verifiedBoundaryId", "isServiceActive"],
+  area: ["countryId", "stateId", "cityId", "name", "boundary", "boundarySource", "boundaryVerified", "verifiedBoundaryId", "isServiceActive"],
+  locality: ["countryId", "stateId", "cityId", "areaId", "name", "pincode", "boundary", "boundarySource", "boundaryVerified", "isServiceActive"],
+};
+
+/**
+ * Validate a callable's proposed payload before any Firestore reads/writes.
+ * This is a schema guard only; the callable must still verify ancestry,
+ * authorization, immutable parents, boundary rules, and uniqueness in a transaction.
+ */
+export function validateServiceLocationPayload(
+  type: ServiceLocationType,
+  payload: unknown,
+): Record<string, unknown> {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("LOCATION_PAYLOAD_INVALID");
+  }
+  const record = payload as Record<string, unknown>;
+  const allowed = new Set(SERVICE_LOCATION_ALLOWED_FIELDS[type]);
+  for (const key of Object.keys(record)) {
+    if (!allowed.has(key)) throw new Error("LOCATION_PAYLOAD_FIELD_INVALID");
+  }
+  if (typeof record.name !== "string") throw new Error("LOCATION_INDEX_NAME_INVALID");
+  const name = record.name.trim();
+  if (!name || name.length > 120) throw new Error("LOCATION_INDEX_NAME_INVALID");
+  if (type === "country" && (typeof record.code !== "string" || !record.code.trim() || record.code.trim().length > 16)) {
+    throw new Error("LOCATION_PAYLOAD_CODE_INVALID");
+  }
+  const parentFields: Record<ServiceLocationType, readonly string[]> = {
+    country: [],
+    state: ["countryId"],
+    city: ["countryId", "stateId"],
+    area: ["countryId", "stateId", "cityId"],
+    locality: ["countryId", "stateId", "cityId", "areaId"],
+  };
+  for (const field of parentFields[type]) {
+    const value = record[field];
+    if (typeof value !== "string" || !value.trim() || value.trim().length > 128) {
+      throw new Error("LOCATION_INDEX_PARENT_INVALID");
+    }
+  }
+  return { ...record, name };
+}
