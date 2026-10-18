@@ -792,6 +792,34 @@ test("country name at maximum length is accepted on update", async () => {
   assert.equal(newIndex.get("name"), newName.toLowerCase());
 });
 
+test("country name normalization preserves index when case and spacing change", async () => {
+  const uid = await createAdmin();
+  const originalName = `Normalize-${randomUUID()}`;
+  const created = await saveCountry(uid, originalName);
+  const oldIndexId = countryIndexId(originalName);
+  const updatedName = `  ${originalName.toUpperCase().replace(/-/g, "   ")}  `;
+  const normalizedName = updatedName.trim().toLowerCase().replace(/\s+/g, " ");
+  const newIndexId = countryIndexId(normalizedName);
+
+  const result = await saveServiceLocationWithNameIndex.run(request(uid, {
+    locationType: "country",
+    locationId: created.locationId,
+    payload: { name: updatedName, code: "IN" },
+  }));
+
+  assert.equal(result.locationId, created.locationId);
+  const country = await db.doc(`service_countries/${created.locationId}`).get();
+  const oldIndex = await db.doc(`service_location_name_indexes/${oldIndexId}`).get();
+  const newIndex = await db.doc(`service_location_name_indexes/${newIndexId}`).get();
+  assert.equal(country.exists, true);
+  assert.equal(country.get("name"), updatedName.trim());
+  assert.equal(country.get("code"), "IN");
+  assert.equal(oldIndex.exists, false);
+  assert.equal(newIndex.exists, true);
+  assert.equal(newIndex.get("documentId"), created.locationId);
+  assert.equal(newIndex.get("name"), normalizedName);
+});
+
 test.after(async () => {
   const deletes = [];
   for (const uid of createdAdmins) deletes.push(db.doc(`admin_users/${uid}`).delete());
