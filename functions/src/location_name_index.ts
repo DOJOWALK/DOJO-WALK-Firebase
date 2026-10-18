@@ -41,11 +41,14 @@ export function serviceLocationNameIndexId(
     service_countries: 0,
     service_states: 1,
     service_districts: 2,
-    service_cities: 2,
+    service_cities: [2, 3],
     service_areas: 3,
     service_localities: 4,
   };
-  if (normalizedParents.length !== expectedParentCount[collectionPath]) {
+  const allowedParentCounts = expectedParentCount[collectionPath];
+  if (Array.isArray(allowedParentCounts)
+    ? !allowedParentCounts.includes(normalizedParents.length)
+    : normalizedParents.length !== allowedParentCounts) {
     throw new Error("LOCATION_INDEX_PARENT_COUNT_INVALID");
   }
   const canonicalTuple = JSON.stringify([collectionPath, normalizedParents, normalizedName]);
@@ -56,7 +59,7 @@ export const SERVICE_LOCATION_ALLOWED_FIELDS: Record<ServiceLocationType, readon
   country: ["name", "code", "isActive"],
   state: ["countryId", "name", "isActive"],
   district: ["countryId", "stateId", "name", "isServiceActive"],
-  city: ["countryId", "stateId", "name", "boundary", "boundarySource", "boundaryVerified", "verifiedBoundaryId", "isServiceActive"],
+  city: ["countryId", "stateId", "districtId", "name", "boundary", "boundarySource", "boundaryVerified", "verifiedBoundaryId", "isServiceActive"],
   area: ["countryId", "stateId", "cityId", "name", "boundary", "boundarySource", "boundaryVerified", "verifiedBoundaryId", "isServiceActive"],
   locality: ["countryId", "stateId", "cityId", "areaId", "name", "pincode", "boundary", "boundarySource", "boundaryVerified", "isServiceActive"],
 };
@@ -90,7 +93,7 @@ export function validateServiceLocationPayload(
     country: [],
     state: ["countryId"],
     district: ["countryId", "stateId"],
-    city: ["countryId", "stateId"],
+    city: record.districtId === undefined ? ["countryId", "stateId"] : ["countryId", "stateId", "districtId"],
     area: ["countryId", "stateId", "cityId"],
     locality: ["countryId", "stateId", "cityId", "areaId"],
   };
