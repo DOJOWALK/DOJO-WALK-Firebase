@@ -765,6 +765,33 @@ test("overlong country name update is rejected without changing saved data", asy
   assert.equal(index.get("name"), name.toLowerCase());
 });
 
+test("country name at maximum length is accepted on update", async () => {
+  const uid = await createAdmin();
+  const originalName = `Max-Name-${randomUUID()}`;
+  const created = await saveCountry(uid, originalName);
+  const newName = "N".repeat(120);
+  const oldIndexId = countryIndexId(originalName);
+  const newIndexId = countryIndexId(newName);
+
+  const result = await saveServiceLocationWithNameIndex.run(request(uid, {
+    locationType: "country",
+    locationId: created.locationId,
+    payload: { name: newName, code: "IN" },
+  }));
+
+  assert.equal(result.locationId, created.locationId);
+  const country = await db.doc(`service_countries/${created.locationId}`).get();
+  const oldIndex = await db.doc(`service_location_name_indexes/${oldIndexId}`).get();
+  const newIndex = await db.doc(`service_location_name_indexes/${newIndexId}`).get();
+  assert.equal(country.exists, true);
+  assert.equal(country.get("name"), newName);
+  assert.equal(country.get("code"), "IN");
+  assert.equal(oldIndex.exists, false);
+  assert.equal(newIndex.exists, true);
+  assert.equal(newIndex.get("documentId"), created.locationId);
+  assert.equal(newIndex.get("name"), newName.toLowerCase());
+});
+
 test.after(async () => {
   const deletes = [];
   for (const uid of createdAdmins) deletes.push(db.doc(`admin_users/${uid}`).delete());
