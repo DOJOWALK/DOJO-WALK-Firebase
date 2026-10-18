@@ -42,8 +42,8 @@ export function classifyDistrictIndexPair(input: {
     : "";
   const validIds = (ids: readonly string[]) =>
     Array.isArray(ids) && ids.length > 0 &&
-    ids.every((id) => typeof id === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(id.trim()));
-  if (typeof input.expectedCollection !== "string" || !input.expectedCollection.trim() ||
+    ids.every((id) => typeof id === "string" && id === id.trim() && /^[A-Za-z0-9_-]{1,128}$/.test(id));
+  if (typeof input.expectedCollection !== "string" || !/^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(input.expectedCollection) ||
       typeof input.expectedDocumentId !== "string" ||
       !/^[A-Za-z0-9_-]{1,128}$/.test(input.expectedDocumentId) ||
       !normalizedExpectedName || normalizedExpectedName.length > 120 ||
