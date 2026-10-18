@@ -76,6 +76,33 @@ test("callable rejects a missing or inactive admin profile", async () => {
   );
 });
 
+test("unauthenticated request cannot rename an existing country or alter its index", async () => {
+  const activeUid = await createAdmin();
+  const originalName = `Unauth-Rename-Original-${randomUUID()}`;
+  const replacementName = `Unauth-Rename-New-${randomUUID()}`;
+  const created = await saveCountry(activeUid, originalName);
+  const originalIndexId = countryIndexId(originalName);
+  const replacementIndexId = countryIndexId(replacementName);
+
+  await assert.rejects(
+    () => saveServiceLocationWithNameIndex.run(request(undefined, {
+      locationType: "country",
+      locationId: created.locationId,
+      payload: { name: replacementName, code: "IN" },
+    })),
+    (error) => error && error.code === "unauthenticated",
+  );
+
+  const country = await db.doc(`service_countries/${created.locationId}`).get();
+  const originalIndex = await db.doc(`service_location_name_indexes/${originalIndexId}`).get();
+  const replacementIndex = await db.doc(`service_location_name_indexes/${replacementIndexId}`).get();
+
+  assert.equal(country.get("name"), originalName);
+  assert.equal(originalIndex.exists, true);
+  assert.equal(originalIndex.get("documentId"), created.locationId);
+  assert.equal(replacementIndex.exists, false);
+});
+
 test("viewer role cannot create a country or its name index", async () => {
   const viewerUid = await createAdmin("viewer", true);
   const name = `Viewer-Create-${randomUUID()}`;
