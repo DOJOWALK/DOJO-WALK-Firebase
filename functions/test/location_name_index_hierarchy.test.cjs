@@ -201,6 +201,17 @@ test("Area and Locality saves reject mismatched hierarchy ancestry without writi
     name: `Hierarchy-Area-A-${randomUUID()}`,
   });
 
+  const mismatchedCityName = `Mismatched-City-${randomUUID()}`;
+  await assert.rejects(
+    () => save(uid, "city", {
+      countryId: countryA.locationId, stateId: stateB.locationId, name: mismatchedCityName,
+    }),
+    (error) => error && error.code === "failed-precondition",
+  );
+  const mismatchedCityIndex = indexId("service_cities", [countryA.locationId, stateB.locationId], mismatchedCityName);
+  assert.equal((await db.doc(`service_location_name_indexes/${mismatchedCityIndex}`).get()).exists, false);
+  assert.equal((await db.collection("service_cities").where("name", "==", mismatchedCityName).get()).empty, true);
+
   const mismatchedAreaName = `Mismatched-Area-${randomUUID()}`;
   await assert.rejects(
     () => save(uid, "area", {
@@ -217,12 +228,12 @@ test("Area and Locality saves reject mismatched hierarchy ancestry without writi
   const mismatchedLocalityName = `Mismatched-Locality-${randomUUID()}`;
   await assert.rejects(
     () => save(uid, "locality", {
-      countryId: countryA.locationId, stateId: stateA.locationId, cityId: cityB.locationId,
+      countryId: countryB.locationId, stateId: stateB.locationId, cityId: cityB.locationId,
       areaId: areaA.locationId, name: mismatchedLocalityName,
     }),
     (error) => error && error.code === "failed-precondition",
   );
-  const mismatchedLocalityIndex = indexId("service_localities", [countryA.locationId, stateA.locationId, cityB.locationId, areaA.locationId], mismatchedLocalityName);
+  const mismatchedLocalityIndex = indexId("service_localities", [countryB.locationId, stateB.locationId, cityB.locationId, areaA.locationId], mismatchedLocalityName);
   assert.equal((await db.doc(`service_location_name_indexes/${mismatchedLocalityIndex}`).get()).exists, false);
   const orphanLocalities = await db.collection("service_localities").where("name", "==", mismatchedLocalityName).get();
   assert.equal(orphanLocalities.empty, true);
