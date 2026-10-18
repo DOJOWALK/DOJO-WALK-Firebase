@@ -19,9 +19,9 @@ test("Area preflight separates malformed records from Firestore/helper read erro
 });
 
 test("Area proposed index checks collection, owner, normalized name and full District parent tuple", () => {
-  assert.match(source, /proposedIndex\.collectionPath === "service_areas"/);
-  assert.match(source, /proposedIndex\.documentId === areaId/);
-  assert.match(source, /proposedIndex\.name === normalizeName\(area\.name\)/);
+  assert.match(source, /proposed\.collectionPath === "service_areas"/);
+  assert.match(source, /proposed\.documentId === areaId/);
+  assert.match(source, /proposed\.name === normalizeName\(area\.name\)/);
   assert.match(source, /\[\s*area\.countryId,\s*area\.stateId,\s*city\.districtId,\s*area\.cityId,\s*\]/);
   assert.match(source, /if \(proposedIndexOwnerId === areaId && !proposedIndexMatches\) status = "INDEX_CONFLICT"/);
 });
