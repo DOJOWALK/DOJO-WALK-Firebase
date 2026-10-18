@@ -8,7 +8,7 @@ if (!process.env.FIRESTORE_EMULATOR_HOST) {
 }
 
 const { GeoPoint, getFirestore } = require("firebase-admin/firestore");
-const { activateServiceLocation } = require("../lib/index");
+const { activateServiceLocation, setServiceLocationStatus } = require("../lib/index");
 
 const db = getFirestore();
 const suffix = randomUUID().replace(/-/g, "").slice(0, 12);
@@ -308,4 +308,62 @@ test("callable integration: auth, boundary validation, City and Area activation"
     assert.deepEqual(result, { ok: true, locationId: ids.area, locationType: "area" });
     assert.equal((await db.doc(`service_areas/${ids.area}`).get()).get("isServiceActive"), true);
   });
+});
+
+
+test("concurrent District deactivation and City activation cannot both succeed", async (t) => {
+  const race = Object.fromEntries(
+    ["admin", "country", "state", "district", "city", "boundary"]
+      .map((key) => [key, `it-district-race-${key}-${randomUUID().replace(/-/g, "").slice(0, 12)}`]),
+  );
+  const paths = [
+    `admin_users/${race.admin}`, `service_countries/${race.country}`,
+    `service_states/${race.state}`, `service_districts/${race.district}`,
+    `service_cities/${race.city}`, `service_location_boundaries/${race.boundary}`,
+  ];
+  t.after(async () => {
+    await Promise.all(paths.map((path) => db.doc(path).delete().catch(() => undefined)));
+    for (const collection of ["service_location_activation_audit", "service_location_status_audit"]) {
+      const audits = await db.collection(collection).where("actorUid", "==", race.admin).get();
+      await Promise.all(audits.docs.map((doc) => doc.ref.delete()));
+    }
+  });
+  await Promise.all([
+    db.doc(`admin_users/${race.admin}`).set({ isActive: true, role: "super_admin" }),
+    db.doc(`service_countries/${race.country}`).set({ isActive: true }),
+    db.doc(`service_states/${race.state}`).set({ countryId: race.country, isActive: true }),
+    db.doc(`service_districts/${race.district}`).set({
+      countryId: race.country, stateId: race.state, isServiceActive: true,
+    }),
+    db.doc(`service_cities/${race.city}`).set({
+      countryId: race.country, stateId: race.state, districtId: race.district,
+      isServiceActive: false, verifiedBoundaryId: race.boundary,
+    }),
+    db.doc(`service_location_boundaries/${race.boundary}`).set(
+      boundary(race.city, "city", polygonPoints(0, 0, 10, 10)),
+    ),
+  ]);
+
+  const outcomes = await Promise.allSettled([
+    activateServiceLocation.run({
+      auth: { uid: race.admin, token: { uid: race.admin } },
+      data: { locationType: "city", locationId: race.city },
+    }),
+    setServiceLocationStatus.run({
+      auth: { uid: race.admin, token: { uid: race.admin } },
+      data: { locationType: "district", locationId: race.district, isActive: false },
+    }),
+  ]);
+  const city = await db.doc(`service_cities/${race.city}`).get();
+  const district = await db.doc(`service_districts/${race.district}`).get();
+  assert.equal(
+    outcomes.filter((outcome) => outcome.status === "fulfilled").length,
+    1,
+    "exactly one competing transition should succeed",
+  );
+  if (city.get("isServiceActive") === true) {
+    assert.equal(district.get("isServiceActive"), true, "an active City must retain its active District");
+  } else {
+    assert.equal(district.get("isServiceActive"), false, "if District deactivation wins, City must remain inactive");
+  }
 });
