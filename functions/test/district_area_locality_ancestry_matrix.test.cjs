@@ -7,7 +7,7 @@ const { serviceLocationNameIndexId } = require("../lib/location_name_index");
 
 const db = getFirestore();
 
-async function fixture({ district = true, districtStateMismatch = false } = {}) {
+async function fixture({ district = true, createDistrictDocument = true, districtStateMismatch = false } = {}) {
   const s = randomUUID();
   const f = {
     uid: `district-matrix-admin-${s}`,
@@ -33,7 +33,7 @@ async function fixture({ district = true, districtStateMismatch = false } = {}) 
   await refs[1].set({ name: "Matrix Country", code: "MC", isActive: true });
   await refs[2].set({ name: "Matrix State", countryId: f.countryId, isActive: true });
   await refs[3].set({ name: "Other State", countryId: f.countryId, isActive: true });
-  if (district) await refs[4].set({
+  if (district && createDistrictDocument) await refs[4].set({
     name: "Matrix District", countryId: f.countryId,
     stateId: districtStateMismatch ? f.otherStateId : f.stateId, isActive: true,
   });
@@ -89,7 +89,7 @@ test("Area rejects District document belonging to another State without writes",
 });
 
 test("Locality rejects City with missing District record without writes", async () => {
-  const f = await fixture({ district: false });
+  const f = await fixture({ district: true, createDistrictDocument: false });
   try {
     await assert.rejects(
       () => saveServiceLocationWithNameIndex.run(req(f.uid, "locality", {
