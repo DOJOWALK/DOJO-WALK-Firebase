@@ -141,6 +141,42 @@ test("same Area name is unique under one City but allowed under another", async 
   assert.equal(indexB.get("documentId"), areaB.locationId);
 });
 
+test("same Locality name is unique under one Area but allowed under another", async () => {
+  const uid = await createAdmin();
+  const country = await save(uid, "country", { name: `Locality-Scope-Country-${randomUUID()}`, code: "LS" });
+  const state = await save(uid, "state", { countryId: country.locationId, name: `Locality-Scope-State-${randomUUID()}` });
+  const city = await save(uid, "city", {
+    countryId: country.locationId, stateId: state.locationId, name: `Locality-Scope-City-${randomUUID()}`,
+  });
+  const areaA = await save(uid, "area", {
+    countryId: country.locationId, stateId: state.locationId, cityId: city.locationId, name: `Locality-Scope-Area-A-${randomUUID()}`,
+  });
+  const areaB = await save(uid, "area", {
+    countryId: country.locationId, stateId: state.locationId, cityId: city.locationId, name: `Locality-Scope-Area-B-${randomUUID()}`,
+  });
+  const name = `Shared-Locality-${randomUUID()}`;
+  const localityA = await save(uid, "locality", {
+    countryId: country.locationId, stateId: state.locationId, cityId: city.locationId, areaId: areaA.locationId, name,
+  });
+
+  await assert.rejects(
+    () => save(uid, "locality", {
+      countryId: country.locationId, stateId: state.locationId, cityId: city.locationId, areaId: areaA.locationId, name,
+    }),
+    (error) => error && error.code === "already-exists",
+  );
+
+  const localityB = await save(uid, "locality", {
+    countryId: country.locationId, stateId: state.locationId, cityId: city.locationId, areaId: areaB.locationId, name,
+  });
+  const indexA = await db.doc(`service_location_name_indexes/${indexId("service_localities", [country.locationId, state.locationId, city.locationId, areaA.locationId], name)}`).get();
+  const indexB = await db.doc(`service_location_name_indexes/${indexId("service_localities", [country.locationId, state.locationId, city.locationId, areaB.locationId], name)}`).get();
+
+  assert.notEqual(localityA.locationId, localityB.locationId);
+  assert.equal(indexA.get("documentId"), localityA.locationId);
+  assert.equal(indexB.get("documentId"), localityB.locationId);
+});
+
 test("saving an existing State with the same name and parent is idempotent", async () => {
   const uid = await createAdmin();
   const country = await save(uid, "country", { name: `Idempotent-Country-${randomUUID()}`, code: "IC" });
