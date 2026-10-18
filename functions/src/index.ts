@@ -673,7 +673,7 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     // Country/State before an Area or Locality can be saved. Keep the legacy
     // name-index tuple unchanged until the coordinated index migration.
     if (type === "area" || type === "locality") {
-      const cityData = type === "area" ? parentData[2] : parentData[2];
+      const cityData = parentData[2];
       const districtId = cityData.districtId;
       if (districtId !== undefined && districtId !== null && districtId !== "") {
         if (typeof districtId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(districtId)) {
