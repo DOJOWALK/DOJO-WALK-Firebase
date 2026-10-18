@@ -1251,90 +1251,10 @@ service cloud.firestore {
     // =====================================================
 
     match /service_location_name_indexes/{indexId} {
-      function validIndexShape(data) {
-        return data.keys().hasAll([
-            'collectionPath', 'documentId', 'name', 'parentIds', 'updatedAt'
-          ])
-          && data.keys().hasOnly([
-            'collectionPath', 'documentId', 'name', 'parentIds', 'updatedAt'
-          ])
-          && data.collectionPath is string
-          && data.collectionPath in [
-            'service_countries',
-            'service_states',
-            'service_cities',
-            'service_areas',
-            'service_localities'
-          ]
-          && data.documentId is string
-          && data.documentId.size() > 0
-          && data.documentId.size() <= 128
-          && data.name is string
-          && data.name.size() > 0
-          && data.name.size() <= 120
-          && data.parentIds is list
-          && data.parentIds.size() <= 4
-          && (
-            (data.collectionPath == 'service_countries'
-              && data.parentIds.size() == 0)
-            || (data.collectionPath == 'service_states'
-              && data.parentIds.size() == 1
-              && data.parentIds[0] is string
-              && data.parentIds[0].size() > 0
-              && data.parentIds[0].size() <= 128)
-            || (data.collectionPath == 'service_cities'
-              && data.parentIds.size() == 2
-              && data.parentIds[0] is string
-              && data.parentIds[0].size() > 0
-              && data.parentIds[0].size() <= 128
-              && data.parentIds[1] is string
-              && data.parentIds[1].size() > 0
-              && data.parentIds[1].size() <= 128)
-            || (data.collectionPath == 'service_areas'
-              && data.parentIds.size() == 3
-              && data.parentIds[0] is string
-              && data.parentIds[0].size() > 0
-              && data.parentIds[0].size() <= 128
-              && data.parentIds[1] is string
-              && data.parentIds[1].size() > 0
-              && data.parentIds[1].size() <= 128
-              && data.parentIds[2] is string
-              && data.parentIds[2].size() > 0
-              && data.parentIds[2].size() <= 128)
-            || (data.collectionPath == 'service_localities'
-              && data.parentIds.size() == 4
-              && data.parentIds[0] is string
-              && data.parentIds[0].size() > 0
-              && data.parentIds[0].size() <= 128
-              && data.parentIds[1] is string
-              && data.parentIds[1].size() > 0
-              && data.parentIds[1].size() <= 128
-              && data.parentIds[2] is string
-              && data.parentIds[2].size() > 0
-              && data.parentIds[2].size() <= 128
-              && data.parentIds[3] is string
-              && data.parentIds[3].size() > 0
-              && data.parentIds[3].size() <= 128)
-          )
-          && data.updatedAt is timestamp;
-      }
-
+      // Name-index integrity is maintained atomically by the trusted callable
+      // using the Admin SDK. Client SDKs must never mutate these records.
       allow get, list: if isAdmin();
-
-      allow create: if isAdmin()
-        && validIndexShape(request.resource.data)
-        && request.resource.data.updatedAt == request.time;
-
-      allow update: if isAdmin()
-        && validIndexShape(request.resource.data)
-        && request.resource.data.updatedAt == request.time
-        && request.resource.data.collectionPath == resource.data.collectionPath
-        && request.resource.data.documentId == resource.data.documentId
-        && request.resource.data.name == resource.data.name
-        && request.resource.data.parentIds == resource.data.parentIds;
-
-      allow delete: if isAdmin()
-        && validIndexShape(resource.data);
+      allow create, update, delete: if false;
     }
 
     // =====================================================
