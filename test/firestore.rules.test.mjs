@@ -367,6 +367,15 @@ test('name indexes enforce the Admin payload schema and active super_admin autho
   await assertFails(setDoc(doc(superDb, 'service_location_name_indexes/wrong-parent-count'), {
     ...index, parentIds: ['india'],
   }));
+  await assertFails(setDoc(doc(superDb, 'service_location_name_indexes/empty-parent-id'), {
+    ...index, parentIds: ['india', '', 'city-1'],
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_name_indexes/non-string-parent-id'), {
+    ...index, parentIds: ['india', 42, 'city-1'],
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_name_indexes/oversized-parent-id'), {
+    ...index, parentIds: ['india', 'x'.repeat(129), 'city-1'],
+  }));
   await assertFails(setDoc(doc(superDb, 'service_location_name_indexes/country-with-parent'), {
     ...index, collectionPath: 'service_countries', parentIds: ['india', 'up', 'city-1'],
   }));
