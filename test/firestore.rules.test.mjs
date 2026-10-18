@@ -102,7 +102,7 @@ test('new hierarchy records require existing, correctly linked ancestors', async
   await assertFails(setDoc(doc(db, 'service_localities/missing-area-locality'), {
     ...childBase, countryId: 'india', stateId: 'up', cityId: 'city-parent', areaId: 'missing-area',
   }));
-  await assertSucceeds(setDoc(doc(db, 'service_states/valid-new-state'), {
+  await assertFails(setDoc(doc(db, 'service_states/valid-new-state'), {
     ...stateBase, countryId: 'india',
   }));
 });
@@ -116,9 +116,9 @@ test('unauthenticated reads and writes to service locations are denied', async (
   }));
 });
 
-test('active super_admin can create a valid country', async () => {
+test('even an active super_admin must use the trusted callable to create a country', async () => {
   const db = env.authenticatedContext('super-active').firestore();
-  await assertSucceeds(setDoc(doc(db, 'service_countries/india-new'), {
+  await assertFails(setDoc(doc(db, 'service_countries/india-new'), {
     name: 'India', code: 'IN', isActive: false,
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   }));
@@ -190,22 +190,22 @@ test('direct city activation with a mismatched boundary is denied', async () => 
   }));
 });
 
-test('admin can bind a verified boundary to an inactive City', async () => {
+test('client cannot create or bind a verified boundary to an inactive City', async () => {
   const db = env.authenticatedContext('super-active').firestore();
-  await assertSucceeds(setDoc(doc(db, 'service_cities/city-1'), {
+  await assertFails(setDoc(doc(db, 'service_cities/city-1'), {
     countryId: 'india', stateId: 'up', name: 'Example City',
     isServiceActive: false,
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   }));
-  await assertSucceeds(updateDoc(doc(db, 'service_cities/city-1'), {
+  await assertFails(updateDoc(doc(db, 'service_cities/city-1'), {
     verifiedBoundaryId: 'city-boundary',
     updatedAt: serverTimestamp(),
   }));
 });
 
-test('admin can bind a verified boundary to an inactive Area under an active City', async () => {
+test('client cannot create or bind a verified boundary to an inactive Area', async () => {
   const db = env.authenticatedContext('super-active').firestore();
-  await assertSucceeds(setDoc(doc(db, 'service_areas/area-1'), {
+  await assertFails(setDoc(doc(db, 'service_areas/area-1'), {
     countryId: 'india', stateId: 'up', cityId: 'city-parent',
     name: 'Example Area', isServiceActive: false,
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
@@ -220,7 +220,7 @@ test('admin can bind a verified boundary to an inactive Area under an active Cit
       createdAt: new Date('2026-01-01T00:00:00Z'), updatedAt: new Date('2026-01-01T00:00:00Z'),
     });
   });
-  await assertSucceeds(updateDoc(doc(db, 'service_areas/area-1'), {
+  await assertFails(updateDoc(doc(db, 'service_areas/area-1'), {
     verifiedBoundaryId: 'area-boundary',
     updatedAt: serverTimestamp(),
   }));
@@ -513,63 +513,22 @@ test('clients cannot create, update, or delete service location activation audit
 
 // Direct client transactions must not be able to verify a boundary or bind it
 // to a City. The trusted callable integration suite covers the allowed server path.
-test('client transaction cannot verify boundary and bind inactive City', async () => {
+test('client transaction cannot create or bind a service location directly', async () => {
   const db = env.authenticatedContext('super-active').firestore();
-  const cityRef = doc(db, 'service_cities/city-transaction');
-  const boundaryRef = doc(db, 'service_location_boundaries/city-transaction-boundary');
-
-  await assertSucceeds(setDoc(cityRef, {
+  await assertFails(setDoc(doc(db, 'service_cities/city-transaction'), {
     countryId: 'india', stateId: 'up', name: 'Transaction City',
     isServiceActive: false,
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   }));
-  await assertSucceeds(setDoc(boundaryRef, {
-    locationId: 'city-transaction',
-    locationType: 'city',
-    points: [
-      { lat: 28.5, lng: 77.3 },
-      { lat: 28.6, lng: 77.3 },
-      { lat: 28.6, lng: 77.4 },
-    ],
-    sourceType: 'governmentGis',
-    sourceName: 'Test official source',
-    sourceReference: 'CITY-TRANSACTION-REF',
-    verificationStatus: 'pending',
-    verifiedBy: null,
-    verifiedAt: null,
-    verificationNotes: null,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+  await assertFails(setDoc(doc(db, 'service_areas/area-transaction'), {
+    countryId: 'india', stateId: 'up', cityId: 'city-parent', name: 'Transaction Area',
+    isServiceActive: false,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   }));
-
-  const { runTransaction } = await import('firebase/firestore');
-  await assertFails(runTransaction(db, async (transaction) => {
-    const boundarySnapshot = await transaction.get(boundaryRef);
-    const citySnapshot = await transaction.get(cityRef);
-    assert.equal(boundarySnapshot.data().verificationStatus, 'pending');
-    assert.equal(citySnapshot.data().isServiceActive, false);
-    transaction.update(boundaryRef, {
-      verificationStatus: 'verified',
-      verifiedBy: 'super-active',
-      verifiedAt: serverTimestamp(),
-      verificationNotes: 'Direct client transaction attempt',
-      updatedAt: serverTimestamp(),
-    });
-    transaction.update(cityRef, {
-      verifiedBoundaryId: 'city-transaction-boundary',
-      updatedAt: serverTimestamp(),
-    });
+  await assertFails(updateDoc(doc(db, 'service_cities/city-parent'), {
+    name: 'Tampered Parent City', updatedAt: serverTimestamp(),
   }));
-
-  const [savedBoundary, savedCity] = await Promise.all([
-    getDoc(boundaryRef),
-    getDoc(cityRef),
-  ]);
-  assert.equal(savedBoundary.data().verificationStatus, 'pending');
-  assert.equal(savedCity.data().verifiedBoundaryId, undefined);
-  assert.equal(savedCity.data().isServiceActive, false);
 });
-
 
 test('clients cannot directly deactivate Country, State, City, or Area', async () => {
   await env.withSecurityRulesDisabled(async (context) => {
