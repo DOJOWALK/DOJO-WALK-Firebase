@@ -236,6 +236,27 @@ test("viewer role cannot change an existing country's code", async () => {
   assert.equal(index.get("documentId"), created.locationId);
 });
 
+test("active admin can rename a country and atomically move its name index", async () => {
+  const adminUid = await createAdmin("admin", true);
+  const originalName = `Admin-Rename-Original-${randomUUID()}`;
+  const replacementName = `Admin-Rename-New-${randomUUID()}`;
+  const created = await saveCountry(adminUid, originalName);
+  const originalIndexId = countryIndexId(originalName);
+  const replacementIndexId = countryIndexId(replacementName);
+
+  const result = await saveCountry(adminUid, replacementName, created.locationId);
+  const country = await db.doc(`service_countries/${created.locationId}`).get();
+  const originalIndex = await db.doc(`service_location_name_indexes/${originalIndexId}`).get();
+  const replacementIndex = await db.doc(`service_location_name_indexes/${replacementIndexId}`).get();
+
+  assert.equal(result.ok, true);
+  assert.equal(result.locationId, created.locationId);
+  assert.equal(country.get("name"), replacementName);
+  assert.equal(originalIndex.exists, false);
+  assert.equal(replacementIndex.exists, true);
+  assert.equal(replacementIndex.get("documentId"), created.locationId);
+  assert.equal(replacementIndex.get("collectionPath"), "service_countries");
+});
 test("active admin can change a country code without breaking its name index", async () => {
   const adminUid = await createAdmin("admin", true);
   const name = `Admin-Code-Update-${randomUUID()}`;
