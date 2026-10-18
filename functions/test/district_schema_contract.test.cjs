@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const {
   normalizeDistrictParentChain,
   districtParentChainIsConsistent,
+  classifyCityDistrictCompatibility,
 } = require("../lib/district_schema_contract");
 
 test("normalizes and accepts a valid District parent chain", () => {
@@ -242,4 +243,50 @@ test("rejects a Locality linked to a different Area or District", () => {
       areaId: "area-1",
     },
   }), false);
+});
+
+test("classifies a legacy City without District without guessing a mapping", () => {
+  assert.equal(classifyCityDistrictCompatibility({
+    city: { countryId: "country-1", stateId: "state-1" },
+    district: null,
+    expectedCountryId: "country-1",
+    expectedStateId: "state-1",
+  }), "LEGACY_NO_DISTRICT");
+});
+
+test("classifies a City with a matching trusted District", () => {
+  assert.equal(classifyCityDistrictCompatibility({
+    city: {
+      countryId: "country-1",
+      stateId: "state-1",
+      districtId: "district-1",
+    },
+    district: { countryId: "country-1", stateId: "state-1" },
+    expectedCountryId: "country-1",
+    expectedStateId: "state-1",
+  }), "DISTRICT_LINKED");
+});
+
+test("classifies mismatched or missing District ancestry as broken", () => {
+  assert.equal(classifyCityDistrictCompatibility({
+    city: {
+      countryId: "country-1",
+      stateId: "state-1",
+      districtId: "district-1",
+    },
+    district: { countryId: "country-other", stateId: "state-1" },
+    expectedCountryId: "country-1",
+    expectedStateId: "state-1",
+  }), "BROKEN_PARENT_CHAIN");
+
+  assert.equal(classifyCityDistrictCompatibility({
+    city: {
+      countryId: "country-1",
+      stateId: "state-1",
+      districtId: "district-1",
+    },
+    district: null,
+    expectedCountryId: "country-1",
+    expectedStateId: "state-1",
+  }), "BROKEN_PARENT_CHAIN");
 });
