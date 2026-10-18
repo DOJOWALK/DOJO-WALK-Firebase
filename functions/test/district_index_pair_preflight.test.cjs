@@ -59,7 +59,7 @@ test("blocks indexes that point to different location documents", () => {
     legacy: index(base.legacyParentIds),
     districtAware: index(base.districtParentIds, { documentId: "area-2" }),
   });
-  assert.equal(r.status, "DISTRICT_OWNER_MISMATCH");
+  assert.equal(r.status, "CONFLICT_DIFFERENT_DOCUMENT");
   assert.equal(r.safeToMigrate, false);
 });
 
