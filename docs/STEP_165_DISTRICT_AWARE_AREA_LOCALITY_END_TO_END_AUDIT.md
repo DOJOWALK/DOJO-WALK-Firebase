@@ -27,3 +27,12 @@ This is a code-contract audit only. No production Firestore reads, writes, migra
 
 ## Current result
 The contract audit is complete as documentation; the District-aware production callable migration and fresh CI verification are not complete. No production mutation was made.
+
+
+## Step 165 follow-up — current payload contract regression tests
+Added `functions/test/district_area_payload_contract.test.cjs` to lock the current safe boundary:
+- Area payloads with `districtId` are rejected by the allowlist until the callable/index migration is coordinated.
+- City payloads may carry the optional District parent.
+- Legacy Area payloads without `districtId` remain valid.
+
+This test intentionally does not change production behavior. CI for this addition must pass before proceeding to the production callable migration.
