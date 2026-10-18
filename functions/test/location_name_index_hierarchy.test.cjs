@@ -108,6 +108,39 @@ test("same City name is unique under one State but allowed under another", async
   assert.equal(indexB.get("documentId"), cityB.locationId);
 });
 
+test("same Area name is unique under one City but allowed under another", async () => {
+  const uid = await createAdmin();
+  const country = await save(uid, "country", { name: `Area-Scope-Country-${randomUUID()}`, code: "AS" });
+  const state = await save(uid, "state", { countryId: country.locationId, name: `Area-Scope-State-${randomUUID()}` });
+  const cityA = await save(uid, "city", {
+    countryId: country.locationId, stateId: state.locationId, name: `Area-Scope-City-A-${randomUUID()}`,
+  });
+  const cityB = await save(uid, "city", {
+    countryId: country.locationId, stateId: state.locationId, name: `Area-Scope-City-B-${randomUUID()}`,
+  });
+  const name = `Shared-Area-${randomUUID()}`;
+  const areaA = await save(uid, "area", {
+    countryId: country.locationId, stateId: state.locationId, cityId: cityA.locationId, name,
+  });
+
+  await assert.rejects(
+    () => save(uid, "area", {
+      countryId: country.locationId, stateId: state.locationId, cityId: cityA.locationId, name,
+    }),
+    (error) => error && error.code === "already-exists",
+  );
+
+  const areaB = await save(uid, "area", {
+    countryId: country.locationId, stateId: state.locationId, cityId: cityB.locationId, name,
+  });
+  const indexA = await db.doc(`service_location_name_indexes/${indexId("service_areas", [country.locationId, state.locationId, cityA.locationId], name)}`).get();
+  const indexB = await db.doc(`service_location_name_indexes/${indexId("service_areas", [country.locationId, state.locationId, cityB.locationId], name)}`).get();
+
+  assert.notEqual(areaA.locationId, areaB.locationId);
+  assert.equal(indexA.get("documentId"), areaA.locationId);
+  assert.equal(indexB.get("documentId"), areaB.locationId);
+});
+
 test("saving an existing State with the same name and parent is idempotent", async () => {
   const uid = await createAdmin();
   const country = await save(uid, "country", { name: `Idempotent-Country-${randomUUID()}`, code: "IC" });
