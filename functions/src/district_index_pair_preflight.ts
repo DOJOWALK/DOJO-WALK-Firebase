@@ -5,7 +5,8 @@ export type DistrictIndexPairStatus =
   | "BOTH_SAME_DOCUMENT"
   | "CONFLICT_DIFFERENT_DOCUMENT"
   | "LEGACY_OWNER_MISMATCH"
-  | "DISTRICT_OWNER_MISMATCH";
+  | "DISTRICT_OWNER_MISMATCH"
+  | "INPUT_INVALID";
 
 export interface NameIndexSnapshot {
   exists: boolean;
@@ -36,10 +37,27 @@ export function classifyDistrictIndexPair(input: {
   districtAware: NameIndexSnapshot;
 }): DistrictIndexPairClassification {
   const { legacy, districtAware } = input;
+  const normalizedExpectedName = typeof input.expectedName === "string"
+    ? input.expectedName.trim().toLowerCase().replace(/\s+/g, " ")
+    : "";
+  const validIds = (ids: readonly string[]) =>
+    Array.isArray(ids) && ids.length > 0 &&
+    ids.every((id) => typeof id === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(id.trim()));
+  if (typeof input.expectedCollection !== "string" || !input.expectedCollection.trim() ||
+      typeof input.expectedDocumentId !== "string" ||
+      !/^[A-Za-z0-9_-]{1,128}$/.test(input.expectedDocumentId) ||
+      !normalizedExpectedName || normalizedExpectedName.length > 120 ||
+      !validIds(input.legacyParentIds) || !validIds(input.districtParentIds)) {
+    return {
+      status: "INPUT_INVALID",
+      safeToMigrate: false,
+      reason: "Expected document identity, normalized name, or parent tuple is invalid.",
+    };
+  }
   const tupleMatches = (index: NameIndexSnapshot, parents: readonly string[]) =>
     index.exists &&
     index.collectionPath === input.expectedCollection &&
-    index.name === input.expectedName.trim().toLowerCase().replace(/\s+/g, " ") &&
+    index.name === normalizedExpectedName &&
     Array.isArray(index.parentIds) &&
     JSON.stringify(index.parentIds) === JSON.stringify(parents);
 
