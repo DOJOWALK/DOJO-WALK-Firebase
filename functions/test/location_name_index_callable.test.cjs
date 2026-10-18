@@ -161,6 +161,26 @@ test("viewer role cannot rename an existing country or alter its index", async (
   assert.equal(replacementIndex.exists, false);
 });
 
+test("missing admin profile cannot create a country or its name index", async () => {
+  const uid = `missing-admin-${randomUUID()}`;
+  const name = `Missing-Admin-Create-${randomUUID()}`;
+  const indexId = countryIndexId(name);
+
+  await assert.rejects(
+    () => saveCountry(uid, name),
+    (error) => error && error.code === "permission-denied",
+  );
+
+  const matching = await db.collection("service_countries")
+    .where("name", "==", name).get();
+  const index = await db.doc(
+    `service_location_name_indexes/${indexId}`,
+  ).get();
+
+  assert.equal(matching.empty, true);
+  assert.equal(index.exists, false);
+});
+
 test("inactive admin cannot rename an existing country or alter its index", async () => {
   const activeUid = await createAdmin();
   const inactiveUid = await createAdmin("admin", false);
