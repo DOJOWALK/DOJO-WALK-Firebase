@@ -236,6 +236,32 @@ test("viewer role cannot change an existing country's code", async () => {
   assert.equal(index.get("documentId"), created.locationId);
 });
 
+test("country rename is case-insensitive and whitespace-normalized for duplicate detection", async () => {
+  const adminUid = await createAdmin("admin", true);
+  const existingName = `Normalized-${randomUUID()}`;
+  const conflictingName = `  ${existingName.toUpperCase()}   `;
+  const existing = await saveCountry(adminUid, existingName);
+  const target = await saveCountry(adminUid, `Rename-Target-${randomUUID()}`);
+  const existingIndexId = countryIndexId(existingName);
+  const targetIndexId = countryIndexId(`Rename-Target-${randomUUID()}`);
+
+  await assert.rejects(
+    () => saveCountry(adminUid, conflictingName, target.locationId),
+    (error) => error && error.code === "already-exists",
+  );
+
+  const existingCountry = await db.doc(`service_countries/${existing.locationId}`).get();
+  const targetCountry = await db.doc(`service_countries/${target.locationId}`).get();
+  const existingIndex = await db.doc(`service_location_name_indexes/${existingIndexId}`).get();
+  const targetIndex = await db.doc(`service_location_name_indexes/${targetIndexId}`).get();
+
+  assert.equal(existingCountry.get("name"), existingName);
+  assert.equal(targetCountry.get("name").startsWith("Rename-Target-"), true);
+  assert.equal(existingIndex.exists, true);
+  assert.equal(existingIndex.get("documentId"), existing.locationId);
+  assert.equal(targetIndex.exists, true);
+  assert.equal(targetIndex.get("documentId"), target.locationId);
+});
 test("renaming a country to an existing name preserves both countries and indexes", async () => {
   const adminUid = await createAdmin("admin", true);
   const firstName = `Duplicate-Rename-First-${randomUUID()}`;
