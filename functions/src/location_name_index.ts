@@ -33,7 +33,7 @@ export function serviceLocationNameIndexId(
   const normalizedParents = parentIds.map((id) => {
     if (typeof id !== "string") throw new Error("LOCATION_INDEX_PARENT_INVALID");
     const trimmed = id.trim();
-    if (!trimmed || trimmed.length > 128) throw new Error("LOCATION_INDEX_PARENT_INVALID");
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(trimmed)) throw new Error("LOCATION_INDEX_PARENT_INVALID");
     return trimmed;
   });
   const expectedParentCount: Record<string, number> = {
@@ -90,7 +90,7 @@ export function validateServiceLocationPayload(
   };
   for (const field of parentFields[type]) {
     const value = record[field];
-    if (typeof value !== "string" || !value.trim() || value.trim().length > 128) {
+    if (typeof value !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(value.trim())) {
       throw new Error("LOCATION_INDEX_PARENT_INVALID");
     }
   }
