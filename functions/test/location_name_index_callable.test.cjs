@@ -535,6 +535,34 @@ test("renaming a country to its own normalized name preserves its name index", a
   assert.equal(index.get("name"), originalName.trim().toLowerCase());
 });
 
+test("country rename and code change update the location and name index together", async () => {
+  const uid = await createAdmin();
+  const originalName = `Combined-Original-${randomUUID()}`;
+  const newName = `Combined-Renamed-${randomUUID()}`;
+  const created = await saveCountry(uid, originalName);
+  const oldIndexId = countryIndexId(originalName);
+  const newIndexId = countryIndexId(newName);
+
+  const result = await saveServiceLocationWithNameIndex.run(request(uid, {
+    locationType: "country",
+    locationId: created.locationId,
+    payload: { name: newName, code: "GB" },
+  }));
+
+  const oldIndex = await db.doc(`service_location_name_indexes/${oldIndexId}`).get();
+  const newIndex = await db.doc(`service_location_name_indexes/${newIndexId}`).get();
+  const location = await db.doc(`service_countries/${created.locationId}`).get();
+
+  assert.equal(result.ok, true);
+  assert.equal(result.locationId, created.locationId);
+  assert.equal(oldIndex.exists, false);
+  assert.equal(newIndex.exists, true);
+  assert.equal(newIndex.get("documentId"), created.locationId);
+  assert.equal(newIndex.get("name"), newName.trim().toLowerCase());
+  assert.equal(location.get("name"), newName);
+  assert.equal(location.get("code"), "GB");
+});
+
 test.after(async () => {
   const deletes = [];
   for (const uid of createdAdmins) deletes.push(db.doc(`admin_users/${uid}`).delete());
