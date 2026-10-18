@@ -94,7 +94,19 @@ async function main() {
         if (proposedIndexOwnerId === localityId && !proposedIndexMatches) status = "INDEX_CONFLICT";
         reason = status === "READY" ? "ALL_READ_ONLY_CHECKS_PASSED" : status;
       } catch (e) {
-        reason = e instanceof Error ? e.message : "READ_ERROR";
+        const message = e instanceof Error ? e.message : "";
+        const knownDataErrors = new Set([
+          "LOCALITY_PARENT_FIELDS_INVALID", "CITY_MISSING", "AREA_MISSING",
+          "STATE_COUNTRY_MISMATCH", "COUNTRY_MISSING", "LOCALITY_PARENT_CHAIN_MISMATCH",
+          "DISTRICT_COUNTRY_STATE_MISMATCH",
+        ]);
+        if (knownDataErrors.has(message)) {
+          status = "BROKEN_PARENT_CHAIN";
+          reason = message;
+        } else {
+          status = "READ_ERROR";
+          reason = "FIRESTORE_OR_INDEX_HELPER_READ_FAILED";
+        }
       }
       counts[status]++;
       records.push({
