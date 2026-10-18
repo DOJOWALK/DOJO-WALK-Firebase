@@ -236,6 +236,32 @@ test("viewer role cannot change an existing country's code", async () => {
   assert.equal(index.get("documentId"), created.locationId);
 });
 
+test("renaming a country to an existing name preserves both countries and indexes", async () => {
+  const adminUid = await createAdmin("admin", true);
+  const firstName = `Duplicate-Rename-First-${randomUUID()}`;
+  const secondName = `Duplicate-Rename-Second-${randomUUID()}`;
+  const first = await saveCountry(adminUid, firstName);
+  const second = await saveCountry(adminUid, secondName);
+  const firstIndexId = countryIndexId(firstName);
+  const secondIndexId = countryIndexId(secondName);
+
+  await assert.rejects(
+    () => saveCountry(adminUid, secondName, first.locationId),
+    (error) => error && error.code === "already-exists",
+  );
+
+  const firstCountry = await db.doc(`service_countries/${first.locationId}`).get();
+  const secondCountry = await db.doc(`service_countries/${second.locationId}`).get();
+  const firstIndex = await db.doc(`service_location_name_indexes/${firstIndexId}`).get();
+  const secondIndex = await db.doc(`service_location_name_indexes/${secondIndexId}`).get();
+
+  assert.equal(firstCountry.get("name"), firstName);
+  assert.equal(secondCountry.get("name"), secondName);
+  assert.equal(firstIndex.exists, true);
+  assert.equal(firstIndex.get("documentId"), first.locationId);
+  assert.equal(secondIndex.exists, true);
+  assert.equal(secondIndex.get("documentId"), second.locationId);
+});
 test("active admin can rename a country and atomically move its name index", async () => {
   const adminUid = await createAdmin("admin", true);
   const originalName = `Admin-Rename-Original-${randomUUID()}`;
