@@ -48,6 +48,34 @@ export function classifyCityDistrictCompatibility(input: {
   return "DISTRICT_LINKED";
 }
 
+export type DistrictMigrationPreflightStatus =
+  | "READY"
+  | "LEGACY_NO_DISTRICT"
+  | "BROKEN_PARENT_CHAIN"
+  | "INDEX_CONFLICT"
+  | "LEGACY_INDEX_MISSING_OR_MISMATCHED";
+
+/**
+ * Classify an Area's migration readiness using precomputed, trusted read-only
+ * checks. This function performs no reads/writes and never resolves conflicts
+ * by overwriting an index.
+ */
+export function classifyAreaMigrationPreflight(input: {
+  cityCompatibility: CityDistrictCompatibility;
+  legacyIndexMatches: boolean;
+  proposedIndexOwnerId: string | null;
+  areaId: string;
+}): DistrictMigrationPreflightStatus {
+  if (input.cityCompatibility === "LEGACY_NO_DISTRICT") return "LEGACY_NO_DISTRICT";
+  if (input.cityCompatibility === "BROKEN_PARENT_CHAIN") return "BROKEN_PARENT_CHAIN";
+  if (!input.legacyIndexMatches) return "LEGACY_INDEX_MISSING_OR_MISMATCHED";
+  if (
+    input.proposedIndexOwnerId !== null &&
+    input.proposedIndexOwnerId !== input.areaId
+  ) return "INDEX_CONFLICT";
+  return "READY";
+}
+
 export interface DistrictParentChain {
   countryId: string;
   stateId: string;
