@@ -4,6 +4,7 @@ const {
   normalizeDistrictParentChain,
   districtParentChainIsConsistent,
   classifyCityDistrictCompatibility,
+  classifyAreaMigrationPreflight,
 } = require("../lib/district_schema_contract");
 
 test("normalizes and accepts a valid District parent chain", () => {
@@ -289,4 +290,54 @@ test("classifies mismatched or missing District ancestry as broken", () => {
     expectedCountryId: "country-1",
     expectedStateId: "state-1",
   }), "BROKEN_PARENT_CHAIN");
+});
+
+test("preflight classifies a clean Area with an unoccupied proposed index as READY", () => {
+  assert.equal(classifyAreaMigrationPreflight({
+    cityCompatibility: "DISTRICT_LINKED",
+    legacyIndexMatches: true,
+    proposedIndexOwnerId: null,
+    areaId: "area-1",
+  }), "READY");
+});
+
+test("preflight preserves legacy and broken-parent exception categories", () => {
+  assert.equal(classifyAreaMigrationPreflight({
+    cityCompatibility: "LEGACY_NO_DISTRICT",
+    legacyIndexMatches: true,
+    proposedIndexOwnerId: null,
+    areaId: "area-1",
+  }), "LEGACY_NO_DISTRICT");
+
+  assert.equal(classifyAreaMigrationPreflight({
+    cityCompatibility: "BROKEN_PARENT_CHAIN",
+    legacyIndexMatches: true,
+    proposedIndexOwnerId: null,
+    areaId: "area-1",
+  }), "BROKEN_PARENT_CHAIN");
+});
+
+test("preflight refuses mismatched legacy index and conflicting proposed index owner", () => {
+  assert.equal(classifyAreaMigrationPreflight({
+    cityCompatibility: "DISTRICT_LINKED",
+    legacyIndexMatches: false,
+    proposedIndexOwnerId: null,
+    areaId: "area-1",
+  }), "LEGACY_INDEX_MISSING_OR_MISMATCHED");
+
+  assert.equal(classifyAreaMigrationPreflight({
+    cityCompatibility: "DISTRICT_LINKED",
+    legacyIndexMatches: true,
+    proposedIndexOwnerId: "area-other",
+    areaId: "area-1",
+  }), "INDEX_CONFLICT");
+});
+
+test("preflight allows an existing proposed index owned by the same Area", () => {
+  assert.equal(classifyAreaMigrationPreflight({
+    cityCompatibility: "DISTRICT_LINKED",
+    legacyIndexMatches: true,
+    proposedIndexOwnerId: "area-1",
+    areaId: "area-1",
+  }), "READY");
 });
