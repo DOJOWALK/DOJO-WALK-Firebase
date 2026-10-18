@@ -158,3 +158,17 @@ test("rejects whitespace-padded parent IDs and collection paths", () => {
   assert.equal(invalidCollection.status, "INPUT_INVALID");
   assert.equal(invalidCollection.safeToMigrate, false);
 });
+
+test("rejects malformed index snapshot shapes without throwing", () => {
+  const badLegacy = classifyDistrictIndexPair({
+    ...base, legacy: { exists: "yes" }, districtAware: absent,
+  });
+  assert.equal(badLegacy.status, "INPUT_INVALID");
+  assert.equal(badLegacy.safeToMigrate, false);
+
+  const missingSnapshot = classifyDistrictIndexPair({
+    ...base, legacy: null, districtAware: absent,
+  });
+  assert.equal(missingSnapshot.status, "INPUT_INVALID");
+  assert.equal(missingSnapshot.safeToMigrate, false);
+});
