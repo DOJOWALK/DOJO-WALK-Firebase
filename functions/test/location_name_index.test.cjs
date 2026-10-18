@@ -103,7 +103,7 @@ test("validates a District payload with Country and State parents", () => {
   });
 });
 
-test("still rejects districtId on City until district-aware City migration lands", () => {
+test("rejects malformed districtId on City", () => {
   assert.throws(
     () => validateServiceLocationPayload("city", {
       countryId: "country-1",
