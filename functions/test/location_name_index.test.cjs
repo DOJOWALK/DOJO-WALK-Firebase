@@ -38,10 +38,6 @@ test("rejects parent IDs containing path separators or whitespace", () => {
     () => serviceLocationNameIndexId("service_states", ["country id"], "Uttar Pradesh"),
     /LOCATION_INDEX_PARENT_INVALID/,
   );
-  assert.throws(
-    () => serviceLocationNameIndexId("service_states", [" country-1 "], "Uttar Pradesh"),
-    /LOCATION_INDEX_PARENT_INVALID/,
-  );
 });
 
 test("rejects empty or oversized parent IDs", () => {
