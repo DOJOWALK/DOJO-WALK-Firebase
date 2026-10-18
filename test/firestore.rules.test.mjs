@@ -335,7 +335,7 @@ test('direct area activation with a mismatched boundary is denied', async () => 
   }));
 });
 
-test('name indexes enforce the Admin payload schema and active super_admin authorization', async () => {
+test('name indexes can only be mutated by the trusted callable, not client SDKs', async () => {
   const superDb = env.authenticatedContext('super-active').firestore();
   const supportDb = env.authenticatedContext('support-active').firestore();
   const locationDb = env.authenticatedContext('location-active').firestore();
@@ -347,39 +347,29 @@ test('name indexes enforce the Admin payload schema and active super_admin autho
     parentIds: ['india', 'up', 'city-1'],
     updatedAt: serverTimestamp(),
   };
-  await assertSucceeds(setDoc(doc(superDb, 'service_location_name_indexes/area-example'), index));
+
+  // Even an active super_admin must use the trusted callable for index writes.
+  await assertFails(setDoc(doc(superDb, 'service_location_name_indexes/super-attempt'), index));
   await assertFails(setDoc(doc(supportDb, 'service_location_name_indexes/support-attempt'), index));
-  await assertFails(setDoc(doc(locationDb, 'service_location_name_indexes/location-attempt'), index));
+  await assertFails(setDoc(doc(locationDb, 'service_location_name_indexes/admin-attempt'), index));
   await assertFails(setDoc(doc(inactiveDb, 'service_location_name_indexes/inactive-attempt'), index));
 
-  await assertFails(setDoc(doc(superDb, 'service_location_name_indexes/extra-field'), {
-    ...index, arbitraryAdminField: true,
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'service_location_name_indexes/existing-index'), {
+      collectionPath: 'service_areas',
+      documentId: 'area-1',
+      name: 'example-area',
+      parentIds: ['india', 'up', 'city-1'],
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+  });
+
+  await assertFails(updateDoc(doc(superDb, 'service_location_name_indexes/existing-index'), {
+    name: 'tampered-name',
+    updatedAt: serverTimestamp(),
   }));
-  await assertFails(setDoc(doc(superDb, 'service_location_name_indexes/unknown-collection'), {
-    ...index, collectionPath: 'users',
-  }));
-  await assertFails(setDoc(doc(superDb, 'service_location_name_indexes/empty-name'), {
-    ...index, name: '',
-  }));
-  await assertFails(setDoc(doc(superDb, 'service_location_name_indexes/too-many-parents'), {
-    ...index, parentIds: ['a', 'b', 'c', 'd', 'e'],
-  }));
-  await assertFails(setDoc(doc(superDb, 'service_location_name_indexes/wrong-parent-count'), {
-    ...index, parentIds: ['india'],
-  }));
-  await assertFails(setDoc(doc(superDb, 'service_location_name_indexes/empty-parent-id'), {
-    ...index, parentIds: ['india', '', 'city-1'],
-  }));
-  await assertFails(setDoc(doc(superDb, 'service_location_name_indexes/non-string-parent-id'), {
-    ...index, parentIds: ['india', 42, 'city-1'],
-  }));
-  await assertFails(setDoc(doc(superDb, 'service_location_name_indexes/oversized-parent-id'), {
-    ...index, parentIds: ['india', 'x'.repeat(129), 'city-1'],
-  }));
-  await assertFails(setDoc(doc(superDb, 'service_location_name_indexes/country-with-parent'), {
-    ...index, collectionPath: 'service_countries', parentIds: ['india', 'up', 'city-1'],
-  }));
-  await assertFails(deleteDoc(doc(supportDb, 'service_location_name_indexes/area-example')));
+  await assertFails(deleteDoc(doc(superDb, 'service_location_name_indexes/existing-index')));
+  await assertFails(deleteDoc(doc(supportDb, 'service_location_name_indexes/existing-index')));
 });
 
 test('import audit validates bounded strings, actor, and immutable create-only records', async () => {
