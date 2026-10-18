@@ -1251,9 +1251,49 @@ service cloud.firestore {
     // =====================================================
 
     match /service_location_name_indexes/{indexId} {
+      function validIndexShape(data) {
+        return data.keys().hasAll([
+            'collectionPath', 'documentId', 'name', 'parentIds', 'updatedAt'
+          ])
+          && data.keys().hasOnly([
+            'collectionPath', 'documentId', 'name', 'parentIds', 'updatedAt'
+          ])
+          && data.collectionPath is string
+          && data.collectionPath in [
+            'service_countries',
+            'service_states',
+            'service_cities',
+            'service_areas',
+            'service_localities'
+          ]
+          && data.documentId is string
+          && data.documentId.size() > 0
+          && data.documentId.size() <= 128
+          && data.name is string
+          && data.name.size() > 0
+          && data.name.size() <= 120
+          && data.parentIds is list
+          && data.parentIds.size() <= 4
+          && data.parentIds.hasOnly(data.parentIds)
+          && data.updatedAt is timestamp;
+      }
+
       allow get, list: if isAdmin();
 
-      allow create, update, delete: if isAdmin();
+      allow create: if isAdmin()
+        && validIndexShape(request.resource.data)
+        && request.resource.data.updatedAt == request.time;
+
+      allow update: if isAdmin()
+        && validIndexShape(request.resource.data)
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.collectionPath == resource.data.collectionPath
+        && request.resource.data.documentId == resource.data.documentId
+        && request.resource.data.name == resource.data.name
+        && request.resource.data.parentIds == resource.data.parentIds;
+
+      allow delete: if isAdmin()
+        && validIndexShape(resource.data);
     }
 
     // =====================================================
@@ -1625,6 +1665,14 @@ service cloud.firestore {
       allow get, list: if isAdmin();
 
       allow create: if isAdmin()
+        && request.resource.data.keys().hasAll([
+          'source',
+          'fileName',
+          'status',
+          'importedBy',
+          'importedAt',
+          'verificationStatus'
+        ])
         && request.resource.data.keys().hasOnly([
           'source',
           'fileName',
@@ -1634,11 +1682,19 @@ service cloud.firestore {
           'verificationStatus'
         ])
         && request.resource.data.source is string
+        && request.resource.data.source.size() > 0
+        && request.resource.data.source.size() <= 80
         && request.resource.data.fileName is string
+        && request.resource.data.fileName.size() > 0
+        && request.resource.data.fileName.size() <= 180
         && request.resource.data.status is string
+        && request.resource.data.status.size() > 0
+        && request.resource.data.status.size() <= 32
         && request.resource.data.importedBy == request.auth.uid
         && request.resource.data.importedAt == request.time
-        && request.resource.data.verificationStatus is string;
+        && request.resource.data.verificationStatus is string
+        && request.resource.data.verificationStatus.size() > 0
+        && request.resource.data.verificationStatus.size() <= 32;
 
       allow update, delete: if false;
     }
