@@ -399,6 +399,21 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
       }
     }
 
+    // Resolve District's Country before any transaction writes. Firestore
+    // transactions require every read to finish before the first write.
+    let districtCountryRef: FirebaseFirestore.DocumentReference | undefined;
+    if (locationType === "district" && isActive && parentSnap) {
+      const countryId = parentSnap.get("countryId");
+      if (typeof countryId !== "string" || !countryId) {
+        throw new HttpsError("failed-precondition", "District State parent is invalid.");
+      }
+      districtCountryRef = db.doc(`service_countries/${countryId}`);
+      const districtCountrySnap = await tx.get(districtCountryRef);
+      if (!districtCountrySnap.exists || districtCountrySnap.get("isActive") !== true) {
+        throw new HttpsError("failed-precondition", "District Country must be active first.");
+      }
+    }
+
     // For Locality activation, validate the complete persisted ancestry and
     // read every ancestor in this transaction before writing any guard field.
     let countryRef: FirebaseFirestore.DocumentReference | undefined;
@@ -480,16 +495,9 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
     if (isActive && locationType === "state" && parentRef) {
       tx.update(parentRef, { activationGuardAt: FieldValue.serverTimestamp() });
     }
-    if (isActive && locationType === "district" && parentRef) {
-      const countryId = parentSnap?.get("countryId");
-      if (typeof countryId !== "string") throw new HttpsError("failed-precondition", "District State parent is invalid.");
-      const countryRef = db.doc(`service_countries/${countryId}`);
-      const countrySnap = await tx.get(countryRef);
-      if (!countrySnap.exists || countrySnap.get("isActive") !== true) {
-        throw new HttpsError("failed-precondition", "District Country must be active first.");
-      }
+    if (isActive && locationType === "district" && parentRef && districtCountryRef) {
       tx.update(parentRef, { activationGuardAt: FieldValue.serverTimestamp() });
-      tx.update(countryRef, { activationGuardAt: FieldValue.serverTimestamp() });
+      tx.update(districtCountryRef, { activationGuardAt: FieldValue.serverTimestamp() });
     }
     if (isActive && locationType === "city" && parentRef) {
       tx.update(countryRef!, { activationGuardAt: FieldValue.serverTimestamp() });
