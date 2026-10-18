@@ -240,3 +240,11 @@ test("rejects populated snapshot names with repeated internal whitespace", () =>
   assert.equal(r.status, "INPUT_INVALID");
   assert.equal(r.safeToMigrate, false);
 });
+
+test("rejects undefined and primitive runtime preflight inputs without throwing", () => {
+  for (const input of [undefined, "invalid", 42, true]) {
+    const r = classifyDistrictIndexPair(input);
+    assert.equal(r.status, "INPUT_INVALID");
+    assert.equal(r.safeToMigrate, false);
+  }
+});
