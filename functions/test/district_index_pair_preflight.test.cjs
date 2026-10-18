@@ -206,3 +206,21 @@ test("rejects populated snapshots with malformed owner or name fields", () => {
   assert.equal(nonCanonicalName.status, "INPUT_INVALID");
   assert.equal(nonCanonicalName.safeToMigrate, false);
 });
+
+test("parent tuple comparison is order-sensitive and exact", () => {
+  const reordered = classifyDistrictIndexPair({
+    ...base,
+    legacy: index(["state-1", "country-1", "city-1"]),
+    districtAware: absent,
+  });
+  assert.equal(reordered.status, "LEGACY_OWNER_MISMATCH");
+  assert.equal(reordered.safeToMigrate, false);
+
+  const differentLength = classifyDistrictIndexPair({
+    ...base,
+    legacy: index(["country-1", "state-1"]),
+    districtAware: absent,
+  });
+  assert.equal(differentLength.status, "LEGACY_OWNER_MISMATCH");
+  assert.equal(differentLength.safeToMigrate, false);
+});
