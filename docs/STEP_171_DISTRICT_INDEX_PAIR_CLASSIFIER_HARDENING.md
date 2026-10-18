@@ -15,7 +15,10 @@ The classifier verifies collection path, normalized name, and ordered parent tup
 
 ## Verification
 - Initial helper CI passed on `0ec943a095fa143c0d2da32b55906b17875af9d3`.
-- Follow-up logic and tests were updated to make the conflicting-owner classification reachable and explicit. CI for the latest test commit must be checked before this follow-up is marked verified.
+- Final classifier and test commit verified: `0670a3d6df7ac526e9d55e628a4aedc01a6e3b57`.
+- Trusted Location Geometry and Callable Tests: PASS — [run 39176494247](https://github.com/dojoplatform2026/DOJO-WALK-Firebase/actions/runs/39176494247).
+- Firestore Security Rules: PASS — [run 39176494216](https://github.com/dojoplatform2026/DOJO-WALK-Firebase/actions/runs/39176494216).
+- A prior intermediate commit had a callable test failure; the corrected final commit above passed both workflows.
 
 ## Safety boundary
 This helper is not wired into the production callable. Legacy name-index behavior remains unchanged. No production scan, migration, deployment, or merge was performed.
