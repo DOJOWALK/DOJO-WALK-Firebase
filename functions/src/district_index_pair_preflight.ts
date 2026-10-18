@@ -37,9 +37,24 @@ export function classifyDistrictIndexPair(input: {
   districtAware: NameIndexSnapshot;
 }): DistrictIndexPairClassification {
   const { legacy, districtAware } = input;
-  const validSnapshotShape = (value: unknown): value is NameIndexSnapshot =>
-    typeof value === "object" && value !== null &&
-    typeof (value as NameIndexSnapshot).exists === "boolean";
+  const validSnapshotShape = (value: unknown): value is NameIndexSnapshot => {
+    if (typeof value !== "object" || value === null) return false;
+    const snapshot = value as NameIndexSnapshot;
+    if (typeof snapshot.exists !== "boolean") return false;
+    if (!snapshot.exists) return true;
+    return typeof snapshot.documentId === "string" &&
+      /^[A-Za-z0-9_-]{1,128}$/.test(snapshot.documentId) &&
+      typeof snapshot.collectionPath === "string" &&
+      /^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(snapshot.collectionPath) &&
+      typeof snapshot.name === "string" &&
+      snapshot.name === snapshot.name.trim().toLowerCase().replace(/\\s+/g, " ") &&
+      snapshot.name.length > 0 && snapshot.name.length <= 120 &&
+      Array.isArray(snapshot.parentIds) && snapshot.parentIds.length > 0 &&
+      snapshot.parentIds.every((id) =>
+        typeof id === "string" && id === id.trim() &&
+        /^[A-Za-z0-9_-]{1,128}$/.test(id)) &&
+      new Set(snapshot.parentIds).size === snapshot.parentIds.length;
+  };
   const normalizedExpectedName = typeof input.expectedName === "string"
     ? input.expectedName.trim().toLowerCase().replace(/\s+/g, " ")
     : "";
