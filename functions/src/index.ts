@@ -216,13 +216,26 @@ export const activateServiceLocation = onCall({ region: "asia-south1" }, async (
   }
   const countryRef = db.doc(`service_countries/${countryId}`);
   const stateRef = db.doc(`service_states/${stateId}`);
+  const districtId = locationType === "city" ? initial.get("districtId") : undefined;
+  let districtRef: FirebaseFirestore.DocumentReference | undefined;
+  if (districtId !== undefined) {
+    if (typeof districtId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(districtId)) {
+      throw new HttpsError("failed-precondition", "City District reference is invalid.");
+    }
+    districtRef = db.doc(`service_districts/${districtId}`);
+  }
   const countrySnap = await countryRef.get();
   const stateSnap = await stateRef.get();
+  const districtSnap = districtRef ? await districtRef.get() : undefined;
   if (!countrySnap.exists || countrySnap.get("isActive") !== true) {
     throw new HttpsError("failed-precondition", "Location Country must exist and be active.");
   }
   if (!stateSnap.exists || stateSnap.get("isActive") !== true || stateSnap.get("countryId") !== countryId) {
     throw new HttpsError("failed-precondition", "Location State must exist, be active, and belong to its Country.");
+  }
+  if (districtRef && (!districtSnap?.exists || districtSnap.get("isServiceActive") !== true ||
+      districtSnap.get("countryId") !== countryId || districtSnap.get("stateId") !== stateId)) {
+    throw new HttpsError("failed-precondition", "City District must exist, be active, and match the City's Country/State.");
   }
 
   let parentRef: FirebaseFirestore.DocumentReference | undefined;
@@ -261,6 +274,7 @@ export const activateServiceLocation = onCall({ region: "asia-south1" }, async (
       actorRef, locationRef, boundaryRef, countryRef, stateRef,
       ...(parentRef ? [parentRef] : []),
       ...(parentBoundaryRef ? [parentBoundaryRef] : []),
+      ...(districtRef ? [districtRef] : []),
     ];
     const snaps = await Promise.all(refs.map((ref) => tx.get(ref)));
     const currentActor = snaps[0];
@@ -282,6 +296,14 @@ export const activateServiceLocation = onCall({ region: "asia-south1" }, async (
     }
     if (!currentState.exists || currentState.get("isActive") !== true || currentState.get("countryId") !== countryId) {
       throw new HttpsError("failed-precondition", "Location State must still be active and belong to its Country.");
+    }
+    if (districtRef) {
+      const currentDistrict = snaps[refs.length - 1];
+      if (!currentDistrict?.exists || currentDistrict.get("isServiceActive") !== true ||
+          currentDistrict.get("countryId") !== countryId || currentDistrict.get("stateId") !== stateId ||
+          currentLocation.get("districtId") !== districtRef.id) {
+        throw new HttpsError("failed-precondition", "City District must remain active and match the City's Country/State.");
+      }
     }
 
     const currentBoundaryData = requireVerifiedBoundary(currentBoundary.data(), boundaryId, locationId, locationType);
@@ -315,6 +337,7 @@ export const activateServiceLocation = onCall({ region: "asia-south1" }, async (
     // deactivation conflicts and retries against the newly active descendant.
     tx.update(countryRef, { activationGuardAt: FieldValue.serverTimestamp() });
     tx.update(stateRef, { activationGuardAt: FieldValue.serverTimestamp() });
+    if (districtRef) tx.update(districtRef, { activationGuardAt: FieldValue.serverTimestamp() });
     if (parentRef) tx.update(parentRef, { activationGuardAt: FieldValue.serverTimestamp() });
     tx.update(locationRef, { isServiceActive: true, updatedAt: FieldValue.serverTimestamp() });
     const auditRef = db.collection("service_location_activation_audit").doc();
