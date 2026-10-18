@@ -241,9 +241,10 @@ test("country rename is case-insensitive and whitespace-normalized for duplicate
   const existingName = `Normalized-${randomUUID()}`;
   const conflictingName = `  ${existingName.toUpperCase()}   `;
   const existing = await saveCountry(adminUid, existingName);
-  const target = await saveCountry(adminUid, `Rename-Target-${randomUUID()}`);
+  const targetName = `Rename-Target-${randomUUID()}`;
+  const target = await saveCountry(adminUid, targetName);
   const existingIndexId = countryIndexId(existingName);
-  const targetIndexId = countryIndexId(`Rename-Target-${randomUUID()}`);
+  const targetIndexId = countryIndexId(targetName);
 
   await assert.rejects(
     () => saveCountry(adminUid, conflictingName, target.locationId),
@@ -256,7 +257,7 @@ test("country rename is case-insensitive and whitespace-normalized for duplicate
   const targetIndex = await db.doc(`service_location_name_indexes/${targetIndexId}`).get();
 
   assert.equal(existingCountry.get("name"), existingName);
-  assert.equal(targetCountry.get("name").startsWith("Rename-Target-"), true);
+  assert.equal(targetCountry.get("name"), targetName);
   assert.equal(existingIndex.exists, true);
   assert.equal(existingIndex.get("documentId"), existing.locationId);
   assert.equal(targetIndex.exists, true);
