@@ -596,6 +596,31 @@ test("duplicate-name rename cannot partially apply a country code change", async
   assert.equal(secondIndex.get("documentId"), second.locationId);
 });
 
+test("normalized self-rename can update country code without moving its index", async () => {
+  const uid = await createAdmin();
+  const originalName = `Self-Rename-Code-${randomUUID()}`;
+  const created = await saveCountry(uid, originalName);
+  const indexId = countryIndexId(originalName);
+  const normalizedName = originalName.toUpperCase();
+
+  const result = await saveServiceLocationWithNameIndex.run(request(uid, {
+    locationType: "country",
+    locationId: created.locationId,
+    payload: { name: `  ${normalizedName}  `, code: "GB" },
+  }));
+
+  const country = await db.doc(`service_countries/${created.locationId}`).get();
+  const index = await db.doc(`service_location_name_indexes/${indexId}`).get();
+
+  assert.equal(result.ok, true);
+  assert.equal(result.locationId, created.locationId);
+  assert.equal(country.get("name"), normalizedName);
+  assert.equal(country.get("code"), "GB");
+  assert.equal(index.exists, true);
+  assert.equal(index.get("documentId"), created.locationId);
+  assert.equal(index.get("normalizedName"), originalName.trim().toLowerCase().replace(/\\s+/g, " "));
+});
+
 test.after(async () => {
   const deletes = [];
   for (const uid of createdAdmins) deletes.push(db.doc(`admin_users/${uid}`).delete());
