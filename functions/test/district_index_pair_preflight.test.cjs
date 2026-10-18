@@ -230,3 +230,13 @@ test("rejects null runtime preflight input without throwing", () => {
   assert.equal(r.status, "INPUT_INVALID");
   assert.equal(r.safeToMigrate, false);
 });
+
+test("rejects populated snapshot names with repeated internal whitespace", () => {
+  const r = classifyDistrictIndexPair({
+    ...base,
+    legacy: index(base.legacyParentIds, { name: "gaur   city" }),
+    districtAware: absent,
+  });
+  assert.equal(r.status, "INPUT_INVALID");
+  assert.equal(r.safeToMigrate, false);
+});
