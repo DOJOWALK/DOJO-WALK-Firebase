@@ -618,7 +618,7 @@ test("normalized self-rename can update country code without moving its index", 
   assert.equal(country.get("code"), "GB");
   assert.equal(index.exists, true);
   assert.equal(index.get("documentId"), created.locationId);
-  assert.equal(index.get("normalizedName"), originalName.trim().toLowerCase().replace(/\\s+/g, " "));
+  assert.equal(index.get("name"), originalName.trim().toLowerCase().replace(/\\s+/g, " "));
 });
 
 test.after(async () => {
