@@ -76,7 +76,7 @@ export function validateServiceLocationPayload(
     if (!allowed.has(key)) throw new Error("LOCATION_PAYLOAD_FIELD_INVALID");
   }
   if (typeof record.name !== "string") throw new Error("LOCATION_INDEX_NAME_INVALID");
-  const name = record.name.trim();
+  const name = normalizeServiceLocationName(record.name);
   if (!name || name.length > 120) throw new Error("LOCATION_INDEX_NAME_INVALID");
   if (type === "country") {
     if (typeof record.code !== "string" || !record.code.trim() || record.code.trim().length > 16) {
