@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 export const SERVICE_LOCATION_COLLECTIONS = {
   country: "service_countries",
   state: "service_states",
+  district: "service_districts",
   city: "service_cities",
   area: "service_areas",
   locality: "service_localities",
@@ -39,6 +40,7 @@ export function serviceLocationNameIndexId(
   const expectedParentCount: Record<string, number> = {
     service_countries: 0,
     service_states: 1,
+    service_districts: 2,
     service_cities: 2,
     service_areas: 3,
     service_localities: 4,
@@ -53,6 +55,7 @@ export function serviceLocationNameIndexId(
 export const SERVICE_LOCATION_ALLOWED_FIELDS: Record<ServiceLocationType, readonly string[]> = {
   country: ["name", "code", "isActive"],
   state: ["countryId", "name", "isActive"],
+  district: ["countryId", "stateId", "name", "isServiceActive"],
   city: ["countryId", "stateId", "name", "boundary", "boundarySource", "boundaryVerified", "verifiedBoundaryId", "isServiceActive"],
   area: ["countryId", "stateId", "cityId", "name", "boundary", "boundarySource", "boundaryVerified", "verifiedBoundaryId", "isServiceActive"],
   locality: ["countryId", "stateId", "cityId", "areaId", "name", "pincode", "boundary", "boundarySource", "boundaryVerified", "isServiceActive"],
@@ -86,6 +89,7 @@ export function validateServiceLocationPayload(
   const parentFields: Record<ServiceLocationType, readonly string[]> = {
     country: [],
     state: ["countryId"],
+    district: ["countryId", "stateId"],
     city: ["countryId", "stateId"],
     area: ["countryId", "stateId", "cityId"],
     locality: ["countryId", "stateId", "cityId", "areaId"],
