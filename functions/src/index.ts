@@ -338,7 +338,7 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in is required.");
   const uid = request.auth.uid;
   const { locationType, locationId, isActive } = request.data ?? {};
-  const validTypes = ["country", "state", "city", "area", "locality"];
+  const validTypes = ["country", "state", "district", "city", "area", "locality"];
   if (!validTypes.includes(locationType) ||
       typeof locationId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(locationId) ||
       typeof isActive !== "boolean") {
@@ -354,20 +354,21 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
   }
 
   const collectionByType: Record<string, string> = {
-    country: "service_countries", state: "service_states", city: "service_cities",
+    country: "service_countries", state: "service_states", district: "service_districts", city: "service_cities",
     area: "service_areas", locality: "service_localities",
   };
   const targetRef = db.doc(`${collectionByType[locationType]}/${locationId}`);
   const statusField = locationType === "country" || locationType === "state" ? "isActive" : "isServiceActive";
   const parentFieldByType: Record<string, string> = {
-    country: "", state: "countryId", city: "stateId", area: "cityId", locality: "areaId",
+    country: "", state: "countryId", district: "stateId", city: "stateId", area: "cityId", locality: "areaId",
   };
   const parentCollectionByType: Record<string, string> = {
-    state: "service_countries", city: "service_states", area: "service_cities", locality: "service_areas",
+    state: "service_countries", district: "service_states", city: "service_states", area: "service_cities", locality: "service_areas",
   };
   const childConfig: Record<string, { collection: string; field: string; activeField: string } | null> = {
     country: { collection: "service_states", field: "countryId", activeField: "isActive" },
     state: { collection: "service_cities", field: "stateId", activeField: "isServiceActive" },
+    district: { collection: "service_cities", field: "districtId", activeField: "isServiceActive" },
     city: { collection: "service_areas", field: "cityId", activeField: "isServiceActive" },
     area: { collection: "service_localities", field: "areaId", activeField: "isServiceActive" },
     locality: null,
@@ -392,7 +393,7 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
       parentRef = db.doc(`${parentCollectionByType[locationType]}/${parentId}`);
       parentSnap = await tx.get(parentRef);
       if (!parentSnap.exists) throw new HttpsError("failed-precondition", "Parent location was not found.");
-      const parentStatusField = locationType === "state" ? "isActive" : "isServiceActive";
+      const parentStatusField = locationType === "state" || locationType === "district" ? "isActive" : "isServiceActive";
       if (isActive && parentSnap.get(parentStatusField) !== true) {
         throw new HttpsError("failed-precondition", "Parent location must be active first.");
       }
@@ -445,7 +446,11 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
       if (!children.empty) {
         throw new HttpsError("failed-precondition", "Deactivate active child locations first.");
       }
-      if (locationType === "country") {
+      if (locationType === "district") {
+        const cities = await tx.get(db.collection("service_cities").where("districtId", "==", locationId).where("isServiceActive", "==", true).limit(1));
+        const areas = await tx.get(db.collection("service_areas").where("districtId", "==", locationId).where("isServiceActive", "==", true).limit(1));
+        if (!cities.empty || !areas.empty) throw new HttpsError("failed-precondition", "Deactivate active District descendants first.");
+      } else if (locationType === "country") {
         const cities = await tx.get(db.collection("service_cities").where("countryId", "==", locationId).where("isServiceActive", "==", true).limit(1));
         const areas = await tx.get(db.collection("service_areas").where("countryId", "==", locationId).where("isServiceActive", "==", true).limit(1));
         if (!cities.empty || !areas.empty) throw new HttpsError("failed-precondition", "Deactivate active descendant locations first.");
@@ -474,6 +479,17 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
     });
     if (isActive && locationType === "state" && parentRef) {
       tx.update(parentRef, { activationGuardAt: FieldValue.serverTimestamp() });
+    }
+    if (isActive && locationType === "district" && parentRef) {
+      const countryId = parentSnap?.get("countryId");
+      if (typeof countryId !== "string") throw new HttpsError("failed-precondition", "District State parent is invalid.");
+      const countryRef = db.doc(`service_countries/${countryId}`);
+      const countrySnap = await tx.get(countryRef);
+      if (!countrySnap.exists || countrySnap.get("isActive") !== true) {
+        throw new HttpsError("failed-precondition", "District Country must be active first.");
+      }
+      tx.update(parentRef, { activationGuardAt: FieldValue.serverTimestamp() });
+      tx.update(countryRef, { activationGuardAt: FieldValue.serverTimestamp() });
     }
     if (isActive && locationType === "city" && parentRef) {
       tx.update(countryRef!, { activationGuardAt: FieldValue.serverTimestamp() });
@@ -509,7 +525,7 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in is required.");
   const uid = request.auth.uid;
   const { locationType, locationId, payload } = request.data ?? {};
-  const validTypes: ServiceLocationType[] = ["country", "state", "city", "area", "locality"];
+  const validTypes: ServiceLocationType[] = ["country", "state", "district", "city", "area", "locality"];
   if (!validTypes.includes(locationType)) {
     throw new HttpsError("invalid-argument", "A valid locationType is required.");
   }
@@ -529,6 +545,7 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
   const mutableFields: Record<ServiceLocationType, readonly string[]> = {
     country: ["name", "code"],
     state: ["countryId", "name"],
+    district: ["countryId", "stateId", "name"],
     city: ["countryId", "stateId", "name"],
     area: ["countryId", "stateId", "cityId", "name"],
     locality: ["countryId", "stateId", "cityId", "areaId", "name", "pincode"],
@@ -546,6 +563,7 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
   const parentFieldsByType: Record<ServiceLocationType, string[]> = {
     country: [],
     state: ["countryId"],
+    district: ["countryId", "stateId"],
     city: ["countryId", "stateId"],
     area: ["countryId", "stateId", "cityId"],
     locality: ["countryId", "stateId", "cityId", "areaId"],
@@ -590,6 +608,9 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     const parentData = parentSnaps.map((snap) => snap.data() ?? {});
     if (type === "state" && parentData[0].name === undefined) {
       throw new HttpsError("failed-precondition", "Country parent is invalid.");
+    }
+    if (type === "district" && parentData[1].countryId !== parentIds[0]) {
+      throw new HttpsError("failed-precondition", "State does not belong to the selected Country.");
     }
     if (type === "city" && parentData[1].countryId !== parentIds[0]) {
       throw new HttpsError("failed-precondition", "State does not belong to the selected Country.");
