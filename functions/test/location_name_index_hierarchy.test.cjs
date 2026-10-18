@@ -103,6 +103,34 @@ test("renaming a State replaces its name index atomically", async () => {
   assert.equal(newIndex.get("name"), newName.toLowerCase());
 });
 
+test("renaming a State to a sibling name is rejected without changing either index", async () => {
+  const uid = await createAdmin();
+  const country = await save(uid, "country", { name: `Collision-Country-${randomUUID()}`, code: "CC" });
+  const firstName = `Collision-First-${randomUUID()}`;
+  const secondName = `Collision-Second-${randomUUID()}`;
+  const first = await save(uid, "state", { countryId: country.locationId, name: firstName });
+  const second = await save(uid, "state", { countryId: country.locationId, name: secondName });
+  const firstIndexId = indexId("service_states", [country.locationId], firstName);
+  const secondIndexId = indexId("service_states", [country.locationId], secondName);
+
+  await assert.rejects(
+    () => save(uid, "state", { countryId: country.locationId, name: secondName }, first.locationId),
+    (error) => error && error.code === "already-exists",
+  );
+
+  const savedFirst = await db.doc(`service_states/${first.locationId}`).get();
+  const savedSecond = await db.doc(`service_states/${second.locationId}`).get();
+  const firstIndex = await db.doc(`service_location_name_indexes/${firstIndexId}`).get();
+  const secondIndex = await db.doc(`service_location_name_indexes/${secondIndexId}`).get();
+
+  assert.equal(savedFirst.get("name"), firstName);
+  assert.equal(savedSecond.get("name"), secondName);
+  assert.equal(firstIndex.exists, true);
+  assert.equal(firstIndex.get("documentId"), first.locationId);
+  assert.equal(secondIndex.exists, true);
+  assert.equal(secondIndex.get("documentId"), second.locationId);
+});
+
 test("updating an existing State cannot change its parent Country", async () => {
   const uid = await createAdmin();
   const countryA = await save(uid, "country", { name: `Immutable-Parent-A-${randomUUID()}`, code: "IA" });
