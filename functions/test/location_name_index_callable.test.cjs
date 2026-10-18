@@ -820,6 +820,30 @@ test("country name normalization preserves index when case and spacing change", 
   assert.equal(newIndex.get("name"), normalizedName);
 });
 
+test("normalized country name update to same key keeps the name index valid", async () => {
+  const uid = await createAdmin();
+  const name = `Same-Key-${randomUUID()}`;
+  const created = await saveCountry(uid, name);
+  const indexId = countryIndexId(name);
+  const updatedName = `  ${name.toUpperCase()}  `;
+
+  const result = await saveServiceLocationWithNameIndex.run(request(uid, {
+    locationType: "country",
+    locationId: created.locationId,
+    payload: { name: updatedName, code: "IN" },
+  }));
+
+  assert.equal(result.locationId, created.locationId);
+  const country = await db.doc(`service_countries/${created.locationId}`).get();
+  const index = await db.doc(`service_location_name_indexes/${indexId}`).get();
+  assert.equal(country.exists, true);
+  assert.equal(country.get("name"), updatedName.trim());
+  assert.equal(country.get("code"), "IN");
+  assert.equal(index.exists, true);
+  assert.equal(index.get("documentId"), created.locationId);
+  assert.equal(index.get("name"), name.toLowerCase());
+});
+
 test.after(async () => {
   const deletes = [];
   for (const uid of createdAdmins) deletes.push(db.doc(`admin_users/${uid}`).delete());
