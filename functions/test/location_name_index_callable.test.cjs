@@ -181,6 +181,34 @@ test("missing admin profile cannot create a country or its name index", async ()
   assert.equal(index.exists, false);
 });
 
+test("missing admin profile cannot rename a country or alter its index", async () => {
+  const activeUid = await createAdmin();
+  const missingUid = `missing-admin-${randomUUID()}`;
+  const originalName = `Missing-Admin-Rename-Original-${randomUUID()}`;
+  const replacementName = `Missing-Admin-Rename-New-${randomUUID()}`;
+  const created = await saveCountry(activeUid, originalName);
+  const originalIndexId = countryIndexId(originalName);
+  const replacementIndexId = countryIndexId(replacementName);
+
+  await assert.rejects(
+    () => saveCountry(missingUid, replacementName, created.locationId),
+    (error) => error && error.code === "permission-denied",
+  );
+
+  const country = await db.doc(`service_countries/${created.locationId}`).get();
+  const originalIndex = await db.doc(
+    `service_location_name_indexes/${originalIndexId}`,
+  ).get();
+  const replacementIndex = await db.doc(
+    `service_location_name_indexes/${replacementIndexId}`,
+  ).get();
+
+  assert.equal(country.get("name"), originalName);
+  assert.equal(originalIndex.exists, true);
+  assert.equal(originalIndex.get("documentId"), created.locationId);
+  assert.equal(replacementIndex.exists, false);
+});
+
 test("inactive admin cannot rename an existing country or alter its index", async () => {
   const activeUid = await createAdmin();
   const inactiveUid = await createAdmin("admin", false);
