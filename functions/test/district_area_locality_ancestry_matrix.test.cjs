@@ -74,16 +74,16 @@ function req(uid, locationType, payload) {
 }
 
 test("Area rejects District document belonging to another State without writes", async () => {
-  const f = await fixture({ districtStateMismatch: true });
+  const f = await fixture({ districtStateMismatch: true });\n  const attemptedAreaName = `Rejected-Area-${randomUUID()}`;
   try {
     await assert.rejects(
       () => saveServiceLocationWithNameIndex.run(req(f.uid, "area", {
-        countryId: f.countryId, stateId: f.stateId, cityId: f.cityId, name: f.areaName,
+        countryId: f.countryId, stateId: f.stateId, cityId: f.cityId, name: attemptedAreaName,
       })),
       e => e && e.code === "failed-precondition",
     );
-    assert.equal((await db.collection("service_areas").where("name", "==", f.areaName).get()).empty, true);
-    const idx = serviceLocationNameIndexId("service_areas", [f.countryId, f.stateId, f.cityId], f.areaName.toLowerCase());
+    assert.equal((await db.collection("service_areas").where("name", "==", attemptedAreaName).get()).empty, true);
+    const idx = serviceLocationNameIndexId("service_areas", [f.countryId, f.stateId, f.cityId], attemptedAreaName.toLowerCase());
     assert.equal((await db.doc(`service_location_name_indexes/${idx}`).get()).exists, false);
   } finally { await cleanup(f); }
 });
