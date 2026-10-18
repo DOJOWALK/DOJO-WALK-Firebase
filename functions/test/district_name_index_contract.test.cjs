@@ -75,3 +75,40 @@ test("legacy city index generation keeps the two-parent tuple format", () => {
     expected,
   );
 });
+
+test("legacy and District-aware Area indexes remain distinct during migration", () => {
+  const legacyId = serviceLocationNameIndexId(
+    "service_areas",
+    ["country-1", "state-1", "city-1"],
+    "gaur city",
+  );
+  const districtAwareId = districtAwareNameIndexId("area", {
+    countryId: "country-1",
+    stateId: "state-1",
+    districtId: "district-1",
+    cityId: "city-1",
+  }, "Gaur City");
+
+  assert.match(legacyId, /^[a-f0-9]{64}$/);
+  assert.match(districtAwareId, /^[a-f0-9]{64}$/);
+  assert.notEqual(legacyId, districtAwareId);
+});
+
+test("legacy and District-aware Locality indexes remain distinct during migration", () => {
+  const legacyId = serviceLocationNameIndexId(
+    "service_localities",
+    ["country-1", "state-1", "city-1", "area-1"],
+    "techzone four",
+  );
+  const districtAwareId = districtAwareNameIndexId("locality", {
+    countryId: "country-1",
+    stateId: "state-1",
+    districtId: "district-1",
+    cityId: "city-1",
+    areaId: "area-1",
+  }, "Techzone Four");
+
+  assert.match(legacyId, /^[a-f0-9]{64}$/);
+  assert.match(districtAwareId, /^[a-f0-9]{64}$/);
+  assert.notEqual(legacyId, districtAwareId);
+});
