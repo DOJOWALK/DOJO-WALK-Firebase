@@ -638,7 +638,13 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
       delete locationData.isActive;
       delete locationData.isServiceActive;
     }
-    if (oldIndexRef && oldIndexSnap?.exists && oldIndexSnap.get("documentId") === docRef.id) {
+    if (oldIndexRef && oldIndexSnap?.exists && oldIndexSnap.get("documentId") !== docRef.id) {
+      throw new HttpsError(
+        "failed-precondition",
+        "The existing name index does not match the location being updated.",
+      );
+    }
+    if (oldIndexRef && oldIndexSnap?.exists) {
       tx.delete(oldIndexRef);
     }
     tx.set(indexRef, {
