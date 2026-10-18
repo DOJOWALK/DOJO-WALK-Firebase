@@ -2,6 +2,12 @@ import { initializeApp } from "firebase-admin/app";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { assertAreaCoveredByCity, polygonFromBoundary, type BoundaryDoc } from "./location_geometry";
+import {
+  SERVICE_LOCATION_COLLECTIONS,
+  serviceLocationNameIndexId,
+  validateServiceLocationPayload,
+  type ServiceLocationType,
+} from "./location_name_index";
 
 initializeApp();
 const db = getFirestore();
@@ -490,4 +496,153 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
     });
   });
   return { ok: true, locationId, locationType, isActive };
+});
+
+
+/**
+ * Save a service location and its canonical name index atomically.
+ * Creation always starts inactive; boundary verification and activation remain
+ * separate trusted workflows. This callable intentionally does not accept
+ * boundary geometry or activation flags as mutable input.
+ */
+export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in is required.");
+  const uid = request.auth.uid;
+  const { locationType, locationId, payload } = request.data ?? {};
+  const validTypes: ServiceLocationType[] = ["country", "state", "city", "area", "locality"];
+  if (!validTypes.includes(locationType)) {
+    throw new HttpsError("invalid-argument", "A valid locationType is required.");
+  }
+  const type = locationType as ServiceLocationType;
+  if (locationId !== undefined &&
+      (typeof locationId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(locationId))) {
+    throw new HttpsError("invalid-argument", "locationId is invalid.");
+  }
+
+  let proposed: Record<string, unknown>;
+  try {
+    proposed = validateServiceLocationPayload(type, payload);
+  } catch (error) {
+    throw new HttpsError("invalid-argument", error instanceof Error ? error.message : "Invalid location payload.");
+  }
+  // Prevent clients from bypassing the reviewed-boundary and activation callables.
+  const mutableFields: Record<ServiceLocationType, readonly string[]> = {
+    country: ["name", "code"],
+    state: ["countryId", "name"],
+    city: ["countryId", "stateId", "name"],
+    area: ["countryId", "stateId", "cityId", "name"],
+    locality: ["countryId", "stateId", "cityId", "areaId", "name", "pincode"],
+  };
+  for (const key of Object.keys(proposed)) {
+    if (!mutableFields[type].includes(key)) {
+      throw new HttpsError("invalid-argument", `Field ${key} must be managed by a trusted workflow.`);
+    }
+  }
+  const collection = SERVICE_LOCATION_COLLECTIONS[type];
+  const docRef = locationId
+    ? db.collection(collection).doc(locationId)
+    : db.collection(collection).doc();
+  const actorRef = db.doc(`admin_users/${uid}`);
+  const parentIdsByType: Record<ServiceLocationType, string[]> = {
+    country: [],
+    state: [proposed.countryId as string],
+    city: [proposed.countryId as string, proposed.stateId as string],
+    area: [proposed.countryId as string, proposed.stateId as string, proposed.cityId as string],
+    locality: [proposed.countryId as string, proposed.stateId as string, proposed.cityId as string, proposed.areaId as string],
+  };
+  const parentIds = parentIdsByType[type].map((id) => id.trim());
+  const parentRefs = parentIds.map((id, i) => {
+    const parentType: ServiceLocationType[] = ["country", "state", "city", "area"];
+    return db.collection(SERVICE_LOCATION_COLLECTIONS[parentType[i]]).doc(id);
+  });
+  const normalizedName = (proposed.name as string).trim().toLowerCase().replace(/\s+/g, " ");
+  const indexId = serviceLocationNameIndexId(collection, parentIds, normalizedName);
+  const indexRef = db.doc(`service_location_name_indexes/${indexId}`);
+
+  return db.runTransaction(async (tx) => {
+    const [actorSnap, targetSnap, ...parentSnaps] = await Promise.all([
+      tx.get(actorRef), tx.get(docRef), ...parentRefs.map((ref) => tx.get(ref)),
+    ]);
+    if (!actorSnap.exists || actorSnap.get("isActive") !== true ||
+        !["super_admin", "admin"].includes(actorSnap.get("role"))) {
+      throw new HttpsError("permission-denied", "An active admin account is required.");
+    }
+    if (locationId && !targetSnap.exists) {
+      throw new HttpsError("not-found", "Service location was not found.");
+    }
+    if (targetSnap.exists) {
+      const current = targetSnap.data() ?? {};
+      const currentParents = parentIdsByType[type].map((field) => current[field]);
+      const proposedParents = parentIdsByType[type].map((field) => proposed[field]);
+      if (currentParents.some((value, i) => value !== proposedParents[i])) {
+        throw new HttpsError("failed-precondition", "Moving a location to a different parent is not supported.");
+      }
+    }
+    for (let i = 0; i < parentSnaps.length; i++) {
+      if (!parentSnaps[i].exists) throw new HttpsError("failed-precondition", "A required parent location does not exist.");
+    }
+    const parentData = parentSnaps.map((snap) => snap.data() ?? {});
+    if (type === "state" && parentData[0].name === undefined) {
+      throw new HttpsError("failed-precondition", "Country parent is invalid.");
+    }
+    if (type === "city" && parentData[1].countryId !== parentIds[0]) {
+      throw new HttpsError("failed-precondition", "State does not belong to the selected Country.");
+    }
+    if (type === "area" && (parentData[1].countryId !== parentIds[0] ||
+        parentData[2].stateId !== parentIds[1] || parentData[2].countryId !== parentIds[0])) {
+      throw new HttpsError("failed-precondition", "City does not belong to the selected State and Country.");
+    }
+    if (type === "locality" && (parentData[1].countryId !== parentIds[0] ||
+        parentData[2].stateId !== parentIds[1] || parentData[2].countryId !== parentIds[0] ||
+        parentData[3].cityId !== parentIds[2] || parentData[3].stateId !== parentIds[1] ||
+        parentData[3].countryId !== parentIds[0])) {
+      throw new HttpsError("failed-precondition", "Area does not belong to the selected City, State and Country.");
+    }
+
+    const newIndexSnap = await tx.get(indexRef);
+    const old = targetSnap.data() ?? {};
+    const oldParentIds = targetSnap.exists
+      ? parentIdsByType[type].map((field) => String(old[field] ?? ""))
+      : parentIds;
+    let oldIndexRef: FirebaseFirestore.DocumentReference | undefined;
+    let oldIndexSnap: FirebaseFirestore.DocumentSnapshot | undefined;
+    if (targetSnap.exists) {
+      const oldIndexId = serviceLocationNameIndexId(collection, oldParentIds, String(old.name ?? ""));
+      if (oldIndexId !== indexId) {
+        oldIndexRef = db.doc(`service_location_name_indexes/${oldIndexId}`);
+        oldIndexSnap = await tx.get(oldIndexRef);
+      }
+    }
+    if (newIndexSnap.exists && newIndexSnap.get("documentId") !== docRef.id) {
+      throw new HttpsError("already-exists", "Another location already uses this name under the selected parent.");
+    }
+
+    const nowFields = { updatedAt: FieldValue.serverTimestamp() };
+    const locationData: Record<string, unknown> = {
+      ...proposed,
+      ...(targetSnap.exists ? {} : (
+        type === "country" ? { isActive: false } :
+        type === "state" ? { isActive: false } : { isServiceActive: false }
+      )),
+      ...(targetSnap.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
+      ...nowFields,
+    };
+    if (targetSnap.exists) {
+      // Do not permit client saves to change activation/boundary state.
+      delete locationData.isActive;
+      delete locationData.isServiceActive;
+    }
+    if (oldIndexRef && oldIndexSnap?.exists && oldIndexSnap.get("documentId") === docRef.id) {
+      tx.delete(oldIndexRef);
+    }
+    tx.set(indexRef, {
+      collectionPath: collection,
+      documentId: docRef.id,
+      name: normalizedName,
+      parentIds,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    tx.set(docRef, locationData, { merge: true });
+    return { ok: true, locationId: docRef.id, locationType: type };
+  });
 });
