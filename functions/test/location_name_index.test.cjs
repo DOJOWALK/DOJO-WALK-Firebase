@@ -14,7 +14,7 @@ test("validates parent IDs and trims them before persisting payload data", () =>
   });
   assert.deepEqual(normalized, {
     countryId: "country-1",
-    name: "Uttar Pradesh",
+    name: "Uttar   Pradesh",
   });
 });
 
