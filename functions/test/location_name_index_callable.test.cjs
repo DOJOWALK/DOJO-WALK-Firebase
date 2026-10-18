@@ -49,14 +49,23 @@ async function saveCountry(uid, name, locationId) {
   return result;
 }
 
-test("callable rejects a request without authentication", async () => {
+test("unauthenticated country creation leaves no location or name index", async () => {
+  const name = `Unauth-Create-${randomUUID()}`;
+  const indexId = countryIndexId(name);
+
   await assert.rejects(
     () => saveServiceLocationWithNameIndex.run(request(undefined, {
       locationType: "country",
-      payload: { name: `Unauth-${randomUUID()}`, code: "IN" },
+      payload: { name, code: "IN" },
     })),
     (error) => error && error.code === "unauthenticated",
   );
+
+  const matching = await db.collection("service_countries").where("name", "==", name).get();
+  const index = await db.doc(`service_location_name_indexes/${indexId}`).get();
+
+  assert.equal(matching.empty, true);
+  assert.equal(index.exists, false);
 });
 
 test("callable rejects a missing or inactive admin profile", async () => {
