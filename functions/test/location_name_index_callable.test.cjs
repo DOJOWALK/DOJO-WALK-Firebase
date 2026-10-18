@@ -668,6 +668,28 @@ test("oversized country code update is rejected without changing saved data", as
   assert.equal(index.get("name"), name.trim().toLowerCase().replace(/\\s+/g, " "));
 });
 
+test("country code at the 16-character limit is accepted", async () => {
+  const uid = await createAdmin();
+  const name = `Max-Code-Length-${randomUUID()}`;
+  const created = await saveCountry(uid, name);
+  const indexId = countryIndexId(name);
+  const validCode = "A".repeat(16);
+
+  const result = await saveServiceLocationWithNameIndex.run(request(uid, {
+    locationType: "country",
+    locationId: created.locationId,
+    payload: { name, code: validCode },
+  }));
+
+  const country = await db.doc(`service_countries/${created.locationId}`).get();
+  const index = await db.doc(`service_location_name_indexes/${indexId}`).get();
+  assert.equal(result.ok, true);
+  assert.equal(country.get("name"), name);
+  assert.equal(country.get("code"), validCode);
+  assert.equal(index.exists, true);
+  assert.equal(index.get("documentId"), created.locationId);
+});
+
 test.after(async () => {
   const deletes = [];
   for (const uid of createdAdmins) deletes.push(db.doc(`admin_users/${uid}`).delete());
