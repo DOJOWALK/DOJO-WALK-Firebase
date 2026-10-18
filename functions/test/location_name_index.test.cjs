@@ -29,6 +29,21 @@ test("rejects invalid collection, empty name, and wrong parent count", () => {
   assert.throws(() => serviceLocationNameIndexId("service_states", [], "Uttar Pradesh"), /LOCATION_INDEX_PARENT_COUNT_INVALID/);
 });
 
+test("rejects parent IDs containing path separators or whitespace", () => {
+  assert.throws(
+    () => serviceLocationNameIndexId("service_states", ["country/child"], "Uttar Pradesh"),
+    /LOCATION_INDEX_PARENT_INVALID/,
+  );
+  assert.throws(
+    () => serviceLocationNameIndexId("service_states", ["country id"], "Uttar Pradesh"),
+    /LOCATION_INDEX_PARENT_INVALID/,
+  );
+  assert.throws(
+    () => serviceLocationNameIndexId("service_states", [" country-1 "], "Uttar Pradesh"),
+    /LOCATION_INDEX_PARENT_INVALID/,
+  );
+});
+
 test("rejects empty or oversized parent IDs", () => {
   assert.throws(() => serviceLocationNameIndexId("service_states", ["  "], "Uttar Pradesh"), /LOCATION_INDEX_PARENT_INVALID/);
   assert.throws(() => serviceLocationNameIndexId("service_states", ["x".repeat(129)], "Uttar Pradesh"), /LOCATION_INDEX_PARENT_INVALID/);
