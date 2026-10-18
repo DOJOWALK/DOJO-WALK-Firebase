@@ -36,6 +36,13 @@ export function classifyDistrictIndexPair(input: {
   legacy: NameIndexSnapshot;
   districtAware: NameIndexSnapshot;
 }): DistrictIndexPairClassification {
+  if (typeof input !== "object" || input === null) {
+    return {
+      status: "INPUT_INVALID",
+      safeToMigrate: false,
+      reason: "Preflight input must be a non-null object.",
+    };
+  }
   const { legacy, districtAware } = input;
   const validSnapshotShape = (value: unknown): value is NameIndexSnapshot => {
     if (typeof value !== "object" || value === null) return false;
