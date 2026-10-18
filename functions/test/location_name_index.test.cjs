@@ -73,3 +73,22 @@ test("rejects empty or oversized parent IDs", () => {
   assert.throws(() => serviceLocationNameIndexId("service_states", ["  "], "Uttar Pradesh"), /LOCATION_INDEX_PARENT_INVALID/);
   assert.throws(() => serviceLocationNameIndexId("service_states", ["x".repeat(129)], "Uttar Pradesh"), /LOCATION_INDEX_PARENT_INVALID/);
 });
+
+test("rejects an unimplemented District collection instead of silently indexing it", () => {
+  assert.throws(
+    () => serviceLocationNameIndexId("service_districts", ["country-1", "state-1"], "Gautam Buddha Nagar"),
+    /LOCATION_INDEX_COLLECTION_INVALID/,
+  );
+});
+
+test("rejects districtId on a City payload until the hierarchy contract is implemented", () => {
+  assert.throws(
+    () => validateServiceLocationPayload("city", {
+      countryId: "country-1",
+      stateId: "state-1",
+      districtId: "district-1",
+      name: "Noida",
+    }),
+    /LOCATION_PAYLOAD_FIELD_INVALID/,
+  );
+});
