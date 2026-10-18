@@ -9,6 +9,9 @@ const db = getFirestore();
 const admins = new Set();
 const countries = new Set();
 const states = new Set();
+const cities = new Set();
+const areas = new Set();
+const localities = new Set();
 const indexes = new Set();
 
 function request(uid, data) {
@@ -39,6 +42,18 @@ async function save(uid, locationType, payload, locationId) {
   if (result.locationType === "state") {
     states.add(result.locationId);
     indexId("service_states", [payload.countryId], payload.name);
+  }
+  if (result.locationType === "city") {
+    cities.add(result.locationId);
+    indexId("service_cities", [payload.countryId, payload.stateId], payload.name);
+  }
+  if (result.locationType === "area") {
+    areas.add(result.locationId);
+    indexId("service_areas", [payload.countryId, payload.stateId, payload.cityId], payload.name);
+  }
+  if (result.locationType === "locality") {
+    localities.add(result.locationId);
+    indexId("service_localities", [payload.countryId, payload.stateId, payload.cityId, payload.areaId], payload.name);
   }
   return result;
 }
@@ -169,9 +184,56 @@ test("State save rejects a parent Country that does not exist", async () => {
   );
 });
 
+test("Area and Locality saves reject mismatched hierarchy ancestry without writing records or indexes", async () => {
+  const uid = await createAdmin();
+  const countryA = await save(uid, "country", { name: `Hierarchy-Country-A-${randomUUID()}`, code: "HA" });
+  const countryB = await save(uid, "country", { name: `Hierarchy-Country-B-${randomUUID()}`, code: "HB" });
+  const stateA = await save(uid, "state", { countryId: countryA.locationId, name: `Hierarchy-State-A-${randomUUID()}` });
+  const stateB = await save(uid, "state", { countryId: countryB.locationId, name: `Hierarchy-State-B-${randomUUID()}` });
+  const cityA = await save(uid, "city", {
+    countryId: countryA.locationId, stateId: stateA.locationId, name: `Hierarchy-City-A-${randomUUID()}`,
+  });
+  const cityB = await save(uid, "city", {
+    countryId: countryB.locationId, stateId: stateB.locationId, name: `Hierarchy-City-B-${randomUUID()}`,
+  });
+  const areaA = await save(uid, "area", {
+    countryId: countryA.locationId, stateId: stateA.locationId, cityId: cityA.locationId,
+    name: `Hierarchy-Area-A-${randomUUID()}`,
+  });
+
+  const mismatchedAreaName = `Mismatched-Area-${randomUUID()}`;
+  await assert.rejects(
+    () => save(uid, "area", {
+      countryId: countryA.locationId, stateId: stateA.locationId, cityId: cityB.locationId,
+      name: mismatchedAreaName,
+    }),
+    (error) => error && error.code === "failed-precondition",
+  );
+  const mismatchedAreaIndex = indexId("service_areas", [countryA.locationId, stateA.locationId, cityB.locationId], mismatchedAreaName);
+  assert.equal((await db.doc(`service_location_name_indexes/${mismatchedAreaIndex}`).get()).exists, false);
+  const orphanAreas = await db.collection("service_areas").where("name", "==", mismatchedAreaName).get();
+  assert.equal(orphanAreas.empty, true);
+
+  const mismatchedLocalityName = `Mismatched-Locality-${randomUUID()}`;
+  await assert.rejects(
+    () => save(uid, "locality", {
+      countryId: countryA.locationId, stateId: stateA.locationId, cityId: cityB.locationId,
+      areaId: areaA.locationId, name: mismatchedLocalityName,
+    }),
+    (error) => error && error.code === "failed-precondition",
+  );
+  const mismatchedLocalityIndex = indexId("service_localities", [countryA.locationId, stateA.locationId, cityB.locationId, areaA.locationId], mismatchedLocalityName);
+  assert.equal((await db.doc(`service_location_name_indexes/${mismatchedLocalityIndex}`).get()).exists, false);
+  const orphanLocalities = await db.collection("service_localities").where("name", "==", mismatchedLocalityName).get();
+  assert.equal(orphanLocalities.empty, true);
+});
+
 test.after(async () => {
   const deletes = [];
   for (const uid of admins) deletes.push(db.doc(`admin_users/${uid}`).delete());
+  for (const id of localities) deletes.push(db.doc(`service_localities/${id}`).delete());
+  for (const id of areas) deletes.push(db.doc(`service_areas/${id}`).delete());
+  for (const id of cities) deletes.push(db.doc(`service_cities/${id}`).delete());
   for (const id of states) deletes.push(db.doc(`service_states/${id}`).delete());
   for (const id of countries) deletes.push(db.doc(`service_countries/${id}`).delete());
   for (const id of indexes) deletes.push(db.doc(`service_location_name_indexes/${id}`).delete());
