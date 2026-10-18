@@ -436,6 +436,16 @@ test('import audit validates bounded strings, actor, and immutable create-only r
   await assertFails(setDoc(doc(superDb, 'service_location_imports/long-verification'), {
     ...record, verificationStatus: 'x'.repeat(33),
   }));
+  await assertFails(setDoc(doc(superDb, 'service_location_imports/missing-verification'), {
+    source: 'LGD', fileName: 'missing.csv', status: 'pending',
+    importedBy: 'super-active', importedAt: serverTimestamp(),
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_imports/unexpected-field'), {
+    ...record, internalNote: 'not allow-listed',
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_imports/long-status'), {
+    ...record, status: 'x'.repeat(33),
+  }));
   await assertFails(updateDoc(doc(superDb, 'service_location_imports/import-ok'), {
     status: 'completed',
   }));
