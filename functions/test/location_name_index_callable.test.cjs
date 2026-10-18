@@ -946,6 +946,37 @@ test("country rename repairs a target name index already owned by that same loca
   assert.deepEqual(replacementIndex.get("parentIds"), []);
 });
 
+
+test("legacy Area callable rejects District ancestry before any location or index write", async () => {
+  const uid = await createAdmin("admin", true);
+  const name = `District-Area-Guard-${randomUUID()}`;
+  const payload = {
+    countryId: `missing-country-${randomUUID()}`,
+    stateId: `missing-state-${randomUUID()}`,
+    districtId: `missing-district-${randomUUID()}`,
+    cityId: `missing-city-${randomUUID()}`,
+    name,
+  };
+
+  await assert.rejects(
+    () => saveServiceLocationWithNameIndex.run(request(uid, {
+      locationType: "area",
+      payload,
+    })),
+    (error) => error && error.code === "invalid-argument",
+  );
+
+  const locations = await db.collection("service_areas").where("name", "==", name).get();
+  const legacyIndexId = serviceLocationNameIndexId(
+    "service_areas",
+    [payload.countryId, payload.stateId, payload.cityId],
+    name.trim().toLowerCase(),
+  );
+  const legacyIndex = await db.doc(`service_location_name_indexes/${legacyIndexId}`).get();
+  assert.equal(locations.empty, true);
+  assert.equal(legacyIndex.exists, false);
+});
+
 test.after(async () => {
   const deletes = [];
   for (const uid of createdAdmins) deletes.push(db.doc(`admin_users/${uid}`).delete());
