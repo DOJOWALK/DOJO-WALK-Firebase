@@ -621,7 +621,30 @@ test("normalized self-rename can update country code without moving its index", 
   assert.equal(index.get("name"), originalName.trim().toLowerCase().replace(/\\s+/g, " "));
 });
 
-test("blank country code update is rejected without changing saved data", async () => {\n  const uid = await createAdmin();\n  const name = `Blank-Code-${randomUUID()}`;\n  const created = await saveCountry(uid, name);\n  const indexId = countryIndexId(name);\n\n  await assert.rejects(\n    () => saveServiceLocationWithNameIndex.run(request(uid, {\n      locationType: "country",\n      locationId: created.locationId,\n      payload: { name, code: "   " },\n    })),\n    (error) => error && error.code === "invalid-argument",\n  );\n\n  const country = await db.doc(`service_countries/${created.locationId}`).get();\n  const index = await db.doc(`service_location_name_indexes/${indexId}`).get();\n  assert.equal(country.get("name"), name);\n  assert.equal(country.get("code"), "IN");\n  assert.equal(index.exists, true);\n  assert.equal(index.get("documentId"), created.locationId);\n  assert.equal(index.get("name"), name.trim().toLowerCase().replace(/\\s+/g, " "));\n});\ntest.after(async () => {
+test("blank country code update is rejected without changing saved data", async () => {
+  const uid = await createAdmin();
+  const name = `Blank-Code-${randomUUID()}`;
+  const created = await saveCountry(uid, name);
+  const indexId = countryIndexId(name);
+
+  await assert.rejects(
+    () => saveServiceLocationWithNameIndex.run(request(uid, {
+      locationType: "country",
+      locationId: created.locationId,
+      payload: { name, code: "   " },
+    })),
+    (error) => error && error.code === "invalid-argument",
+  );
+
+  const country = await db.doc(`service_countries/${created.locationId}`).get();
+  const index = await db.doc(`service_location_name_indexes/${indexId}`).get();
+  assert.equal(country.get("name"), name);
+  assert.equal(country.get("code"), "IN");
+  assert.equal(index.exists, true);
+  assert.equal(index.get("documentId"), created.locationId);
+  assert.equal(index.get("name"), name.trim().toLowerCase().replace(/\\s+/g, " "));
+});
+test.after(async () => {
   const deletes = [];
   for (const uid of createdAdmins) deletes.push(db.doc(`admin_users/${uid}`).delete());
   for (const id of createdCountries) deletes.push(db.doc(`service_countries/${id}`).delete());
