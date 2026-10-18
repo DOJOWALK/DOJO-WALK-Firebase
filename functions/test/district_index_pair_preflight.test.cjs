@@ -188,3 +188,21 @@ test("rejects duplicate IDs in either expected parent tuple", () => {
   assert.equal(duplicateDistrict.status, "INPUT_INVALID");
   assert.equal(duplicateDistrict.safeToMigrate, false);
 });
+
+test("rejects populated snapshots with malformed owner or name fields", () => {
+  const badDocumentId = classifyDistrictIndexPair({
+    ...base,
+    legacy: index(base.legacyParentIds, { documentId: "area/1" }),
+    districtAware: absent,
+  });
+  assert.equal(badDocumentId.status, "INPUT_INVALID");
+  assert.equal(badDocumentId.safeToMigrate, false);
+
+  const nonCanonicalName = classifyDistrictIndexPair({
+    ...base,
+    legacy: index(base.legacyParentIds, { name: "GAUR CITY" }),
+    districtAware: absent,
+  });
+  assert.equal(nonCanonicalName.status, "INPUT_INVALID");
+  assert.equal(nonCanonicalName.safeToMigrate, false);
+});
