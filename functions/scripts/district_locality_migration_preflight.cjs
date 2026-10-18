@@ -79,14 +79,7 @@ async function main() {
             JSON.stringify(proposed.parentIds) === JSON.stringify([
               l.countryId, l.stateId, c.districtId, l.cityId, l.areaId,
             ]);
-          proposedIndexMatches = !!proposed &&
-            proposed.collectionPath === "service_localities" &&
-            proposed.documentId === localityId &&
-            proposed.name === norm(l.name) &&
-            Array.isArray(proposed.parentIds) &&
-            JSON.stringify(proposed.parentIds) === JSON.stringify([
-              l.countryId, l.stateId, c.districtId, l.cityId, l.areaId,
-            ]);
+
         }
         status = classifyAreaMigrationPreflight({
           cityCompatibility: compatibility, legacyIndexMatches, proposedIndexOwnerId, areaId: localityId,
@@ -111,7 +104,7 @@ async function main() {
       counts[status]++;
       records.push({
         localityId, status, reason, cityId: l.cityId || null, areaId: l.areaId || null,
-        districtId: city && city.districtId || null, legacyIndexId, proposedIndexId, proposedIndexOwnerId, proposedIndexMatches, proposedIndexMatches,
+        districtId: city && city.districtId || null, legacyIndexId, proposedIndexId, proposedIndexOwnerId, proposedIndexMatches,
       });
     }
     cursor = page.docs[page.docs.length - 1];
