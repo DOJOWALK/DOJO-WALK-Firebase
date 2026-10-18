@@ -335,20 +335,39 @@ test('direct area activation with a mismatched boundary is denied', async () => 
   }));
 });
 
-test('only active super_admin can write service location name indexes', async () => {
+test('name indexes enforce the Admin payload schema and active super_admin authorization', async () => {
   const superDb = env.authenticatedContext('super-active').firestore();
   const supportDb = env.authenticatedContext('support-active').firestore();
   const locationDb = env.authenticatedContext('location-active').firestore();
   const inactiveDb = env.authenticatedContext('super-inactive').firestore();
-  const index = { normalizedName: 'example-area', locationId: 'area-1', locationType: 'area' };
+  const index = {
+    collectionPath: 'service_areas',
+    documentId: 'area-1',
+    name: 'example-area',
+    parentIds: ['india', 'up', 'city-1'],
+    updatedAt: serverTimestamp(),
+  };
   await assertSucceeds(setDoc(doc(superDb, 'service_location_name_indexes/area-example'), index));
   await assertFails(setDoc(doc(supportDb, 'service_location_name_indexes/support-attempt'), index));
   await assertFails(setDoc(doc(locationDb, 'service_location_name_indexes/location-attempt'), index));
   await assertFails(setDoc(doc(inactiveDb, 'service_location_name_indexes/inactive-attempt'), index));
+
+  await assertFails(setDoc(doc(superDb, 'service_location_name_indexes/extra-field'), {
+    ...index, arbitraryAdminField: true,
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_name_indexes/unknown-collection'), {
+    ...index, collectionPath: 'users',
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_name_indexes/empty-name'), {
+    ...index, name: '',
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_name_indexes/too-many-parents'), {
+    ...index, parentIds: ['a', 'b', 'c', 'd', 'e'],
+  }));
   await assertFails(deleteDoc(doc(supportDb, 'service_location_name_indexes/area-example')));
 });
 
-test('import audit creation requires active super_admin and matching actor', async () => {
+test('import audit validates bounded strings, actor, and immutable create-only records', async () => {
   const superDb = env.authenticatedContext('super-active').firestore();
   const supportDb = env.authenticatedContext('support-active').firestore();
   const record = {
@@ -362,6 +381,21 @@ test('import audit creation requires active super_admin and matching actor', asy
   }));
   await assertFails(setDoc(doc(superDb, 'service_location_imports/import-spoofed'), {
     ...record, importedBy: 'support-active',
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_imports/empty-source'), {
+    ...record, source: '',
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_imports/long-source'), {
+    ...record, source: 'x'.repeat(81),
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_imports/long-filename'), {
+    ...record, fileName: 'x'.repeat(181),
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_imports/empty-status'), {
+    ...record, status: '',
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_imports/long-verification'), {
+    ...record, verificationStatus: 'x'.repeat(33),
   }));
   await assertFails(updateDoc(doc(superDb, 'service_location_imports/import-ok'), {
     status: 'completed',
