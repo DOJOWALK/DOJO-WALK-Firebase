@@ -1274,7 +1274,18 @@ service cloud.firestore {
           && data.name.size() <= 120
           && data.parentIds is list
           && data.parentIds.size() <= 4
-          && data.parentIds.hasOnly(data.parentIds)
+          && (
+            (data.collectionPath == 'service_countries'
+              && data.parentIds.size() == 0)
+            || (data.collectionPath == 'service_states'
+              && data.parentIds.size() == 1)
+            || (data.collectionPath == 'service_cities'
+              && data.parentIds.size() == 2)
+            || (data.collectionPath == 'service_areas'
+              && data.parentIds.size() == 3)
+            || (data.collectionPath == 'service_localities'
+              && data.parentIds.size() == 4)
+          )
           && data.updatedAt is timestamp;
       }
 
