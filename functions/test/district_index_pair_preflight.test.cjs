@@ -92,3 +92,23 @@ test("normalizes expected name but does not mutate index inputs", () => {
   assert.equal(r.status, "LEGACY_ONLY");
   assert.equal(JSON.stringify(legacy), before);
 });
+
+test("blocks dual indexes when both consistently point to a different location", () => {
+  const legacy = index(base.legacyParentIds, { documentId: "area-other" });
+  const districtAware = index(base.districtParentIds, { documentId: "area-other" });
+  const r = classifyDistrictIndexPair({
+    ...base, legacy, districtAware,
+  });
+  assert.equal(r.status, "LEGACY_OWNER_MISMATCH");
+  assert.equal(r.safeToMigrate, false);
+});
+
+test("blocks District-aware-only index owned by another location", () => {
+  const r = classifyDistrictIndexPair({
+    ...base,
+    legacy: absent,
+    districtAware: index(base.districtParentIds, { documentId: "area-other" }),
+  });
+  assert.equal(r.status, "DISTRICT_OWNER_MISMATCH");
+  assert.equal(r.safeToMigrate, false);
+});
