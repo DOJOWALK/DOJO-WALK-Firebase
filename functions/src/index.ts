@@ -543,14 +543,20 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     ? db.collection(collection).doc(locationId)
     : db.collection(collection).doc();
   const actorRef = db.doc(`admin_users/${uid}`);
-  const parentIdsByType: Record<ServiceLocationType, string[]> = {
+  const parentFieldsByType: Record<ServiceLocationType, string[]> = {
     country: [],
-    state: [proposed.countryId as string],
-    city: [proposed.countryId as string, proposed.stateId as string],
-    area: [proposed.countryId as string, proposed.stateId as string, proposed.cityId as string],
-    locality: [proposed.countryId as string, proposed.stateId as string, proposed.cityId as string, proposed.areaId as string],
+    state: ["countryId"],
+    city: ["countryId", "stateId"],
+    area: ["countryId", "stateId", "cityId"],
+    locality: ["countryId", "stateId", "cityId", "areaId"],
   };
-  const parentIds = parentIdsByType[type].map((id) => id.trim());
+  const parentIds = parentFieldsByType[type].map((field) => {
+    const value = proposed[field];
+    if (typeof value !== "string" || !value.trim()) {
+      throw new HttpsError("invalid-argument", `A valid ${field} is required.`);
+    }
+    return value.trim();
+  });
   const parentRefs = parentIds.map((id, i) => {
     const parentType: ServiceLocationType[] = ["country", "state", "city", "area"];
     return db.collection(SERVICE_LOCATION_COLLECTIONS[parentType[i]]).doc(id);
@@ -572,8 +578,8 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     }
     if (targetSnap.exists) {
       const current = targetSnap.data() ?? {};
-      const currentParents = parentIdsByType[type].map((field) => current[field]);
-      const proposedParents = parentIdsByType[type].map((field) => proposed[field]);
+      const currentParents = parentFieldsByType[type].map((field) => current[field]);
+      const proposedParents = parentFieldsByType[type].map((field) => proposed[field]);
       if (currentParents.some((value, i) => value !== proposedParents[i])) {
         throw new HttpsError("failed-precondition", "Moving a location to a different parent is not supported.");
       }
@@ -602,7 +608,7 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     const newIndexSnap = await tx.get(indexRef);
     const old = targetSnap.data() ?? {};
     const oldParentIds = targetSnap.exists
-      ? parentIdsByType[type].map((field) => String(old[field] ?? ""))
+      ? parentFieldsByType[type].map((field) => String(old[field] ?? ""))
       : parentIds;
     let oldIndexRef: FirebaseFirestore.DocumentReference | undefined;
     let oldIndexSnap: FirebaseFirestore.DocumentSnapshot | undefined;
