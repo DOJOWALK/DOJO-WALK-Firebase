@@ -364,6 +364,12 @@ test('name indexes enforce the Admin payload schema and active super_admin autho
   await assertFails(setDoc(doc(superDb, 'service_location_name_indexes/too-many-parents'), {
     ...index, parentIds: ['a', 'b', 'c', 'd', 'e'],
   }));
+  await assertFails(setDoc(doc(superDb, 'service_location_name_indexes/wrong-parent-count'), {
+    ...index, parentIds: ['india'],
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_name_indexes/country-with-parent'), {
+    ...index, collectionPath: 'service_countries', parentIds: ['india', 'up', 'city-1'],
+  }));
   await assertFails(deleteDoc(doc(supportDb, 'service_location_name_indexes/area-example')));
 });
 
