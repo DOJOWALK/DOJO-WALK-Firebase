@@ -108,9 +108,16 @@ test("still rejects districtId on City until district-aware City migration lands
     () => validateServiceLocationPayload("city", {
       countryId: "country-1",
       stateId: "state-1",
-      districtId: "district-1",
+      districtId: "district id",
       name: "Noida",
     }),
-    /LOCATION_PAYLOAD_FIELD_INVALID/,
+    /LOCATION_INDEX_PARENT_INVALID/,
   );
+});
+
+test("supports the District-aware City index tuple", () => {
+  const parents = ["country-1", "state-1", "district-1"];
+  const tuple = JSON.stringify(["service_cities", parents, "noida"]);
+  const expected = createHash("sha256").update(Buffer.from(tuple, "utf8")).digest("hex");
+  assert.equal(serviceLocationNameIndexId("service_cities", parents, "Noida"), expected);
 });
