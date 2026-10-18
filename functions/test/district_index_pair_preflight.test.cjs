@@ -142,3 +142,19 @@ test("rejects oversized expected name and invalid expected document ID", () => {
   assert.equal(invalidId.status, "INPUT_INVALID");
   assert.equal(invalidId.safeToMigrate, false);
 });
+
+test("rejects whitespace-padded parent IDs and collection paths", () => {
+  const paddedParent = classifyDistrictIndexPair({
+    ...base, legacyParentIds: [" country-1", "state-1", "city-1"],
+    legacy: index(base.legacyParentIds), districtAware: absent,
+  });
+  assert.equal(paddedParent.status, "INPUT_INVALID");
+  assert.equal(paddedParent.safeToMigrate, false);
+
+  const invalidCollection = classifyDistrictIndexPair({
+    ...base, expectedCollection: "service_areas/area-1",
+    legacy: index(base.legacyParentIds), districtAware: absent,
+  });
+  assert.equal(invalidCollection.status, "INPUT_INVALID");
+  assert.equal(invalidCollection.safeToMigrate, false);
+});
