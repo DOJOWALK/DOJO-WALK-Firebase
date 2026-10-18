@@ -42,3 +42,25 @@ test("rejects empty or oversized names and invalid country code", () => {
   assert.throws(() => validateServiceLocationPayload("country", { name: "x".repeat(121), code: "IN" }), /LOCATION_INDEX_NAME_INVALID/);
   assert.throws(() => validateServiceLocationPayload("country", { name: "India", code: " " }), /LOCATION_PAYLOAD_CODE_INVALID/);
 });
+
+test("documents legacy Area payload contract until District-aware callable migration", () => {
+  const legacyArea = {
+    countryId: "country-1",
+    stateId: "state-1",
+    cityId: "city-1",
+    name: "Area One",
+    isServiceActive: false,
+  };
+  assert.equal(validateServiceLocationPayload("area", legacyArea).cityId, "city-1");
+
+  // District-aware Area ancestry is tested by district_schema_contract.test.cjs,
+  // but must not be sent through this legacy payload validator before the
+  // trusted callable and name-index migration is deployed together.
+  assert.throws(
+    () => validateServiceLocationPayload("area", {
+      ...legacyArea,
+      districtId: "district-1",
+    }),
+    /LOCATION_PAYLOAD_FIELD_INVALID/,
+  );
+});
