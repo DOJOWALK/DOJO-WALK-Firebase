@@ -22,6 +22,9 @@ const ids = {
   inactiveState: `it-inactive-state-${suffix}`,
   mismatchedState: `it-mismatched-state-${suffix}`,
   city: `it-city-${suffix}`,
+  district: `it-district-${suffix}`,
+  districtCity: `it-district-city-${suffix}`,
+  districtCityBoundary: `it-district-city-boundary-${suffix}`,
   area: `it-area-${suffix}`,
   invalidCity: `it-invalid-city-${suffix}`,
   cityBoundary: `it-city-boundary-${suffix}`,
@@ -93,6 +96,9 @@ test("callable integration: auth, boundary validation, City and Area activation"
     `service_states/${ids.inactiveState}`,
     `service_states/${ids.mismatchedState}`,
     `service_cities/${ids.city}`,
+    `service_districts/${ids.district}`,
+    `service_cities/${ids.districtCity}`,
+    `service_location_boundaries/${ids.districtCityBoundary}`,
     `service_areas/${ids.area}`,
     `service_cities/${ids.invalidCity}`,
     `service_location_boundaries/${ids.cityBoundary}`,
@@ -134,6 +140,16 @@ test("callable integration: auth, boundary validation, City and Area activation"
     db.doc(`service_cities/${ids.city}`).set({
       isServiceActive: false, countryId: ids.country, stateId: ids.state, verifiedBoundaryId: ids.cityBoundary,
     }),
+    db.doc(`service_districts/${ids.district}`).set({
+      countryId: ids.country, stateId: ids.state, isServiceActive: false,
+    }),
+    db.doc(`service_cities/${ids.districtCity}`).set({
+      isServiceActive: false, countryId: ids.country, stateId: ids.state,
+      districtId: ids.district, verifiedBoundaryId: ids.districtCityBoundary,
+    }),
+    db.doc(`service_location_boundaries/${ids.districtCityBoundary}`).set(
+      boundary(ids.districtCity, "city", polygonPoints(0, 0, 10, 10)),
+    ),
     db.doc(`service_location_boundaries/${ids.cityBoundary}`).set(
       boundary(ids.city, "city", polygonPoints(0, 0, 10, 10)),
     ),
@@ -263,6 +279,28 @@ test("callable integration: auth, boundary validation, City and Area activation"
       .where("actorUid", "==", ids.admin).where("locationId", "==", ids.city).get();
     assert.equal(audit.size, 1);
     assert.equal(audit.docs[0].get("result"), "activated");
+  });
+
+  await t.test("District-aware City activation requires an active matching District and guards it", async () => {
+    await expectCallableCode(invoke(ids.admin, "city", ids.districtCity), "failed-precondition");
+    assert.equal((await db.doc(`service_cities/${ids.districtCity}`).get()).get("isServiceActive"), false);
+
+    await db.doc(`service_districts/${ids.district}`).update({
+      isServiceActive: true, stateId: ids.mismatchedState, countryId: ids.otherCountry,
+    });
+    await expectCallableCode(invoke(ids.admin, "city", ids.districtCity), "failed-precondition");
+
+    await db.doc(`service_districts/${ids.district}`).update({
+      isServiceActive: true, stateId: ids.state, countryId: ids.country,
+    });
+    const result = await invoke(ids.admin, "city", ids.districtCity);
+    assert.deepEqual(result, { ok: true, locationId: ids.districtCity, locationType: "city" });
+    assert.ok((await db.doc(`service_districts/${ids.district}`).get()).get("activationGuardAt"));
+
+    await db.doc(`service_cities/${ids.districtCity}`).update({ isServiceActive: false });
+    await db.doc(`service_districts/${ids.district}`).delete();
+    await expectCallableCode(invoke(ids.admin, "city", ids.districtCity), "failed-precondition");
+    assert.equal((await db.doc(`service_cities/${ids.districtCity}`).get()).get("isServiceActive"), false);
   });
 
   await t.test("active super_admin can activate an Area contained by its active City", async () => {
