@@ -79,7 +79,8 @@ export function classifyDistrictIndexPair(input: {
     index.collectionPath === input.expectedCollection &&
     index.name === normalizedExpectedName &&
     Array.isArray(index.parentIds) &&
-    JSON.stringify(index.parentIds) === JSON.stringify(parents);
+    index.parentIds.length === parents.length &&
+    index.parentIds.every((id, position) => id === parents[position]);
 
   if (legacy.exists && !tupleMatches(legacy, input.legacyParentIds)) {
     return { status: "LEGACY_OWNER_MISMATCH", safeToMigrate: false, reason: "Legacy index does not match the expected collection, name, or parent tuple." };
