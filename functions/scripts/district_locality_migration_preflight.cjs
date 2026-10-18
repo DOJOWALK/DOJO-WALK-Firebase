@@ -19,10 +19,10 @@ const norm = value => typeof value === "string" ? value.trim().toLowerCase().rep
 async function doc(collection, id) {
   if (typeof id !== "string" || !id.trim()) return null;
   const s = await db.collection(collection).doc(id).get();
-  return s.exists ? { id: s.id, ...s.data() } : null;
+  return s.exists ? { ...s.data(), id: s.id } : null;
 }
 async function main() {
-  const counts = { READY: 0, LEGACY_NO_DISTRICT: 0, BROKEN_PARENT_CHAIN: 0, INDEX_CONFLICT: 0, LEGACY_INDEX_MISSING_OR_MISMATCHED: 0 };
+  const counts = { READY: 0, LEGACY_NO_DISTRICT: 0, BROKEN_PARENT_CHAIN: 0, INDEX_CONFLICT: 0, LEGACY_INDEX_MISSING_OR_MISMATCHED: 0, READ_ERROR: 0 };
   const records = [];
   let cursor = null, scanned = 0;
   while (true) {
@@ -34,7 +34,7 @@ async function main() {
       scanned++;
       const l = snap.data(), localityId = snap.id;
       let status = "BROKEN_PARENT_CHAIN", reason = "LOCALITY_PARENT_FIELDS_INVALID";
-      let city = null, legacyIndexId = null, proposedIndexId = null, proposedIndexOwnerId = null;
+      let city = null, legacyIndexId = null, proposedIndexId = null, proposedIndexOwnerId = null, proposedIndexMatches = false;
       let legacyIndexMatches = false;
       try {
         const ids = [l.countryId, l.stateId, l.cityId, l.areaId];
@@ -71,6 +71,14 @@ async function main() {
           }, String(l.name || ""));
           const proposed = await doc("service_location_name_indexes", proposedIndexId);
           proposedIndexOwnerId = proposed ? String(proposed.documentId || "") : null;
+          proposedIndexMatches = !!proposed &&
+            proposed.collectionPath === "service_localities" &&
+            proposed.documentId === localityId &&
+            proposed.name === norm(l.name) &&
+            Array.isArray(proposed.parentIds) &&
+            JSON.stringify(proposed.parentIds) === JSON.stringify([
+              l.countryId, l.stateId, c.districtId, l.cityId, l.areaId,
+            ]);
         }
         status = classifyAreaMigrationPreflight({
           cityCompatibility: compatibility, legacyIndexMatches, proposedIndexOwnerId, areaId: localityId,
@@ -82,7 +90,7 @@ async function main() {
       counts[status]++;
       records.push({
         localityId, status, reason, cityId: l.cityId || null, areaId: l.areaId || null,
-        districtId: city && city.districtId || null, legacyIndexId, proposedIndexId, proposedIndexOwnerId,
+        districtId: city && city.districtId || null, legacyIndexId, proposedIndexId, proposedIndexOwnerId, proposedIndexMatches,
       });
     }
     cursor = page.docs[page.docs.length - 1];
