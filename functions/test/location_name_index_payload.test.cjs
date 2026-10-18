@@ -15,6 +15,14 @@ test("accepts allow-listed payload for each location type", () => {
   }
 });
 
+test("trims country code after validating it", () => {
+  const normalized = validateServiceLocationPayload("country", {
+    name: " India ",
+    code: " IN ",
+  });
+  assert.deepEqual(normalized, { name: "India", code: "IN" });
+});
+
 test("rejects fields outside the per-type allowlist", () => {
   assert.throws(
     () => validateServiceLocationPayload("state", { countryId: "country-1", name: "UP", isActive: false, admin: true }),
