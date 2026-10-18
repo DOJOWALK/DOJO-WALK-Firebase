@@ -31,7 +31,7 @@ initializeApp({ credential: applicationDefault(), projectId });
 const db = getFirestore();
 
 function normalizeName(value) {
-  return typeof value === "string" ? value.trim().toLowerCase().replace(/\\s+/g, " ") : "";
+  return typeof value === "string" ? value.trim().toLowerCase().replace(/\s+/g, " ") : "";
 }
 
 async function readDoc(collection, id) {
@@ -167,7 +167,7 @@ async function run() {
   const json = JSON.stringify(report, null, 2);
   if (outputPath) {
     const fs = require("node:fs");
-    fs.writeFileSync(outputPath, json + "\\n", { flag: "wx" });
+    fs.writeFileSync(outputPath, json + "\n", { flag: "wx" });
     console.log(`Read-only preflight report written to ${outputPath}`);
   } else {
     process.stdout.write(json + "\\n");
