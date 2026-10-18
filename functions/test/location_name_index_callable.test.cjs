@@ -715,6 +715,31 @@ test("invalid country locationId is rejected without changing saved data", async
   assert.equal(index.get("name"), name.trim().toLowerCase().replace(/\\s+/g, " "));
 });
 
+test("blank country name update is rejected without changing saved data", async () => {
+  const uid = await createAdmin();
+  const name = `Blank-Name-${randomUUID()}`;
+  const created = await saveCountry(uid, name);
+  const indexId = countryIndexId(name);
+
+  await assert.rejects(
+    () => saveServiceLocationWithNameIndex.run(request(uid, {
+      locationType: "country",
+      locationId: created.locationId,
+      payload: { name: "   ", code: "GB" },
+    })),
+    (error) => error && error.code === "invalid-argument",
+  );
+
+  const country = await db.doc(`service_countries/${created.locationId}`).get();
+  const index = await db.doc(`service_location_name_indexes/${indexId}`).get();
+  assert.equal(country.exists, true);
+  assert.equal(country.get("name"), name);
+  assert.equal(country.get("code"), "IN");
+  assert.equal(index.exists, true);
+  assert.equal(index.get("documentId"), created.locationId);
+  assert.equal(index.get("name"), name.trim().toLowerCase().replace(/\\s+/g, " "));
+});
+
 test.after(async () => {
   const deletes = [];
   for (const uid of createdAdmins) deletes.push(db.doc(`admin_users/${uid}`).delete());
