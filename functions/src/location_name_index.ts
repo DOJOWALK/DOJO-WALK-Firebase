@@ -78,8 +78,10 @@ export function validateServiceLocationPayload(
   if (typeof record.name !== "string") throw new Error("LOCATION_INDEX_NAME_INVALID");
   const name = record.name.trim();
   if (!name || name.length > 120) throw new Error("LOCATION_INDEX_NAME_INVALID");
-  if (type === "country" && (typeof record.code !== "string" || !record.code.trim() || record.code.trim().length > 16)) {
-    throw new Error("LOCATION_PAYLOAD_CODE_INVALID");
+  if (type === "country") {
+    if (typeof record.code !== "string" || !record.code.trim() || record.code.trim().length > 16) {
+      throw new Error("LOCATION_PAYLOAD_CODE_INVALID");
+    }
   }
   const parentFields: Record<ServiceLocationType, readonly string[]> = {
     country: [],
@@ -89,6 +91,7 @@ export function validateServiceLocationPayload(
     locality: ["countryId", "stateId", "cityId", "areaId"],
   };
   const normalizedRecord: Record<string, unknown> = { ...record, name };
+  if (type === "country") normalizedRecord.code = (record.code as string).trim();
   for (const field of parentFields[type]) {
     const value = record[field];
     if (typeof value !== "string") {
