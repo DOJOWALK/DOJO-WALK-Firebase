@@ -23,6 +23,7 @@ const ids = {
   otherState: `district-state-other-${suffix}`,
   district: `district-target-${suffix}`,
   childCity: `district-child-city-${suffix}`,
+  savedCity: `district-saved-city-${suffix}`,
   childArea: `district-child-area-${suffix}`,
 };
 
@@ -134,6 +135,47 @@ test("District save and status callable enforce trusted ancestry and child guard
     assert.equal((await db.doc(`service_districts/${ids.district}`).get()).get("isServiceActive"), true);
     assert.ok((await db.doc(`service_countries/${ids.country}`).get()).get("activationGuardAt"));
     assert.ok((await db.doc(`service_states/${ids.state}`).get()).get("activationGuardAt"));
+  });
+
+  await t.test("District-aware City save preserves District ancestry and blocks implicit migration", async () => {
+    const name = `District Scoped City ${suffix}`;
+    const cityIndexId = serviceLocationNameIndexId(
+      "service_cities",
+      [ids.country, ids.state, ids.district],
+      name.toLowerCase(),
+    );
+    indexIds.add(cityIndexId);
+    const result = await saveServiceLocationWithNameIndex.run(request(ids.admin, {
+      locationType: "city",
+      locationId: ids.savedCity,
+      payload: {
+        countryId: ids.country,
+        stateId: ids.state,
+        districtId: ids.district,
+        name,
+      },
+    }));
+    assert.equal(result.locationId, ids.savedCity);
+    assert.equal((await db.doc(`service_cities/${ids.savedCity}`).get()).get("districtId"), ids.district);
+    assert.equal((await db.doc(`service_location_name_indexes/${cityIndexId}`).get()).get("documentId"), ids.savedCity);
+
+    await expectCode(saveServiceLocationWithNameIndex.run(request(ids.admin, {
+      locationType: "city",
+      locationId: ids.savedCity,
+      payload: { countryId: ids.country, stateId: ids.state, name },
+    })), "failed-precondition");
+
+    await expectCode(saveServiceLocationWithNameIndex.run(request(ids.admin, {
+      locationType: "city",
+      locationId: ids.savedCity,
+      payload: {
+        countryId: ids.country,
+        stateId: ids.state,
+        districtId: ids.otherState,
+        name,
+      },
+    })), "failed-precondition");
+    assert.equal((await db.doc(`service_cities/${ids.savedCity}`).get()).get("districtId"), ids.district);
   });
 
   await t.test("District deactivation is blocked by active City or Area descendants", async () => {
