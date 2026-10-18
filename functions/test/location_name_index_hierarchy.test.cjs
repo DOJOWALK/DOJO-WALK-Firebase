@@ -80,6 +80,29 @@ test("saving an existing State with the same name and parent is idempotent", asy
   assert.equal(index.get("documentId"), first.locationId);
 });
 
+test("renaming a State replaces its name index atomically", async () => {
+  const uid = await createAdmin();
+  const country = await save(uid, "country", { name: `Rename-Country-${randomUUID()}`, code: "RC" });
+  const oldName = `Old-State-${randomUUID()}`;
+  const newName = `New-State-${randomUUID()}`;
+  const state = await save(uid, "state", { countryId: country.locationId, name: oldName });
+  const oldIndexId = indexId("service_states", [country.locationId], oldName);
+  const newIndexId = indexId("service_states", [country.locationId], newName);
+
+  const updated = await save(uid, "state", { countryId: country.locationId, name: newName }, state.locationId);
+
+  const savedState = await db.doc(`service_states/${state.locationId}`).get();
+  const oldIndex = await db.doc(`service_location_name_indexes/${oldIndexId}`).get();
+  const newIndex = await db.doc(`service_location_name_indexes/${newIndexId}`).get();
+
+  assert.equal(updated.locationId, state.locationId);
+  assert.equal(savedState.get("name"), newName);
+  assert.equal(oldIndex.exists, false);
+  assert.equal(newIndex.exists, true);
+  assert.equal(newIndex.get("documentId"), state.locationId);
+  assert.equal(newIndex.get("name"), newName.toLowerCase());
+});
+
 test("updating an existing State cannot change its parent Country", async () => {
   const uid = await createAdmin();
   const countryA = await save(uid, "country", { name: `Immutable-Parent-A-${randomUUID()}`, code: "IA" });
