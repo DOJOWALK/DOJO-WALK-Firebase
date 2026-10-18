@@ -282,6 +282,48 @@ test("renaming a Locality replaces its name index atomically", async () => {
   assert.deepEqual(newIndex.get("parentIds"), [country.locationId, state.locationId, city.locationId, area.locationId]);
 });
 
+test("renaming a Locality to a sibling name is rejected without changing either index", async () => {
+  const uid = await createAdmin();
+  const country = await save(uid, "country", { name: `Locality-Collision-Country-${randomUUID()}`, code: "LC" });
+  const state = await save(uid, "state", { countryId: country.locationId, name: `Locality-Collision-State-${randomUUID()}` });
+  const city = await save(uid, "city", {
+    countryId: country.locationId, stateId: state.locationId, name: `Locality-Collision-City-${randomUUID()}`,
+  });
+  const area = await save(uid, "area", {
+    countryId: country.locationId, stateId: state.locationId, cityId: city.locationId,
+    name: `Locality-Collision-Area-${randomUUID()}`,
+  });
+  const firstName = `Locality-First-${randomUUID()}`;
+  const secondName = `Locality-Second-${randomUUID()}`;
+  const parents = [country.locationId, state.locationId, city.locationId, area.locationId];
+  const first = await save(uid, "locality", {
+    countryId: parents[0], stateId: parents[1], cityId: parents[2], areaId: parents[3], name: firstName,
+  });
+  const second = await save(uid, "locality", {
+    countryId: parents[0], stateId: parents[1], cityId: parents[2], areaId: parents[3], name: secondName,
+  });
+  const firstIndexId = indexId("service_localities", parents, firstName);
+  const secondIndexId = indexId("service_localities", parents, secondName);
+
+  await assert.rejects(
+    () => save(uid, "locality", {
+      countryId: parents[0], stateId: parents[1], cityId: parents[2], areaId: parents[3], name: secondName,
+    }, first.locationId),
+    (error) => error && error.code === "already-exists",
+  );
+
+  const savedFirst = await db.doc(`service_localities/${first.locationId}`).get();
+  const savedSecond = await db.doc(`service_localities/${second.locationId}`).get();
+  const firstIndex = await db.doc(`service_location_name_indexes/${firstIndexId}`).get();
+  const secondIndex = await db.doc(`service_location_name_indexes/${secondIndexId}`).get();
+  assert.equal(savedFirst.get("name"), firstName);
+  assert.equal(savedSecond.get("name"), secondName);
+  assert.equal(firstIndex.exists, true);
+  assert.equal(firstIndex.get("documentId"), first.locationId);
+  assert.equal(secondIndex.exists, true);
+  assert.equal(secondIndex.get("documentId"), second.locationId);
+});
+
 test("updating an existing State cannot change its parent Country", async () => {
   const uid = await createAdmin();
   const countryA = await save(uid, "country", { name: `Immutable-Parent-A-${randomUUID()}`, code: "IA" });
