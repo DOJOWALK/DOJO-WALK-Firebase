@@ -1,0 +1,154 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const { randomUUID } = require("node:crypto");
+const { getFirestore } = require("firebase-admin/firestore");
+const {
+  saveServiceLocationWithNameIndex,
+} = require("../lib/index");
+const {
+  serviceLocationNameIndexId,
+} = require("../lib/location_name_index");
+
+const db = getFirestore();
+const createdAdmins = new Set();
+const createdCountries = new Set();
+const createdIndexes = new Set();
+
+function request(uid, data) {
+  return {
+    data,
+    auth: uid ? { uid, token: { uid, role: "admin" } } : undefined,
+    rawRequest: {},
+    acceptsStreaming: false,
+  };
+}
+
+async function createAdmin(role = "admin", isActive = true) {
+  const uid = `callable-test-${randomUUID()}`;
+  createdAdmins.add(uid);
+  await db.doc(`admin_users/${uid}`).set({ role, isActive });
+  return uid;
+}
+
+function countryIndexId(name) {
+  const id = serviceLocationNameIndexId(
+    "service_countries",
+    [],
+    name.trim().toLowerCase().replace(/\s+/g, " "),
+  );
+  createdIndexes.add(id);
+  return id;
+}
+
+async function saveCountry(uid, name, locationId) {
+  const payload = { name, code: "IN" };
+  const data = { locationType: "country", payload };
+  if (locationId) data.locationId = locationId;
+  const result = await saveServiceLocationWithNameIndex.run(request(uid, data));
+  if (result?.locationId) createdCountries.add(result.locationId);
+  return result;
+}
+
+test("callable rejects a request without authentication", async () => {
+  await assert.rejects(
+    () => saveServiceLocationWithNameIndex.run(request(undefined, {
+      locationType: "country",
+      payload: { name: `Unauth-${randomUUID()}`, code: "IN" },
+    })),
+    (error) => error && error.code === "unauthenticated",
+  );
+});
+
+test("callable rejects a missing or inactive admin profile", async () => {
+  const missingUid = `missing-${randomUUID()}`;
+  await assert.rejects(
+    () => saveServiceLocationWithNameIndex.run(request(missingUid, {
+      locationType: "country",
+      payload: { name: `Missing-${randomUUID()}`, code: "IN" },
+    })),
+    (error) => error && error.code === "permission-denied",
+  );
+
+  const inactiveUid = await createAdmin("admin", false);
+  await assert.rejects(
+    () => saveCountry(inactiveUid, `Inactive-${randomUUID()}`),
+    (error) => error && error.code === "permission-denied",
+  );
+});
+
+test("callable rejects invalid payloads before writing a location", async () => {
+  const uid = await createAdmin();
+  const name = `Invalid-${randomUUID()}`;
+  await assert.rejects(
+    () => saveServiceLocationWithNameIndex.run(request(uid, {
+      locationType: "country",
+      payload: { name, code: "IN", isActive: true },
+    })),
+    (error) => error && error.code === "invalid-argument",
+  );
+  const indexId = countryIndexId(name);
+  assert.equal((await db.doc(`service_location_name_indexes/${indexId}`).get()).exists, false);
+});
+
+test("callable creates an inactive country and its name index atomically", async () => {
+  const uid = await createAdmin();
+  const name = `Callable-${randomUUID()}`;
+  const result = await saveCountry(uid, name);
+  const location = await db.doc(`service_countries/${result.locationId}`).get();
+  const indexId = countryIndexId(name);
+  const index = await db.doc(`service_location_name_indexes/${indexId}`).get();
+
+  assert.equal(result.ok, true);
+  assert.equal(result.locationType, "country");
+  assert.equal(location.exists, true);
+  assert.equal(location.get("name"), name);
+  assert.equal(location.get("isActive"), false);
+  assert.equal(index.exists, true);
+  assert.equal(index.get("documentId"), result.locationId);
+  assert.equal(index.get("collectionPath"), "service_countries");
+});
+
+test("callable rejects duplicate names and removes the old index on rename", async () => {
+  const uid = await createAdmin();
+  const originalName = `Original-${randomUUID()}`;
+  const duplicateName = `Duplicate-${randomUUID()}`;
+  const first = await saveCountry(uid, originalName);
+  const second = await saveCountry(uid, duplicateName);
+
+  await assert.rejects(
+    () => saveCountry(uid, originalName),
+    (error) => error && error.code === "already-exists",
+  );
+
+  const renamed = `Renamed-${randomUUID()}`;
+  const renameResult = await saveCountry(uid, renamed, first.locationId);
+  const oldIndex = await db.doc(
+    `service_location_name_indexes/${countryIndexId(originalName)}`,
+  ).get();
+  const newIndex = await db.doc(
+    `service_location_name_indexes/${countryIndexId(renamed)}`,
+  ).get();
+  const renamedLocation = await db.doc(`service_countries/${first.locationId}`).get();
+
+  assert.equal(renameResult.locationId, first.locationId);
+  assert.equal(oldIndex.exists, false);
+  assert.equal(newIndex.exists, true);
+  assert.equal(newIndex.get("documentId"), first.locationId);
+  assert.equal(renamedLocation.get("name"), renamed);
+  assert.equal(renamedLocation.get("isActive"), false);
+
+  // Keep the second record referenced until cleanup; this assertion documents
+  // that the duplicate-name failure did not overwrite the existing index.
+  const duplicateIndex = await db.doc(
+    `service_location_name_indexes/${countryIndexId(duplicateName)}`,
+  ).get();
+  assert.equal(duplicateIndex.get("documentId"), second.locationId);
+});
+
+test.after(async () => {
+  const deletes = [];
+  for (const uid of createdAdmins) deletes.push(db.doc(`admin_users/${uid}`).delete());
+  for (const id of createdCountries) deletes.push(db.doc(`service_countries/${id}`).delete());
+  for (const id of createdIndexes) deletes.push(db.doc(`service_location_name_indexes/${id}`).delete());
+  await Promise.all(deletes);
+});
