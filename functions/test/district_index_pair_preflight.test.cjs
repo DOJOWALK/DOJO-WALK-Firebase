@@ -172,3 +172,19 @@ test("rejects malformed index snapshot shapes without throwing", () => {
   assert.equal(missingSnapshot.status, "INPUT_INVALID");
   assert.equal(missingSnapshot.safeToMigrate, false);
 });
+
+test("rejects duplicate IDs in either expected parent tuple", () => {
+  const duplicateLegacy = classifyDistrictIndexPair({
+    ...base, legacyParentIds: ["country-1", "state-1", "country-1"],
+    legacy: index(base.legacyParentIds), districtAware: absent,
+  });
+  assert.equal(duplicateLegacy.status, "INPUT_INVALID");
+  assert.equal(duplicateLegacy.safeToMigrate, false);
+
+  const duplicateDistrict = classifyDistrictIndexPair({
+    ...base, districtParentIds: ["country-1", "state-1", "district-1", "state-1"],
+    legacy: absent, districtAware: index(base.districtParentIds),
+  });
+  assert.equal(duplicateDistrict.status, "INPUT_INVALID");
+  assert.equal(duplicateDistrict.safeToMigrate, false);
+});
