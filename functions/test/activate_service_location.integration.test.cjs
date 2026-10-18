@@ -282,6 +282,10 @@ test("callable integration: auth, boundary validation, City and Area activation"
   });
 
   await t.test("District-aware City activation requires an active matching District and guards it", async () => {
+    await expectCallableCode(setServiceLocationStatus.run({
+      auth: { uid: ids.admin, token: { uid: ids.admin } },
+      data: { locationType: "city", locationId: ids.districtCity, isActive: true },
+    }), "failed-precondition");
     await expectCallableCode(invoke(ids.admin, "city", ids.districtCity), "failed-precondition");
     assert.equal((await db.doc(`service_cities/${ids.districtCity}`).get()).get("isServiceActive"), false);
 
