@@ -170,7 +170,7 @@ async function run() {
     fs.writeFileSync(outputPath, json + "\n", { flag: "wx" });
     console.log(`Read-only preflight report written to ${outputPath}`);
   } else {
-    process.stdout.write(json + "\\n");
+    process.stdout.write(json + "\n");
   }
 }
 
