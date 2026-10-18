@@ -107,6 +107,28 @@ test('new hierarchy records require existing, correctly linked ancestors', async
   }));
 });
 
+test('active admins cannot directly create inactive service locations in any hierarchy collection', async () => {
+  const db = env.authenticatedContext('super-active').firestore();
+  const stamps = { createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+  await assertFails(setDoc(doc(db, 'service_countries/direct-country'), {
+    name: 'Direct Country', code: 'DC', isActive: false, ...stamps,
+  }));
+  await assertFails(setDoc(doc(db, 'service_states/direct-state'), {
+    countryId: 'india', name: 'Direct State', isActive: false, ...stamps,
+  }));
+  await assertFails(setDoc(doc(db, 'service_cities/direct-city'), {
+    countryId: 'india', stateId: 'up', name: 'Direct City', isServiceActive: false, ...stamps,
+  }));
+  await assertFails(setDoc(doc(db, 'service_areas/direct-area'), {
+    countryId: 'india', stateId: 'up', cityId: 'city-parent',
+    name: 'Direct Area', isServiceActive: false, ...stamps,
+  }));
+  await assertFails(setDoc(doc(db, 'service_localities/direct-locality'), {
+    countryId: 'india', stateId: 'up', cityId: 'city-parent', areaId: 'direct-area',
+    name: 'Direct Locality', isServiceActive: false, ...stamps,
+  }));
+});
+
 test('unauthenticated reads and writes to service locations are denied', async () => {
   const db = env.unauthenticatedContext().firestore();
   await assertFails(getDoc(doc(db, 'service_countries/country-1')));
