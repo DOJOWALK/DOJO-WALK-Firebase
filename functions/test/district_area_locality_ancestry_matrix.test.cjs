@@ -117,3 +117,43 @@ test("legacy City without District remains compatible for Area save", async () =
     assert.equal((await db.doc(`service_location_name_indexes/${idx}`).get()).get("documentId"), result.locationId);
   } finally { await cleanup(f); }
 });
+
+test("valid District-linked Area keeps the existing legacy name-index tuple", async () => {
+  const f = await fixture({ district: true });
+  const areaName = `Matrix-New-Area-${randomUUID()}`;
+  try {
+    const result = await saveServiceLocationWithNameIndex.run(req(f.uid, "area", {
+      countryId: f.countryId, stateId: f.stateId, cityId: f.cityId, name: areaName,
+    }));
+    assert.equal(result.ok, true);
+    const area = await db.doc(`service_areas/${result.locationId}`).get();
+    assert.equal(area.get("cityId"), f.cityId);
+    assert.equal(area.get("districtId"), undefined);
+    const legacyId = serviceLocationNameIndexId("service_areas", [f.countryId, f.stateId, f.cityId], areaName.toLowerCase());
+    const districtId = serviceLocationNameIndexId("service_areas", [f.countryId, f.stateId, f.districtId, f.cityId], areaName.toLowerCase());
+    assert.equal((await db.doc(`service_location_name_indexes/${legacyId}`).get()).get("documentId"), result.locationId);
+    assert.equal((await db.doc(`service_location_name_indexes/${districtId}`).get()).exists, false);
+    await db.doc(`service_areas/${result.locationId}`).delete();
+    await db.doc(`service_location_name_indexes/${legacyId}`).delete();
+  } finally { await cleanup(f); }
+});
+
+test("Locality linked to a valid District City keeps the legacy Locality index tuple", async () => {
+  const f = await fixture({ district: true });
+  const localityName = `Matrix-New-Locality-${randomUUID()}`;
+  try {
+    const result = await saveServiceLocationWithNameIndex.run(req(f.uid, "locality", {
+      countryId: f.countryId, stateId: f.stateId, cityId: f.cityId,
+      areaId: f.areaId, name: localityName,
+    }));
+    assert.equal(result.ok, true);
+    const locality = await db.doc(`service_localities/${result.locationId}`).get();
+    assert.equal(locality.get("areaId"), f.areaId);
+    const legacyId = serviceLocationNameIndexId("service_localities", [f.countryId, f.stateId, f.cityId, f.areaId], localityName.toLowerCase());
+    const districtId = serviceLocationNameIndexId("service_localities", [f.countryId, f.stateId, f.districtId, f.cityId, f.areaId], localityName.toLowerCase());
+    assert.equal((await db.doc(`service_location_name_indexes/${legacyId}`).get()).get("documentId"), result.locationId);
+    assert.equal((await db.doc(`service_location_name_indexes/${districtId}`).get()).exists, false);
+    await db.doc(`service_localities/${result.locationId}`).delete();
+    await db.doc(`service_location_name_indexes/${legacyId}`).delete();
+  } finally { await cleanup(f); }
+});
