@@ -39,6 +39,7 @@ async function main() {
       try {
         const ids = [l.countryId, l.stateId, l.cityId, l.areaId];
         if (!ids.every(x => typeof x === "string" && x.trim())) throw new Error("LOCALITY_PARENT_FIELDS_INVALID");
+        if (typeof l.name !== "string" || !l.name.trim() || l.name.trim().length > 120) throw new Error("LOCALITY_NAME_INVALID");
         const [c, a, s, country] = await Promise.all([
           doc("service_cities", l.cityId), doc("service_areas", l.areaId),
           doc("service_states", l.stateId), doc("service_countries", l.countryId),
@@ -89,7 +90,7 @@ async function main() {
       } catch (e) {
         const message = e instanceof Error ? e.message : "";
         const knownDataErrors = new Set([
-          "LOCALITY_PARENT_FIELDS_INVALID", "CITY_MISSING", "AREA_MISSING",
+          "LOCALITY_PARENT_FIELDS_INVALID", "LOCALITY_NAME_INVALID", "CITY_MISSING", "AREA_MISSING",
           "STATE_COUNTRY_MISMATCH", "COUNTRY_MISSING", "LOCALITY_PARENT_CHAIN_MISMATCH",
           "DISTRICT_COUNTRY_STATE_MISMATCH",
         ]);
@@ -114,6 +115,14 @@ async function main() {
     mode: "READ_ONLY", projectId, collection: "service_localities", pageSize, scanned, counts,
     generatedAt: new Date().toISOString(), records,
     warning: "Paginated reads are not an atomic snapshot. No writes were performed.",
+    statusMeaning: {
+      READY: "parent chain and legacy index verified; proposed index is absent or matches this Locality",
+      LEGACY_NO_DISTRICT: "City needs reviewed District mapping",
+      BROKEN_PARENT_CHAIN: "required parent or Locality data is invalid",
+      INDEX_CONFLICT: "proposed index exists but does not safely match its expected owner/data",
+      LEGACY_INDEX_MISSING_OR_MISMATCHED: "legacy index missing or inconsistent",
+      READ_ERROR: "Firestore or helper read failed; investigate access/service errors before retrying",
+    },
   };
   const json = JSON.stringify(report, null, 2), output = process.env.REPORT_PATH;
   if (output) {
