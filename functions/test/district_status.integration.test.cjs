@@ -23,7 +23,7 @@ const ids = {
   otherState: `district-state-other-${suffix}`,
   district: `district-target-${suffix}`,
   childCity: `district-child-city-${suffix}`,
-  savedCity: `district-saved-city-${suffix}`,
+  savedCity: "",
   childArea: `district-child-area-${suffix}`,
 };
 
@@ -147,7 +147,6 @@ test("District save and status callable enforce trusted ancestry and child guard
     indexIds.add(cityIndexId);
     const result = await saveServiceLocationWithNameIndex.run(request(ids.admin, {
       locationType: "city",
-      locationId: ids.savedCity,
       payload: {
         countryId: ids.country,
         stateId: ids.state,
@@ -155,7 +154,9 @@ test("District save and status callable enforce trusted ancestry and child guard
         name,
       },
     }));
-    assert.equal(result.locationId, ids.savedCity);
+    ids.savedCity = result.locationId;
+    paths.push(`service_cities/${ids.savedCity}`);
+    assert.ok(ids.savedCity);
     assert.equal((await db.doc(`service_cities/${ids.savedCity}`).get()).get("districtId"), ids.district);
     assert.equal((await db.doc(`service_location_name_indexes/${cityIndexId}`).get()).get("documentId"), ids.savedCity);
 
