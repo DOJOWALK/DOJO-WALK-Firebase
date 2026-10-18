@@ -79,10 +79,20 @@ test("callable rejects a missing or inactive admin profile", async () => {
   );
 
   const inactiveUid = await createAdmin("admin", false);
+  const inactiveName = `Inactive-Create-${randomUUID()}`;
+  const inactiveIndexId = countryIndexId(inactiveName);
   await assert.rejects(
-    () => saveCountry(inactiveUid, `Inactive-${randomUUID()}`),
+    () => saveCountry(inactiveUid, inactiveName),
     (error) => error && error.code === "permission-denied",
   );
+
+  const inactiveMatches = await db.collection("service_countries")
+    .where("name", "==", inactiveName).get();
+  const inactiveIndex = await db.doc(
+    `service_location_name_indexes/${inactiveIndexId}`,
+  ).get();
+  assert.equal(inactiveMatches.empty, true);
+  assert.equal(inactiveIndex.exists, false);
 });
 
 test("unauthenticated request cannot rename an existing country or alter its index", async () => {
