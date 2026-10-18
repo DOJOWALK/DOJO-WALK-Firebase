@@ -88,11 +88,18 @@ export function validateServiceLocationPayload(
     area: ["countryId", "stateId", "cityId"],
     locality: ["countryId", "stateId", "cityId", "areaId"],
   };
+  const normalizedRecord: Record<string, unknown> = { ...record, name };
   for (const field of parentFields[type]) {
     const value = record[field];
-    if (typeof value !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(value.trim())) {
+    if (typeof value !== "string") {
       throw new Error("LOCATION_INDEX_PARENT_INVALID");
     }
+    const trimmed = value.trim();
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(trimmed)) {
+      throw new Error("LOCATION_INDEX_PARENT_INVALID");
+    }
+    // Store exactly the parent ID used to build the canonical name index.
+    normalizedRecord[field] = trimmed;
   }
-  return { ...record, name };
+  return normalizedRecord;
 }
