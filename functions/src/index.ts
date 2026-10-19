@@ -1,4 +1,4 @@
-import { initializeApp } from "firebase-admin/app";
+import { initializeApp } from "firebase-admin/app";\nimport { createHash } from "node:crypto";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { assertAreaCoveredByCity, polygonFromBoundary, type BoundaryDoc } from "./location_geometry";
@@ -950,6 +950,75 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
         updatedAt: now,
       });
       return { ok: true, runId, status: "started" };
+    });
+  }
+
+  if (action === "recordPlan") {
+    const nodes = data.nodes;
+    if (!Array.isArray(nodes) || nodes.length < 1 || nodes.length > 300) {
+      throw new HttpsError("invalid-argument", "A plan must contain 1–300 nodes.");
+    }
+    const allowedTypes = new Set(["state", "district", "city", "area"]);
+    const seenIds = new Set<string>();
+    const canonicalNodes: Array<{
+      id: string; type: string; name: string; parentId: string;
+      alreadyExists: boolean; sourceLine: number;
+    }> = [];
+    for (const node of nodes) {
+      if (!node || typeof node !== "object" ||
+          typeof node.id !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(node.id) ||
+          typeof node.type !== "string" || !allowedTypes.has(node.type) ||
+          typeof node.name !== "string" || !node.name.trim() || node.name.trim().length > 180 ||
+          typeof node.parentId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(node.parentId) ||
+          typeof node.alreadyExists !== "boolean" ||
+          !Number.isSafeInteger(node.sourceLine) || node.sourceLine < 1) {
+        throw new HttpsError("invalid-argument", "The plan contains an invalid node descriptor.");
+      }
+      if (seenIds.has(node.id)) {
+        throw new HttpsError("invalid-argument", "The plan contains duplicate document IDs.");
+      }
+      seenIds.add(node.id);
+      canonicalNodes.push({
+        id: node.id, type: node.type, name: node.name.trim(),
+        parentId: node.parentId, alreadyExists: node.alreadyExists,
+        sourceLine: node.sourceLine,
+      });
+    }
+    const planHash = require("node:crypto").createHash("sha256")
+      .update(JSON.stringify(canonicalNodes)).digest("hex");
+    return db.runTransaction(async (tx) => {
+      const [currentActor, run] = await Promise.all([tx.get(actorRef), tx.get(runRef)]);
+      if (!currentActor.exists || currentActor.get("isActive") !== true ||
+          currentActor.get("role") !== "super_admin") {
+        throw new HttpsError("permission-denied", "Admin access changed while recording the import plan.");
+      }
+      if (!run.exists || run.get("status") !== "started" ||
+          run.get("importedBy") !== uid || run.get("inputFingerprint") !== inputFingerprint) {
+        throw new HttpsError("failed-precondition", "A matching started import run is required.");
+      }
+      if (run.get("planHash")) {
+        throw new HttpsError("already-exists", "This import run already has an immutable plan.");
+      }
+      tx.update(runRef, {
+        planHash,
+        plannedRecords: canonicalNodes.length,
+        planSchemaVersion: 1,
+        planRecordedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      return { ok: true, runId, plannedRecords: canonicalNodes.length, planHash };
+    }).then(async (result) => {
+      // The plan is immutable and written in bounded chunks. If a chunk fails,
+      // the marker retains planHash and must be reconciled manually; never replay.
+      const collection = runRef.collection("planned_nodes");
+      for (let offset = 0; offset < canonicalNodes.length; offset += 200) {
+        const batch = db.batch();
+        for (const node of canonicalNodes.slice(offset, offset + 200)) {
+          batch.create(collection.doc(node.id), { ...node, planHash, recordedAt: FieldValue.serverTimestamp() });
+        }
+        await batch.commit();
+      }
+      return result;
     });
   }
 
