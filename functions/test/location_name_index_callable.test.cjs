@@ -1325,3 +1325,75 @@ test("unchanged District-linked Area with both indexes missing requires manual r
     await db.doc(collection + "/" + id).delete();
   }
 });
+
+
+test("legacy index ownership conflict blocks District-linked Area creation without writes", async () => {
+  const uid = await createAdmin("admin", true);
+  const suffix = randomUUID();
+  const country = await saveCountry(uid, "Legacy-Conflict-Country-" + suffix);
+  const state = await saveServiceLocationWithNameIndex.run(request(uid, {
+    locationType: "state",
+    payload: { countryId: country.locationId, name: "Legacy-Conflict-State-" + suffix },
+  }));
+  const district = await saveServiceLocationWithNameIndex.run(request(uid, {
+    locationType: "district",
+    payload: {
+      countryId: country.locationId,
+      stateId: state.locationId,
+      name: "Legacy-Conflict-District-" + suffix,
+    },
+  }));
+  const city = await saveServiceLocationWithNameIndex.run(request(uid, {
+    locationType: "city",
+    payload: {
+      countryId: country.locationId,
+      stateId: state.locationId,
+      districtId: district.locationId,
+      name: "Legacy-Conflict-City-" + suffix,
+    },
+  }));
+  const areaName = "Legacy-Conflict-Area-" + suffix;
+  const legacyId = serviceLocationNameIndexId(
+    "service_areas", [country.locationId, state.locationId, city.locationId], areaName,
+  );
+  const districtAwareId = serviceLocationNameIndexId(
+    "service_areas", [country.locationId, state.locationId, district.locationId, city.locationId], areaName,
+  );
+  createdIndexes.add(legacyId);
+  createdIndexes.add(districtAwareId);
+  await db.doc("service_location_name_indexes/" + legacyId).set({
+    collectionPath: "service_areas",
+    documentId: "another-area",
+    name: areaName.trim().toLowerCase(),
+    parentIds: [country.locationId, state.locationId, city.locationId],
+  });
+
+  await assert.rejects(
+    () => saveServiceLocationWithNameIndex.run(request(uid, {
+      locationType: "area",
+      payload: {
+        countryId: country.locationId,
+        stateId: state.locationId,
+        cityId: city.locationId,
+        name: areaName,
+      },
+    })),
+    (error) => error && error.code === "failed-precondition",
+  );
+
+  const legacyIndex = await db.doc("service_location_name_indexes/" + legacyId).get();
+  const districtAwareIndex = await db.doc("service_location_name_indexes/" + districtAwareId).get();
+  const matchingAreas = await db.collection("service_areas").where("name", "==", areaName).get();
+  assert.equal(legacyIndex.exists, true);
+  assert.equal(legacyIndex.get("documentId"), "another-area");
+  assert.equal(districtAwareIndex.exists, false);
+  assert.equal(matchingAreas.empty, true);
+
+  for (const [collection, id] of [
+    ["service_states", state.locationId],
+    ["service_districts", district.locationId],
+    ["service_cities", city.locationId],
+  ]) {
+    await db.doc(collection + "/" + id).delete();
+  }
+});
