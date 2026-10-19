@@ -496,6 +496,17 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
       if (!children.empty) {
         throw new HttpsError("failed-precondition", "Deactivate active child locations first.");
       }
+      // District is a direct child of State in the canonical hierarchy.
+      // The client-side Admin guard is only UX; enforce this invariant here
+      // so direct callable requests cannot deactivate a State with active Districts.
+      if (locationType === "state") {
+        const districts = await tx.get(db.collection("service_districts")
+          .where("stateId", "==", locationId)
+          .where("isServiceActive", "==", true).limit(1));
+        if (!districts.empty) {
+          throw new HttpsError("failed-precondition", "Deactivate active Districts first.");
+        }
+      }
       if (locationType === "district") {
         const cities = await tx.get(db.collection("service_cities").where("districtId", "==", locationId).where("isServiceActive", "==", true).limit(1));
         const areas = await tx.get(db.collection("service_areas").where("districtId", "==", locationId).where("isServiceActive", "==", true).limit(1));
