@@ -977,6 +977,52 @@ test("legacy Area callable rejects District ancestry before any location or inde
   assert.equal(legacyIndex.exists, false);
 });
 
+
+test("District-linked City writes the ordered three-parent name index", async () => {
+  const uid = await createAdmin("admin", true);
+  const countryName = `District-City-Country-${randomUUID()}`;
+  const stateName = `District-City-State-${randomUUID()}`;
+  const districtName = `District-City-District-${randomUUID()}`;
+  const cityName = `District-City-${randomUUID()}`;
+
+  const country = await saveCountry(uid, countryName);
+  const state = await saveServiceLocationWithNameIndex.run(request(uid, {
+    locationType: "state",
+    payload: { countryId: country.locationId, name: stateName },
+  }));
+  const district = await saveServiceLocationWithNameIndex.run(request(uid, {
+    locationType: "district",
+    payload: { countryId: country.locationId, stateId: state.locationId, name: districtName },
+  }));
+  const city = await saveServiceLocationWithNameIndex.run(request(uid, {
+    locationType: "city",
+    payload: {
+      countryId: country.locationId,
+      stateId: state.locationId,
+      districtId: district.locationId,
+      name: cityName,
+    },
+  }));
+
+  const expectedIndexId = serviceLocationNameIndexId(
+    "service_cities",
+    [country.locationId, state.locationId, district.locationId],
+    cityName.trim().toLowerCase(),
+  );
+  const [citySnapshot, indexSnapshot] = await Promise.all([
+    db.doc(`service_cities/${city.locationId}`).get(),
+    db.doc(`service_location_name_indexes/${expectedIndexId}`).get(),
+  ]);
+
+  assert.equal(citySnapshot.get("districtId"), district.locationId);
+  assert.equal(indexSnapshot.exists, true);
+  assert.equal(indexSnapshot.get("documentId"), city.locationId);
+  assert.equal(indexSnapshot.get("collectionPath"), "service_cities");
+  assert.deepEqual(indexSnapshot.get("parentIds"), [
+    country.locationId, state.locationId, district.locationId,
+  ]);
+});
+
 test.after(async () => {
   const deletes = [];
   for (const uid of createdAdmins) deletes.push(db.doc(`admin_users/${uid}`).delete());
