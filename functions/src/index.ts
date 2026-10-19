@@ -1043,7 +1043,8 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
         storedRecords: planSnapshot.size, readOnly: true,
       };
     }
-    const planned = planSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+    const planned: Array<Record<string, any> & { id: string }> = planSnapshot.docs
+      .map((doc) => ({ id: doc.id, ...doc.data() }))
       .sort((a, b) => Number(a.ordinal) - Number(b.ordinal));
     if (planned.some((node, index) => !Number.isSafeInteger(node.ordinal) || node.ordinal !== index)) {
       return { ok: false, runId, status: "plan_order_unverifiable", readOnly: true };
