@@ -856,3 +856,122 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     return { ok: true, locationId: docRef.id, locationType: type };
   });
 });
+
+
+
+/**
+ * Trusted state machine for CSV import attempts.
+ *
+ * The durable run document is written before hierarchy writes. It is not
+ * client-writable under Firestore rules. Existing run IDs are deliberately
+ * blocked until a separate authoritative reconciliation flow is implemented.
+ */
+export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in is required.");
+  const uid = request.auth.uid;
+  const data = request.data ?? {};
+  const action = data.action;
+  const runId = data.runId;
+  const inputFingerprint = data.inputFingerprint;
+
+  if (typeof runId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(runId)) {
+    throw new HttpsError("invalid-argument", "A valid import runId is required.");
+  }
+  if (typeof inputFingerprint !== "string" || !/^sha256:[0-9a-f]{64}$/.test(inputFingerprint)) {
+    throw new HttpsError("invalid-argument", "A canonical SHA-256 input fingerprint is required.");
+  }
+
+  const actorRef = db.doc(`admin_users/${uid}`);
+  const actor = await actorRef.get();
+  if (!actor.exists || actor.get("isActive") !== true || actor.get("role") !== "super_admin") {
+    throw new HttpsError("permission-denied", "An active super_admin account is required.");
+  }
+
+  const runRef = db.doc(`service_location_import_runs/${runId}`);
+  if (action === "begin") {
+    const countryId = data.countryId;
+    const fileName = data.fileName;
+    if (typeof countryId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(countryId)) {
+      throw new HttpsError("invalid-argument", "A valid countryId is required.");
+    }
+    if (typeof fileName !== "string" || !fileName.trim() || fileName.trim().length > 180) {
+      throw new HttpsError("invalid-argument", "A file name of 1–180 characters is required.");
+    }
+    return db.runTransaction(async (tx) => {
+      const [currentActor, existing] = await Promise.all([tx.get(actorRef), tx.get(runRef)]);
+      if (!currentActor.exists || currentActor.get("isActive") !== true ||
+          currentActor.get("role") !== "super_admin") {
+        throw new HttpsError("permission-denied", "Admin access changed during import start.");
+      }
+      if (existing.exists) {
+        if (existing.get("inputFingerprint") !== inputFingerprint) {
+          throw new HttpsError("failed-precondition", "This runId belongs to a different CSV fingerprint.");
+        }
+        throw new HttpsError("already-exists", "This import run already exists and requires reconciliation before retry.");
+      }
+      const now = FieldValue.serverTimestamp();
+      tx.create(runRef, {
+        runId,
+        countryId,
+        fileName: fileName.trim(),
+        inputFingerprint,
+        importedBy: uid,
+        status: "started",
+        schemaVersion: 1,
+        plannedRecords: 0,
+        createdRecords: 0,
+        reusedRecords: 0,
+        createdAt: now,
+        updatedAt: now,
+      });
+      return { ok: true, runId, status: "started" };
+    });
+  }
+
+  if (action === "finalize") {
+    const allowedStatuses = ["completed", "failed", "partial_failure", "audit_failed"];
+    const status = data.status;
+    const counts = ["plannedRecords", "createdRecords", "reusedRecords"] as const;
+    if (typeof status !== "string" || !allowedStatuses.includes(status)) {
+      throw new HttpsError("invalid-argument", "A valid terminal import status is required.");
+    }
+    for (const field of counts) {
+      if (!Number.isSafeInteger(data[field]) || data[field] < 0) {
+        throw new HttpsError("invalid-argument", `${field} must be a non-negative integer.`);
+      }
+    }
+    return db.runTransaction(async (tx) => {
+      const [currentActor, run] = await Promise.all([tx.get(actorRef), tx.get(runRef)]);
+      if (!currentActor.exists || currentActor.get("isActive") !== true ||
+          currentActor.get("role") !== "super_admin") {
+        throw new HttpsError("permission-denied", "Admin access changed during import finalization.");
+      }
+      if (!run.exists) throw new HttpsError("not-found", "Import run was not started.");
+      if (run.get("importedBy") !== uid || run.get("inputFingerprint") !== inputFingerprint) {
+        throw new HttpsError("failed-precondition", "Import run owner or fingerprint does not match.");
+      }
+      const currentStatus = run.get("status");
+      if (currentStatus !== "started") {
+        if (currentStatus === status &&
+            run.get("plannedRecords") === data.plannedRecords &&
+            run.get("createdRecords") === data.createdRecords &&
+            run.get("reusedRecords") === data.reusedRecords) {
+          return { ok: true, runId, status, alreadyFinalized: true };
+        }
+        throw new HttpsError("failed-precondition", "Import run is already finalized or needs manual reconciliation.");
+      }
+      const now = FieldValue.serverTimestamp();
+      tx.update(runRef, {
+        status,
+        plannedRecords: data.plannedRecords,
+        createdRecords: data.createdRecords,
+        reusedRecords: data.reusedRecords,
+        updatedAt: now,
+        finishedAt: now,
+      });
+      return { ok: true, runId, status };
+    });
+  }
+
+  throw new HttpsError("invalid-argument", "Action must be begin or finalize.");
+});
