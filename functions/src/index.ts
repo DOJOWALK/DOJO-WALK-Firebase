@@ -8,9 +8,21 @@ import {
   validateServiceLocationPayload,
   type ServiceLocationType,
 } from "./location_name_index";
+import { classifyDistrictIndexPair, type NameIndexSnapshot } from "./district_index_pair_preflight";
 
 initializeApp();
 const db = getFirestore();
+
+function asNameIndexSnapshot(snapshot: FirebaseFirestore.DocumentSnapshot): NameIndexSnapshot {
+  if (!snapshot.exists) return { exists: false };
+  return {
+    exists: true,
+    documentId: snapshot.get("documentId"),
+    collectionPath: snapshot.get("collectionPath"),
+    parentIds: snapshot.get("parentIds"),
+    name: snapshot.get("name"),
+  };
+}
 
 function asBoundary(data: FirebaseFirestore.DocumentData | undefined): BoundaryDoc {
   return (data ?? {}) as BoundaryDoc;
@@ -696,13 +708,81 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     const oldParentIds = targetSnap.exists
       ? effectiveParentFields.map((field) => String(old[field] ?? ""))
       : parentIds;
+
+    // District-linked Areas and Localities keep the legacy index and also
+    // write a District-aware index. Validate both before staging any writes.
+    const cityDataForIndex = (type === "area" || type === "locality") ? parentData[2] : undefined;
+    const districtIdForIndex = cityDataForIndex?.districtId;
+    let districtAwareParentIds: string[] | undefined;
+    let districtAwareIndexRef: FirebaseFirestore.DocumentReference | undefined;
+    let districtAwareIndexSnap: FirebaseFirestore.DocumentSnapshot | undefined;
+    let districtAwareIndexId: string | undefined;
+    if (typeof districtIdForIndex === "string" && districtIdForIndex) {
+      districtAwareParentIds = [parentIds[0], parentIds[1], districtIdForIndex, parentIds[2], ...parentIds.slice(3)];
+      districtAwareIndexId = serviceLocationNameIndexId(collection, districtAwareParentIds, normalizedName);
+      districtAwareIndexRef = db.doc("service_location_name_indexes/" + districtAwareIndexId);
+      districtAwareIndexSnap = await tx.get(districtAwareIndexRef);
+      const pair = classifyDistrictIndexPair({
+        expectedCollection: collection,
+        expectedDocumentId: docRef.id,
+        expectedName: normalizedName,
+        legacyParentIds: parentIds,
+        districtParentIds: districtAwareParentIds,
+        legacy: asNameIndexSnapshot(newIndexSnap),
+        districtAware: asNameIndexSnapshot(districtAwareIndexSnap),
+      });
+      const oldNormalizedName = typeof old.name === "string"
+        ? old.name.trim().toLowerCase().replace(/\s+/g, " ")
+        : "";
+      const newNameOnExistingDocument = targetSnap.exists && oldNormalizedName !== normalizedName;
+      if (pair.status === "MISSING_BOTH") {
+        // Missing new keys are expected for creates/renames, but not for an
+        // unchanged existing name; that case needs manual repair.
+        if (targetSnap.exists && !newNameOnExistingDocument) {
+          throw new HttpsError("failed-precondition", "Both name indexes are missing for this existing location; manual review is required.");
+        }
+      } else if (!pair.safeToMigrate) {
+        throw new HttpsError("failed-precondition", "Name index preflight blocked save: " + pair.status + ".");
+      }
+    }
+
     let oldIndexRef: FirebaseFirestore.DocumentReference | undefined;
     let oldIndexSnap: FirebaseFirestore.DocumentSnapshot | undefined;
+    let oldDistrictAwareIndexRef: FirebaseFirestore.DocumentReference | undefined;
+    let oldDistrictAwareIndexSnap: FirebaseFirestore.DocumentSnapshot | undefined;
     if (targetSnap.exists) {
       const oldIndexId = serviceLocationNameIndexId(collection, oldParentIds, String(old.name ?? ""));
       if (oldIndexId !== indexId) {
-        oldIndexRef = db.doc(`service_location_name_indexes/${oldIndexId}`);
+        oldIndexRef = db.doc("service_location_name_indexes/" + oldIndexId);
         oldIndexSnap = await tx.get(oldIndexRef);
+      }
+      if (districtAwareParentIds) {
+        const oldDistrictAwareIndexId = serviceLocationNameIndexId(
+          collection,
+          districtAwareParentIds,
+          String(old.name ?? ""),
+        );
+        if (oldDistrictAwareIndexId !== districtAwareIndexId) {
+          oldDistrictAwareIndexRef = db.doc("service_location_name_indexes/" + oldDistrictAwareIndexId);
+          oldDistrictAwareIndexSnap = await tx.get(oldDistrictAwareIndexRef);
+        }
+      }
+      if (districtAwareParentIds &&
+          ((oldIndexSnap?.exists ?? false) || (oldDistrictAwareIndexSnap?.exists ?? false))) {
+        const oldLegacySnapshot = oldIndexId === indexId ? newIndexSnap : oldIndexSnap;
+        const oldDistrictSnapshot = oldDistrictAwareIndexIdIsCurrent(districtAwareIndexId, districtAwareIndexSnap, oldDistrictAwareIndexSnap);
+        const oldPair = classifyDistrictIndexPair({
+          expectedCollection: collection,
+          expectedDocumentId: docRef.id,
+          expectedName: String(old.name ?? ""),
+          legacyParentIds: oldParentIds,
+          districtParentIds: districtAwareParentIds,
+          legacy: oldLegacySnapshot ? asNameIndexSnapshot(oldLegacySnapshot) : { exists: false },
+          districtAware: oldDistrictSnapshot ? asNameIndexSnapshot(oldDistrictSnapshot) : { exists: false },
+        });
+        if (!oldPair.safeToMigrate) {
+          throw new HttpsError("failed-precondition", "Existing name index preflight blocked rename: " + oldPair.status + ".");
+        }
       }
     }
     if (newIndexSnap.exists && newIndexSnap.get("documentId") !== docRef.id) {
