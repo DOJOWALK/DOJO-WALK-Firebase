@@ -282,3 +282,19 @@ test("normalizes tabs and newlines in the expected name", () => {
   assert.equal(r.status, "LEGACY_ONLY");
   assert.equal(r.safeToMigrate, true);
 });
+
+test("does not mutate either index snapshot during classification", () => {
+  const legacy = index(base.legacyParentIds);
+  const districtAware = index(base.districtParentIds);
+  const beforeLegacy = JSON.stringify(legacy);
+  const beforeDistrictAware = JSON.stringify(districtAware);
+
+  const r = classifyDistrictIndexPair({
+    ...base, legacy, districtAware,
+  });
+
+  assert.equal(r.status, "BOTH_SAME_DOCUMENT");
+  assert.equal(r.safeToMigrate, true);
+  assert.equal(JSON.stringify(legacy), beforeLegacy);
+  assert.equal(JSON.stringify(districtAware), beforeDistrictAware);
+});
