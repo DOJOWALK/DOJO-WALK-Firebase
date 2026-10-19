@@ -19,6 +19,11 @@ export type DistrictIndexedType = keyof typeof DISTRICT_NAME_INDEX_COLLECTIONS;
 
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
+function isDistrictIndexedType(value: unknown): value is DistrictIndexedType {
+  return typeof value === "string" &&
+    Object.prototype.hasOwnProperty.call(DISTRICT_NAME_INDEX_COLLECTIONS, value);
+}
+
 function normalizeIds(ids: readonly string[]): string[] {
   return ids.map((id) => {
     if (typeof id !== "string" || id !== id.trim() || !SAFE_ID.test(id)) {
@@ -43,6 +48,9 @@ export function districtAwareParentIds(
     areaId?: string;
   },
 ): string[] {
+  if (!isDistrictIndexedType(type)) {
+    throw new Error("DISTRICT_INDEX_TYPE_INVALID");
+  }
   const required: Record<DistrictIndexedType, readonly (keyof typeof parents)[]> = {
     district: ["countryId", "stateId"],
     city: ["countryId", "stateId", "districtId"],
@@ -74,6 +82,12 @@ export function districtAwareNameIndexId(
   },
   name: string,
 ): string {
+  if (!isDistrictIndexedType(type)) {
+    throw new Error("DISTRICT_INDEX_TYPE_INVALID");
+  }
+  if (typeof name !== "string") {
+    throw new Error("DISTRICT_INDEX_NAME_INVALID");
+  }
   const normalizedName = normalizeServiceLocationName(name);
   if (!normalizedName || normalizedName.length > 120) {
     throw new Error("DISTRICT_INDEX_NAME_INVALID");
