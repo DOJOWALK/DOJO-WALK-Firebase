@@ -668,6 +668,30 @@ test('clients cannot create an already-active Country or State', async () => {
 });
 
 
+test('active admin role cannot read service hierarchy or write import audit; super_admin can', async () => {
+  const adminDb = env.authenticatedContext('location-active').firestore();
+  const superDb = env.authenticatedContext('super-active').firestore();
+
+  // Existing client UI and CSV preflight read these collections directly.
+  // Current policy deliberately limits direct hierarchy reads to super_admin.
+  await assertFails(getDoc(doc(adminDb, 'service_countries/india')));
+  await assertFails(getDocs(collection(adminDb, 'service_states')));
+  await assertSucceeds(getDoc(doc(superDb, 'service_countries/india')));
+  await assertSucceeds(getDocs(collection(superDb, 'service_states')));
+
+  const adminAudit = {
+    source: 'csv', fileName: 'areas.csv', status: 'failed',
+    importedBy: 'location-active', importedAt: serverTimestamp(),
+    verificationStatus: 'pending',
+  };
+  await assertFails(setDoc(doc(adminDb, 'service_location_imports/admin-failed'), adminAudit));
+  await assertSucceeds(getDocs(collection(superDb, 'service_location_imports')));
+  await assertSucceeds(setDoc(doc(superDb, 'service_location_imports/super-failed'), {
+    ...adminAudit,
+    importedBy: 'super-active',
+  }));
+});
+
 test('service District reads are super_admin-only and direct client writes are denied', async () => {
   await env.withSecurityRulesDisabled(async (context) => {
     await setDoc(doc(context.firestore(), 'service_districts/gbn'), {
