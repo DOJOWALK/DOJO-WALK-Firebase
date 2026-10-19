@@ -308,3 +308,37 @@ test.after(async () => {
     await db.doc(`admin_users/${uid}`).delete().catch(() => {});
   }
 });
+
+
+test("reconcilePlan detects tampered plan hashes and unverifiable ordinal order", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"6".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+  const nodes = [
+    { id: "state_tamper_a", type: "state", name: "Rajasthan", parentId: "IN", alreadyExists: false, sourceLine: 2 },
+    { id: "state_tamper_b", type: "state", name: "Uttar Pradesh", parentId: "IN", alreadyExists: false, sourceLine: 3 },
+  ];
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "recordPlan", runId, inputFingerprint: fingerprint, nodes,
+  }));
+  const first = db.doc(`service_location_import_runs/${runId}/planned_nodes/state_tamper_a`);
+  const second = db.doc(`service_location_import_runs/${runId}/planned_nodes/state_tamper_b`);
+
+  await first.update({ name: "Tampered Name" });
+  const hashMismatch = await manageServiceLocationImportRun.run(request(uid, {
+    action: "reconcilePlan", runId, inputFingerprint: fingerprint,
+  }));
+  assert.equal(hashMismatch.status, "plan_hash_mismatch");
+
+  await first.update({ name: "Rajasthan" });
+  await second.update({ ordinal: 0 });
+  const orderMismatch = await manageServiceLocationImportRun.run(request(uid, {
+    action: "reconcilePlan", runId, inputFingerprint: fingerprint,
+  }));
+  assert.equal(orderMismatch.status, "plan_order_unverifiable");
+
+  await first.delete();
+  await second.delete();
+});
