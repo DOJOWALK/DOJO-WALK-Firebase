@@ -1286,6 +1286,22 @@ service cloud.firestore {
     }
 
     // =====================================================
+    // SERVICE DISTRICTS
+    // =====================================================
+
+    // District hierarchy records are read-only to Admin clients. All mutations
+    // must go through the trusted callable so name indexes remain consistent.
+    match /service_districts/{districtId} {
+      allow get, list: if isAdmin();
+
+      allow create: if false;
+
+      allow update: if false;
+
+      allow delete: if false;
+    }
+
+    // =====================================================
     // SERVICE CITIES
     // =====================================================
 
