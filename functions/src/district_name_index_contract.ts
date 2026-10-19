@@ -21,10 +21,10 @@ const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 function normalizeIds(ids: readonly string[]): string[] {
   return ids.map((id) => {
-    if (typeof id !== "string" || !SAFE_ID.test(id.trim())) {
+    if (typeof id !== "string" || id !== id.trim() || !SAFE_ID.test(id)) {
       throw new Error("DISTRICT_INDEX_PARENT_INVALID");
     }
-    return id.trim();
+    return id;
   });
 }
 
