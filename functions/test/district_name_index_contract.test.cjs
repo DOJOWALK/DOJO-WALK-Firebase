@@ -112,3 +112,17 @@ test("legacy and District-aware Locality indexes remain distinct during migratio
   assert.match(districtAwareId, /^[a-f0-9]{64}$/);
   assert.notEqual(legacyId, districtAwareId);
 });
+
+test("rejects whitespace-padded IDs in district-aware parent tuples", () => {
+  assert.throws(() => districtAwareParentIds("city", {
+    countryId: " country-1",
+    stateId: "state-1",
+    districtId: "district-1",
+  }), /DISTRICT_INDEX_PARENT_INVALID/);
+  assert.throws(() => districtAwareParentIds("area", {
+    countryId: "country-1",
+    stateId: "state-1",
+    districtId: "district-1 ",
+    cityId: "city-1",
+  }), /DISTRICT_INDEX_PARENT_INVALID/);
+});
