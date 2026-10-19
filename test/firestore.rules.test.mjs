@@ -754,3 +754,30 @@ test('service District reads are super_admin-only and direct client writes are d
   }));
   await assertFails(deleteDoc(doc(adminDb, 'service_districts/gbn')));
 });
+
+
+test('trusted service location import run state is inaccessible to direct client reads and writes', async () => {
+  const db = env.authenticatedContext('super-active').firestore();
+  const runRef = doc(db, 'service_location_import_runs/direct-client-run');
+  const runData = {
+    runId: 'direct-client-run',
+    countryId: 'IN',
+    fileName: 'states.csv',
+    inputFingerprint: `sha256:${'a'.repeat(64)}`,
+    importedBy: 'super-active',
+    status: 'started',
+    schemaVersion: 1,
+    plannedRecords: 0,
+    createdRecords: 0,
+    reusedRecords: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+  await assertFails(setDoc(runRef, runData));
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'service_location_import_runs/server-created'), runData);
+  });
+  await assertFails(getDoc(doc(db, 'service_location_import_runs/server-created')));
+  await assertFails(updateDoc(doc(db, 'service_location_import_runs/server-created'), { status: 'completed' }));
+  await assertFails(deleteDoc(doc(db, 'service_location_import_runs/server-created')));
+});
