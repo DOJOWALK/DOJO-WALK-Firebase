@@ -1062,16 +1062,40 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
       state: "service_states", district: "service_districts",
       city: "service_cities", area: "service_areas",
     };
-    const parentFieldByType: Record<string, string> = {
-      state: "countryId", district: "stateId", city: "districtId", area: "cityId",
-    };
+    const plannedById = new Map(planned.map((node) => [node.id, node]));
+    const countryId = run.get("countryId");
     const missingIds: string[] = [];
     const mismatchIds: string[] = [];
     let matching = 0;
     for (const node of planned) {
       const collectionName = collectionByType[String(node.type)];
-      const parentField = parentFieldByType[String(node.type)];
-      if (!collectionName || !parentField) {
+      if (!collectionName || typeof countryId !== "string") {
+        mismatchIds.push(String(node.id));
+        continue;
+      }
+      const expectedFields: Record<string, unknown> = { countryId };
+      if (node.type === "state") {
+        expectedFields.countryId = node.parentId;
+      } else if (node.type === "district") {
+        expectedFields.stateId = node.parentId;
+      } else if (node.type === "city") {
+        const district = plannedById.get(node.parentId);
+        if (!district || district.type !== "district") {
+          mismatchIds.push(String(node.id));
+          continue;
+        }
+        expectedFields.districtId = node.parentId;
+        expectedFields.stateId = district.parentId;
+      } else if (node.type === "area") {
+        const city = plannedById.get(node.parentId);
+        const district = city ? plannedById.get(city.parentId) : undefined;
+        if (!city || city.type !== "city" || !district || district.type !== "district") {
+          mismatchIds.push(String(node.id));
+          continue;
+        }
+        expectedFields.cityId = node.parentId;
+        expectedFields.stateId = district.parentId;
+      } else {
         mismatchIds.push(String(node.id));
         continue;
       }
@@ -1081,8 +1105,10 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
         continue;
       }
       const actualName = typeof actual.get("name") === "string" ? actual.get("name").trim() : "";
-      const actualParent = actual.get(parentField);
-      if (actualName !== node.name || actualParent !== node.parentId) {
+      const fieldsMatch = Object.entries(expectedFields).every(
+        ([field, expected]) => actual.get(field) === expected,
+      );
+      if (actualName !== node.name || !fieldsMatch) {
         mismatchIds.push(String(node.id));
       } else {
         matching++;
