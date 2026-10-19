@@ -1,4 +1,5 @@
-import { initializeApp } from "firebase-admin/app";\nimport { createHash } from "node:crypto";
+import { initializeApp } from "firebase-admin/app";
+import { createHash } from "node:crypto";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { assertAreaCoveredByCity, polygonFromBoundary, type BoundaryDoc } from "./location_geometry";
@@ -984,7 +985,7 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
         sourceLine: node.sourceLine,
       });
     }
-    const planHash = require("node:crypto").createHash("sha256")
+    const planHash = createHash("sha256")
       .update(JSON.stringify(canonicalNodes)).digest("hex");
     return db.runTransaction(async (tx) => {
       const [currentActor, run] = await Promise.all([tx.get(actorRef), tx.get(runRef)]);
