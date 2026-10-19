@@ -198,6 +198,67 @@ test("recordPlan stores a bounded immutable canonical plan before location write
   );
 });
 
+test("reconcilePlan verifies the stored plan and hierarchy without writing", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"2".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+  const nodes = [
+    { id: "state_reconcile", type: "state", name: "Uttar Pradesh", parentId: "IN", alreadyExists: false, sourceLine: 2 },
+    { id: "district_reconcile", type: "district", name: "Gautam Buddha Nagar", parentId: "state_reconcile", alreadyExists: false, sourceLine: 3 },
+  ];
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "recordPlan", runId, inputFingerprint: fingerprint, nodes,
+  }));
+  const stateRef = db.doc("service_states/state_reconcile");
+  const districtRef = db.doc("service_districts/district_reconcile");
+  await stateRef.set({ name: "Uttar Pradesh", countryId: "IN" });
+  await districtRef.set({ name: "Gautam Buddha Nagar", stateId: "state_reconcile" });
+  const before = (await db.doc(`service_location_import_runs/${runId}`).get()).data();
+  const result = await manageServiceLocationImportRun.run(request(uid, {
+    action: "reconcilePlan", runId, inputFingerprint: fingerprint,
+  }));
+  assert.equal(result.status, "reconciled_match");
+  assert.equal(result.matchingRecords, 2);
+  assert.equal(result.readOnly, true);
+  const after = (await db.doc(`service_location_import_runs/${runId}`).get()).data();
+  assert.equal(after.status, before.status);
+  assert.equal(after.updatedAt.isEqual(before.updatedAt), true);
+  await districtRef.update({ stateId: "wrong_parent" });
+  const mismatch = await manageServiceLocationImportRun.run(request(uid, {
+    action: "reconcilePlan", runId, inputFingerprint: fingerprint,
+  }));
+  assert.equal(mismatch.status, "reconciliation_mismatch");
+  assert.deepEqual(mismatch.mismatchIds, ["district_reconcile"]);
+  await stateRef.delete();
+  await districtRef.delete();
+});
+
+test("reconcilePlan reports incomplete plan and rejects fingerprint mismatch", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"3".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "recordPlan", runId, inputFingerprint: fingerprint,
+    nodes: [{ id: "state_incomplete", type: "state", name: "Rajasthan", parentId: "IN", alreadyExists: false, sourceLine: 2 }],
+  }));
+  const nodeRef = db.doc(`service_location_import_runs/${runId}/planned_nodes/state_incomplete`);
+  await nodeRef.delete();
+  const result = await manageServiceLocationImportRun.run(request(uid, {
+    action: "reconcilePlan", runId, inputFingerprint: fingerprint,
+  }));
+  assert.equal(result.status, "plan_incomplete");
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(uid, {
+      action: "reconcilePlan", runId, inputFingerprint: `sha256:${"4".repeat(64)}`,
+    })),
+    (error) => error && error.code === "failed-precondition",
+  );
+});
+
 test.after(async () => {
   for (const runId of runs) {
     await db.doc(`service_location_import_runs/${runId}`).delete().catch(() => {});
