@@ -126,3 +126,25 @@ test("rejects whitespace-padded IDs in district-aware parent tuples", () => {
     cityId: "city-1",
   }), /DISTRICT_INDEX_PARENT_INVALID/);
 });
+
+test("rejects invalid runtime index types and non-string names", () => {
+  assert.throws(
+    () => districtAwareParentIds("unknown", {
+      countryId: "country-1",
+      stateId: "state-1",
+    }),
+    /DISTRICT_INDEX_TYPE_INVALID/,
+  );
+  assert.throws(
+    () => districtAwareNameIndexId("unknown", {}, "Noida"),
+    /DISTRICT_INDEX_TYPE_INVALID/,
+  );
+  assert.throws(
+    () => districtAwareNameIndexId("city", {
+      countryId: "country-1",
+      stateId: "state-1",
+      districtId: "district-1",
+    }, null),
+    /DISTRICT_INDEX_NAME_INVALID/,
+  );
+});
