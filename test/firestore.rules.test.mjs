@@ -449,6 +449,13 @@ test('import audit validates bounded strings, actor, and immutable create-only r
   await assertFails(updateDoc(doc(superDb, 'service_location_imports/import-ok'), {
     status: 'completed',
   }));
+  // Audit records are append-only: even the privileged role cannot delete
+  // a record or replace an existing document ID with a new payload.
+  await assertFails(deleteDoc(doc(superDb, 'service_location_imports/import-ok')));
+  await assertFails(setDoc(doc(superDb, 'service_location_imports/import-ok'), {
+    ...record,
+    status: 'completed',
+  }));
 });
 
 test('area cannot be activated when its parent city is inactive', async () => {
