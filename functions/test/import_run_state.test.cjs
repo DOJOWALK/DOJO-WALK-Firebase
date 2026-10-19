@@ -150,6 +150,10 @@ test("finalize rejects invalid or inconsistent counts and unknown actions", asyn
   );
   const saved = await db.doc(`service_location_import_runs/${runId}`).get();
   assert.equal(saved.get("status"), "started", "invalid summary must not finalize the durable run");
+  const partial = await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint, "finalize", {
+    status: "partial_failure", plannedRecords: 4, createdRecords: 2, reusedRecords: 0,
+  })));
+  assert.equal(partial.status, "partial_failure", "partial failures may account for only the writes completed so far");
   await assert.rejects(
     () => manageServiceLocationImportRun.run(request(uid, {
       action: "delete", runId, inputFingerprint: fingerprint,
