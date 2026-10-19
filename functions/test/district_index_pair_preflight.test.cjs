@@ -260,3 +260,14 @@ test("rejects snapshot names with non-canonical whitespace variants", () => {
     assert.equal(r.safeToMigrate, false);
   }
 });
+
+test("normalizes expected name whitespace before comparing canonical snapshots", () => {
+  const r = classifyDistrictIndexPair({
+    ...base,
+    expectedName: "  GAUR\\t  CITY  ",
+    legacy: index(base.legacyParentIds, { name: "gaur city" }),
+    districtAware: absent,
+  });
+  assert.equal(r.status, "LEGACY_ONLY");
+  assert.equal(r.safeToMigrate, true);
+});
