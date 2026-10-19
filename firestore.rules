@@ -1347,6 +1347,11 @@ service cloud.firestore {
     // SERVICE LOCATION IMPORT AUDIT
     // =====================================================
 
+    // Run state is writable only by the trusted Admin SDK callable.
+    match /service_location_import_runs/{runId} {
+      allow read, write: if false;
+    }
+
     match /service_location_imports/{importId} {
       allow get, list: if isAdmin();
 
