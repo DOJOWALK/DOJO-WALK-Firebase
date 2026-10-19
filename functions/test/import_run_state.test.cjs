@@ -71,6 +71,28 @@ test("begin persists a started marker before writes and blocks duplicate run IDs
   );
 });
 
+test("inspect returns durable run status only for a matching fingerprint", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"9".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+  const inspected = await manageServiceLocationImportRun.run(request(uid, {
+    action: "inspect", runId, inputFingerprint: fingerprint,
+  }));
+  assert.equal(inspected.runId, runId);
+  assert.equal(inspected.status, "started");
+  assert.equal(inspected.reconciliationRequired, true);
+  assert.equal(inspected.inputFingerprint, fingerprint);
+  assert.equal("secret" in inspected, false);
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(uid, {
+      action: "inspect", runId, inputFingerprint: `sha256:${"8".repeat(64)}`,
+    })),
+    (error) => error && error.code === "failed-precondition",
+  );
+});
+
 test("finalize checks owner and fingerprint, then permits only idempotent same-result retry", async () => {
   const uid = await createAdmin();
   const other = await createAdmin();
