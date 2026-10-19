@@ -130,7 +130,7 @@ test("finalize checks owner and fingerprint, then permits only idempotent same-r
   assert.equal(saved.get("plannedRecords"), 4);
 });
 
-test("finalize rejects invalid counts and unknown actions", async () => {
+test("finalize rejects invalid or inconsistent counts and unknown actions", async () => {
   const uid = await createAdmin();
   const runId = `run-${randomUUID()}`;
   runs.add(runId);
@@ -142,6 +142,14 @@ test("finalize rejects invalid counts and unknown actions", async () => {
     }))),
     (error) => error && error.code === "invalid-argument",
   );
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint, "finalize", {
+      status: "completed", plannedRecords: 4, createdRecords: 2, reusedRecords: 1,
+    }))),
+    (error) => error && error.code === "invalid-argument",
+  );
+  const saved = await db.doc(`service_location_import_runs/${runId}`).get();
+  assert.equal(saved.get("status"), "started", "invalid summary must not finalize the durable run");
   await assert.rejects(
     () => manageServiceLocationImportRun.run(request(uid, {
       action: "delete", runId, inputFingerprint: fingerprint,
