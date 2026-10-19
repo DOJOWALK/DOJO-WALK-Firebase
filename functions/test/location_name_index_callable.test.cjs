@@ -1009,6 +1009,7 @@ test("District-linked City writes the ordered three-parent name index", async ()
     [country.locationId, state.locationId, district.locationId],
     cityName.trim().toLowerCase(),
   );
+  createdIndexes.add(expectedIndexId);
   const [citySnapshot, indexSnapshot] = await Promise.all([
     db.doc(`service_cities/${city.locationId}`).get(),
     db.doc(`service_location_name_indexes/${expectedIndexId}`).get(),
