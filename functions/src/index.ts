@@ -770,7 +770,9 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
       if (districtAwareParentIds &&
           ((oldIndexSnap?.exists ?? false) || (oldDistrictAwareIndexSnap?.exists ?? false))) {
         const oldLegacySnapshot = oldIndexId === indexId ? newIndexSnap : oldIndexSnap;
-        const oldDistrictSnapshot = oldDistrictAwareIndexIdIsCurrent(districtAwareIndexId, districtAwareIndexSnap, oldDistrictAwareIndexSnap);
+        const oldDistrictSnapshot = oldDistrictAwareIndexId === districtAwareIndexId
+          ? districtAwareIndexSnap
+          : oldDistrictAwareIndexSnap;
         const oldPair = classifyDistrictIndexPair({
           expectedCollection: collection,
           expectedDocumentId: docRef.id,
@@ -813,6 +815,15 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     if (oldIndexRef && oldIndexSnap?.exists) {
       tx.delete(oldIndexRef);
     }
+    if (oldDistrictAwareIndexRef && oldDistrictAwareIndexSnap?.exists) {
+      if (oldDistrictAwareIndexSnap.get("documentId") !== docRef.id) {
+        throw new HttpsError(
+          "failed-precondition",
+          "The existing District-aware name index does not match the location being updated.",
+        );
+      }
+      tx.delete(oldDistrictAwareIndexRef);
+    }
     tx.set(indexRef, {
       collectionPath: collection,
       documentId: docRef.id,
@@ -820,6 +831,15 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
       parentIds,
       updatedAt: FieldValue.serverTimestamp(),
     });
+    if (districtAwareIndexRef && districtAwareParentIds) {
+      tx.set(districtAwareIndexRef, {
+        collectionPath: collection,
+        documentId: docRef.id,
+        name: normalizedName,
+        parentIds: districtAwareParentIds,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
     tx.set(docRef, locationData, { merge: true });
     return { ok: true, locationId: docRef.id, locationType: type };
   });
