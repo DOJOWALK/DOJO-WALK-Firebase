@@ -28,8 +28,8 @@ async function expectCode(promise, code) {
 test("status callable enforces admin access and active-child guards", async (t) => {
   const paths = [
     `admin_users/${ids.admin}`, `admin_users/${ids.ordinary}`, `admin_users/${ids.inactiveAdmin}`,
-    `service_countries/${ids.country}`, `service_states/${ids.state}`,
-    `service_cities/${ids.city}`, `service_areas/${ids.area}`,
+    `service_countries/${ids.country}`, `service_states/${ids.state}`, `service_states/${ids.districtState}`,
+    `service_districts/${ids.district}`, `service_cities/${ids.city}`, `service_areas/${ids.area}`,
     `service_areas/${ids.inactiveArea}`, `service_localities/${ids.locality}`, `service_localities/${ids.pendingLocality}`,
   ];
   t.after(async () => {
@@ -44,6 +44,8 @@ test("status callable enforces admin access and active-child guards", async (t) 
     db.doc(`admin_users/${ids.inactiveAdmin}`).set({ isActive: false, role: "super_admin" }),
     db.doc(`service_countries/${ids.country}`).set({ isActive: true }),
     db.doc(`service_states/${ids.state}`).set({ countryId: ids.country, isActive: true }),
+    db.doc(`service_states/${ids.districtState}`).set({ countryId: ids.country, isActive: true }),
+    db.doc(`service_districts/${ids.district}`).set({ countryId: ids.country, stateId: ids.districtState, isServiceActive: true }),
     db.doc(`service_cities/${ids.city}`).set({ countryId: ids.country, stateId: ids.state, isServiceActive: true }),
     db.doc(`service_areas/${ids.area}`).set({ countryId: ids.country, stateId: ids.state, cityId: ids.city, isServiceActive: true }),
     db.doc(`service_areas/${ids.inactiveArea}`).set({ countryId: ids.country, stateId: ids.state, cityId: ids.city, isServiceActive: false }),
