@@ -1365,7 +1365,8 @@ service cloud.firestore {
           'status',
           'importedBy',
           'importedAt',
-          'verificationStatus'
+          'verificationStatus',
+          'inputFingerprint'
         ])
         && request.resource.data.source is string
         && request.resource.data.source.matches('.*\\S.*')
@@ -1380,7 +1381,14 @@ service cloud.firestore {
         && request.resource.data.importedAt == request.time
         && request.resource.data.verificationStatus is string
         && request.resource.data.verificationStatus.matches('.*\\S.*')
-        && request.resource.data.verificationStatus.size() <= 32;
+        && request.resource.data.verificationStatus.size() <= 32
+        && (
+          !('inputFingerprint' in request.resource.data)
+          || (
+            request.resource.data.inputFingerprint is string
+            && request.resource.data.inputFingerprint.matches('^sha256:[0-9a-f]{64}$')
+          )
+        );
 
       allow update, delete: if false;
     }
