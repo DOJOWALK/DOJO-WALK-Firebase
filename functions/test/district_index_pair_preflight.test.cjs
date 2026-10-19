@@ -298,3 +298,43 @@ test("does not mutate either index snapshot during classification", () => {
   assert.equal(JSON.stringify(legacy), beforeLegacy);
   assert.equal(JSON.stringify(districtAware), beforeDistrictAware);
 });
+
+test("safeToMigrate is true only for the three explicitly safe classifications", () => {
+  const cases = [
+    {
+      input: { ...base, legacy: absent, districtAware: absent },
+      expected: "MISSING_BOTH",
+    },
+    {
+      input: { ...base, legacy: index(base.legacyParentIds), districtAware: absent },
+      expected: "LEGACY_ONLY",
+    },
+    {
+      input: { ...base, legacy: absent, districtAware: index(base.districtParentIds) },
+      expected: "DISTRICT_ONLY",
+    },
+    {
+      input: { ...base, legacy: index(base.legacyParentIds), districtAware: index(base.districtParentIds) },
+      expected: "BOTH_SAME_DOCUMENT",
+    },
+    {
+      input: {
+        ...base,
+        legacy: index(base.legacyParentIds),
+        districtAware: index(base.districtParentIds, { documentId: "area-2" }),
+      },
+      expected: "CONFLICT_DIFFERENT_DOCUMENT",
+    },
+    {
+      input: { ...base, legacy: null, districtAware: absent },
+      expected: "INPUT_INVALID",
+    },
+  ];
+  const safeStatuses = new Set(["LEGACY_ONLY", "DISTRICT_ONLY", "BOTH_SAME_DOCUMENT"]);
+
+  for (const item of cases) {
+    const result = classifyDistrictIndexPair(item.input);
+    assert.equal(result.status, item.expected);
+    assert.equal(result.safeToMigrate, safeStatuses.has(result.status));
+  }
+});
