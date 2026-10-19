@@ -259,6 +259,47 @@ test("reconcilePlan reports incomplete plan and rejects fingerprint mismatch", a
   );
 });
 
+test("reconcilePlan verifies city and area parent links and reports missing descendants", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"5".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+  const nodes = [
+    { id: "state_full", type: "state", name: "Rajasthan", parentId: "IN", alreadyExists: false, sourceLine: 2 },
+    { id: "district_full", type: "district", name: "Jaipur", parentId: "state_full", alreadyExists: false, sourceLine: 3 },
+    { id: "city_full", type: "city", name: "Jaipur City", parentId: "district_full", alreadyExists: false, sourceLine: 4 },
+    { id: "area_full", type: "area", name: "Central Area", parentId: "city_full", alreadyExists: false, sourceLine: 5 },
+  ];
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "recordPlan", runId, inputFingerprint: fingerprint, nodes,
+  }));
+  const refs = [
+    db.doc("service_states/state_full"),
+    db.doc("service_districts/district_full"),
+    db.doc("service_cities/city_full"),
+    db.doc("service_areas/area_full"),
+  ];
+  await refs[0].set({ name: "Rajasthan", countryId: "IN" });
+  await refs[1].set({ name: "Jaipur", stateId: "state_full" });
+  await refs[2].set({ name: "Jaipur City", districtId: "district_full" });
+  await refs[3].set({ name: "Central Area", cityId: "city_full" });
+
+  const matched = await manageServiceLocationImportRun.run(request(uid, {
+    action: "reconcilePlan", runId, inputFingerprint: fingerprint,
+  }));
+  assert.equal(matched.status, "reconciled_match");
+  assert.equal(matched.matchingRecords, 4);
+
+  await refs[3].delete();
+  const missing = await manageServiceLocationImportRun.run(request(uid, {
+    action: "reconcilePlan", runId, inputFingerprint: fingerprint,
+  }));
+  assert.equal(missing.status, "reconciliation_mismatch");
+  assert.deepEqual(missing.missingIds, ["area_full"]);
+  for (const ref of refs) await ref.delete().catch(() => {});
+});
+
 test.after(async () => {
   for (const runId of runs) {
     await db.doc(`service_location_import_runs/${runId}`).delete().catch(() => {});
