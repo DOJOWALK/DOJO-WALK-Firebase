@@ -60,7 +60,9 @@ async function cleanup(f) {
   await Promise.all([...f.refs, ...docs].map(ref => ref.delete().catch(() => undefined)));
   const indexIds = [
     serviceLocationNameIndexId("service_areas", [f.countryId, f.stateId, f.cityId], f.areaName.toLowerCase()),
+    serviceLocationNameIndexId("service_areas", [f.countryId, f.stateId, f.districtId, f.cityId], f.areaName.toLowerCase()),
     serviceLocationNameIndexId("service_localities", [f.countryId, f.stateId, f.cityId, f.areaId], f.localityName.toLowerCase()),
+    ...(f.district ? [serviceLocationNameIndexId("service_localities", [f.countryId, f.stateId, f.districtId, f.cityId, f.areaId], f.localityName.toLowerCase())] : []),
   ];
   await Promise.all(indexIds.map(id => db.doc(`service_location_name_indexes/${id}`).delete().catch(() => undefined)));
 }
@@ -120,7 +122,7 @@ test("legacy City without District remains compatible for Area save", async () =
   } finally { await cleanup(f); }
 });
 
-test("valid District-linked Area keeps the existing legacy name-index tuple", async () => {
+test("valid District-linked Area writes both legacy and District-aware name indexes", async () => {
   const f = await fixture({ district: true });
   const areaName = `Matrix-New-Area-${randomUUID()}`;
   try {
@@ -134,13 +136,14 @@ test("valid District-linked Area keeps the existing legacy name-index tuple", as
     const legacyId = serviceLocationNameIndexId("service_areas", [f.countryId, f.stateId, f.cityId], areaName.toLowerCase());
     const districtId = districtAwareNameIndexId("area", { countryId: f.countryId, stateId: f.stateId, districtId: f.districtId, cityId: f.cityId }, areaName.toLowerCase());
     assert.equal((await db.doc(`service_location_name_indexes/${legacyId}`).get()).get("documentId"), result.locationId);
-    assert.equal((await db.doc(`service_location_name_indexes/${districtId}`).get()).exists, false);
+    assert.equal((await db.doc(`service_location_name_indexes/${districtId}`).get()).get("documentId"), result.locationId);
+    assert.deepEqual((await db.doc(`service_location_name_indexes/${districtId}`).get()).get("parentIds"), [f.countryId, f.stateId, f.districtId, f.cityId]);
     await db.doc(`service_areas/${result.locationId}`).delete();
     await db.doc(`service_location_name_indexes/${legacyId}`).delete();
   } finally { await cleanup(f); }
 });
 
-test("Locality linked to a valid District City keeps the legacy Locality index tuple", async () => {
+test("Locality linked to a valid District City writes both legacy and District-aware indexes", async () => {
   const f = await fixture({ district: true });
   const localityName = `Matrix-New-Locality-${randomUUID()}`;
   try {
@@ -154,7 +157,8 @@ test("Locality linked to a valid District City keeps the legacy Locality index t
     const legacyId = serviceLocationNameIndexId("service_localities", [f.countryId, f.stateId, f.cityId, f.areaId], localityName.toLowerCase());
     const districtId = districtAwareNameIndexId("locality", { countryId: f.countryId, stateId: f.stateId, districtId: f.districtId, cityId: f.cityId, areaId: f.areaId }, localityName.toLowerCase());
     assert.equal((await db.doc(`service_location_name_indexes/${legacyId}`).get()).get("documentId"), result.locationId);
-    assert.equal((await db.doc(`service_location_name_indexes/${districtId}`).get()).exists, false);
+    assert.equal((await db.doc(`service_location_name_indexes/${districtId}`).get()).get("documentId"), result.locationId);
+    assert.deepEqual((await db.doc(`service_location_name_indexes/${districtId}`).get()).get("parentIds"), [f.countryId, f.stateId, f.districtId, f.cityId, f.areaId]);
     await db.doc(`service_localities/${result.locationId}`).delete();
     await db.doc(`service_location_name_indexes/${legacyId}`).delete();
   } finally { await cleanup(f); }
