@@ -214,7 +214,7 @@ test("reconcilePlan verifies the stored plan and hierarchy without writing", asy
   const stateRef = db.doc("service_states/state_reconcile");
   const districtRef = db.doc("service_districts/district_reconcile");
   await stateRef.set({ name: "Uttar Pradesh", countryId: "IN" });
-  await districtRef.set({ name: "Gautam Buddha Nagar", stateId: "state_reconcile" });
+  await districtRef.set({ name: "Gautam Buddha Nagar", countryId: "IN", stateId: "state_reconcile" });
   const before = (await db.doc(`service_location_import_runs/${runId}`).get()).data();
   const result = await manageServiceLocationImportRun.run(request(uid, {
     action: "reconcilePlan", runId, inputFingerprint: fingerprint,
@@ -281,15 +281,23 @@ test("reconcilePlan verifies city and area parent links and reports missing desc
     db.doc("service_areas/area_full"),
   ];
   await refs[0].set({ name: "Rajasthan", countryId: "IN" });
-  await refs[1].set({ name: "Jaipur", stateId: "state_full" });
-  await refs[2].set({ name: "Jaipur City", districtId: "district_full" });
-  await refs[3].set({ name: "Central Area", cityId: "city_full" });
+  await refs[1].set({ name: "Jaipur", countryId: "IN", stateId: "state_full" });
+  await refs[2].set({ name: "Jaipur City", countryId: "IN", stateId: "state_full", districtId: "district_full" });
+  await refs[3].set({ name: "Central Area", countryId: "IN", stateId: "state_full", cityId: "city_full" });
 
   const matched = await manageServiceLocationImportRun.run(request(uid, {
     action: "reconcilePlan", runId, inputFingerprint: fingerprint,
   }));
   assert.equal(matched.status, "reconciled_match");
   assert.equal(matched.matchingRecords, 4);
+
+  await refs[2].update({ stateId: "wrong_state" });
+  const ancestorMismatch = await manageServiceLocationImportRun.run(request(uid, {
+    action: "reconcilePlan", runId, inputFingerprint: fingerprint,
+  }));
+  assert.equal(ancestorMismatch.status, "reconciliation_mismatch");
+  assert.deepEqual(ancestorMismatch.mismatchIds, ["city_full"]);
+  await refs[2].update({ stateId: "state_full" });
 
   await refs[3].delete();
   const missing = await manageServiceLocationImportRun.run(request(uid, {
