@@ -1075,7 +1075,10 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
       }
       const expectedFields: Record<string, unknown> = { countryId };
       if (node.type === "state") {
-        expectedFields.countryId = node.parentId;
+        if (node.parentId !== countryId) {
+          mismatchIds.push(String(node.id));
+          continue;
+        }
       } else if (node.type === "district") {
         expectedFields.stateId = node.parentId;
       } else if (node.type === "city") {
