@@ -338,3 +338,20 @@ test("safeToMigrate is true only for the three explicitly safe classifications",
     assert.equal(result.safeToMigrate, safeStatuses.has(result.status));
   }
 });
+
+test("rejects non-array and non-string parent tuples without throwing", () => {
+  const cases = [
+    { ...base, legacyParentIds: null },
+    { ...base, districtParentIds: "country-1,state-1,district-1,city-1" },
+    { ...base, legacyParentIds: ["country-1", 7, "city-1"] },
+    { ...base, districtParentIds: ["country-1", "state-1", null, "city-1"] },
+  ];
+
+  for (const input of cases) {
+    const result = classifyDistrictIndexPair({
+      ...input, legacy: absent, districtAware: absent,
+    });
+    assert.equal(result.status, "INPUT_INVALID");
+    assert.equal(result.safeToMigrate, false);
+  }
+});
