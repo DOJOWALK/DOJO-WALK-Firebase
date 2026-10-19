@@ -140,6 +140,7 @@ test("valid District-linked Area writes both legacy and District-aware name inde
     assert.deepEqual((await db.doc(`service_location_name_indexes/${districtId}`).get()).get("parentIds"), [f.countryId, f.stateId, f.districtId, f.cityId]);
     await db.doc(`service_areas/${result.locationId}`).delete();
     await db.doc(`service_location_name_indexes/${legacyId}`).delete();
+    await db.doc(`service_location_name_indexes/${districtId}`).delete();
   } finally { await cleanup(f); }
 });
 
@@ -161,5 +162,6 @@ test("Locality linked to a valid District City writes both legacy and District-a
     assert.deepEqual((await db.doc(`service_location_name_indexes/${districtId}`).get()).get("parentIds"), [f.countryId, f.stateId, f.districtId, f.cityId, f.areaId]);
     await db.doc(`service_localities/${result.locationId}`).delete();
     await db.doc(`service_location_name_indexes/${legacyId}`).delete();
+    await db.doc(`service_location_name_indexes/${districtId}`).delete();
   } finally { await cleanup(f); }
 });
