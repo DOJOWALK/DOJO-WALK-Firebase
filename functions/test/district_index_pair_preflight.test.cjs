@@ -271,3 +271,14 @@ test("normalizes expected name whitespace before comparing canonical snapshots",
   assert.equal(r.status, "LEGACY_ONLY");
   assert.equal(r.safeToMigrate, true);
 });
+
+test("normalizes tabs and newlines in the expected name", () => {
+  const r = classifyDistrictIndexPair({
+    ...base,
+    expectedName: "  GAUR\t \n CITY  ",
+    legacy: index(base.legacyParentIds, { name: "gaur city" }),
+    districtAware: absent,
+  });
+  assert.equal(r.status, "LEGACY_ONLY");
+  assert.equal(r.safeToMigrate, true);
+});
