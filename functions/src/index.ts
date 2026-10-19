@@ -968,10 +968,20 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
     // Every planned node must be accounted for exactly once: either created
     // by this run or matched to an existing canonical path. Reject inconsistent
     // client summaries before touching the durable run state.
-    if (data.createdRecords + data.reusedRecords !== data.plannedRecords) {
+    // A completed run must account for every planned node. Failure states
+    // intentionally allow fewer accounted nodes because a callable may have
+    // stopped midway through the hierarchy writes.
+    if (status === "completed" &&
+        data.createdRecords + data.reusedRecords !== data.plannedRecords) {
       throw new HttpsError(
         "invalid-argument",
-        "createdRecords plus reusedRecords must equal plannedRecords.",
+        "For completed runs, createdRecords plus reusedRecords must equal plannedRecords.",
+      );
+    }
+    if (data.createdRecords + data.reusedRecords > data.plannedRecords) {
+      throw new HttpsError(
+        "invalid-argument",
+        "Created and reused counts cannot exceed plannedRecords.",
       );
     }
     return db.runTransaction(async (tx) => {
