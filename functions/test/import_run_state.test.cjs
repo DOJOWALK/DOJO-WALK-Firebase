@@ -328,6 +328,32 @@ test("recordPlan rejects missing or wrong-type hierarchy parents before recordin
   assert.equal((await db.collection(`service_location_import_runs/${runId}/planned_nodes`).get()).size, 0);
 });
 
+test("recordPlan rejects more than 300 nodes without persisting a partial plan", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"8".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+  const nodes = Array.from({ length: 301 }, (_, index) => ({
+    id: `state_limit_${index}`,
+    type: "state",
+    name: `State ${index}`,
+    parentId: "IN",
+    alreadyExists: false,
+    sourceLine: index + 2,
+  }));
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(uid, {
+      action: "recordPlan", runId, inputFingerprint: fingerprint, nodes,
+    })),
+    (error) => error && error.code === "invalid-argument",
+  );
+  const markerSnapshot = await db.doc(`service_location_import_runs/${runId}`).get();
+  assert.equal(markerSnapshot.get("planHash"), undefined);
+  assert.equal(markerSnapshot.get("plannedRecords"), undefined);
+  assert.equal((await db.collection(`service_location_import_runs/${runId}/planned_nodes`).get()).size, 0);
+});
+
 test.after(async () => {
   for (const runId of runs) {
     await db.doc(`service_location_import_runs/${runId}`).delete().catch(() => {});
