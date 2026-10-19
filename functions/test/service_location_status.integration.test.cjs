@@ -9,7 +9,7 @@ const { getFirestore } = require("firebase-admin/firestore");
 const { setServiceLocationStatus } = require("../lib/index");
 const db = getFirestore();
 const suffix = randomUUID().replace(/-/g, "").slice(0, 12);
-const ids = Object.fromEntries(["admin","ordinary","inactiveAdmin","country","state","city","area","locality","inactiveArea","pendingLocality"]
+const ids = Object.fromEntries(["admin","ordinary","inactiveAdmin","country","state","city","area","locality","inactiveArea","pendingLocality","districtState","district"]
   .map((key) => [key, `status-${key}-${suffix}`]));
 
 async function invoke(uid, locationType, locationId, isActive) {
@@ -63,6 +63,10 @@ test("status callable enforces admin access and active-child guards", async (t) 
   await t.test("State cannot be deactivated while an active City exists", async () => {
     await expectCode(invoke(ids.admin, "state", ids.state, false), "failed-precondition");
     assert.equal((await db.doc(`service_states/${ids.state}`).get()).get("isActive"), true);
+  });
+  await t.test("State cannot be deactivated while an active District exists", async () => {
+    await expectCode(invoke(ids.admin, "state", ids.districtState, false), "failed-precondition");
+    assert.equal((await db.doc(`service_states/${ids.districtState}`).get()).get("isActive"), true);
   });
   await t.test("City cannot be deactivated while an active Area exists", async () => {
     await expectCode(invoke(ids.admin, "city", ids.city, false), "failed-precondition");
