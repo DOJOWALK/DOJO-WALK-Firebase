@@ -699,6 +699,23 @@ test('active admin role cannot read service hierarchy or write import audit; sup
   }));
 });
 
+test('inactive super_admin cannot read hierarchy or create import audit records', async () => {
+  const db = env.authenticatedContext('super-inactive').firestore();
+
+  // Role alone is insufficient: the actor must also be active.
+  await assertFails(getDoc(doc(db, 'service_countries/india')));
+  await assertFails(getDocs(collection(db, 'service_states')));
+  await assertFails(getDocs(collection(db, 'service_location_imports')));
+  await assertFails(setDoc(doc(db, 'service_location_imports/inactive-attempt'), {
+    source: 'csv',
+    fileName: 'areas.csv',
+    status: 'failed',
+    importedBy: 'super-inactive',
+    importedAt: serverTimestamp(),
+    verificationStatus: 'pending',
+  }));
+});
+
 test('service District reads are super_admin-only and direct client writes are denied', async () => {
   await env.withSecurityRulesDisabled(async (context) => {
     await setDoc(doc(context.firestore(), 'service_districts/gbn'), {
