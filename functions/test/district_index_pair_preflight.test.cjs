@@ -248,3 +248,15 @@ test("rejects undefined and primitive runtime preflight inputs without throwing"
     assert.equal(r.safeToMigrate, false);
   }
 });
+
+test("rejects snapshot names with non-canonical whitespace variants", () => {
+  for (const name of [" gaur city", "gaur city ", "gaur\\tcity", "gaur\\ncity", "gaur  city"]) {
+    const r = classifyDistrictIndexPair({
+      ...base,
+      legacy: index(base.legacyParentIds, { name }),
+      districtAware: absent,
+    });
+    assert.equal(r.status, "INPUT_INVALID", JSON.stringify({ name, result: r }));
+    assert.equal(r.safeToMigrate, false);
+  }
+});
