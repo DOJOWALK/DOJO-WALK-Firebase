@@ -965,6 +965,15 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
         throw new HttpsError("invalid-argument", `${field} must be a non-negative integer.`);
       }
     }
+    // Every planned node must be accounted for exactly once: either created
+    // by this run or matched to an existing canonical path. Reject inconsistent
+    // client summaries before touching the durable run state.
+    if (data.createdRecords + data.reusedRecords !== data.plannedRecords) {
+      throw new HttpsError(
+        "invalid-argument",
+        "createdRecords plus reusedRecords must equal plannedRecords.",
+      );
+    }
     return db.runTransaction(async (tx) => {
       const [currentActor, run] = await Promise.all([tx.get(actorRef), tx.get(runRef)]);
       if (!currentActor.exists || currentActor.get("isActive") !== true ||
