@@ -750,6 +750,7 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     let oldIndexSnap: FirebaseFirestore.DocumentSnapshot | undefined;
     let oldDistrictAwareIndexRef: FirebaseFirestore.DocumentReference | undefined;
     let oldDistrictAwareIndexSnap: FirebaseFirestore.DocumentSnapshot | undefined;
+    let oldDistrictAwareIndexId: string | undefined;
     if (targetSnap.exists) {
       const oldIndexId = serviceLocationNameIndexId(collection, oldParentIds, String(old.name ?? ""));
       if (oldIndexId !== indexId) {
@@ -757,7 +758,7 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
         oldIndexSnap = await tx.get(oldIndexRef);
       }
       if (districtAwareParentIds) {
-        const oldDistrictAwareIndexId = serviceLocationNameIndexId(
+        oldDistrictAwareIndexId = serviceLocationNameIndexId(
           collection,
           districtAwareParentIds,
           String(old.name ?? ""),
