@@ -1255,3 +1255,73 @@ test.after(async () => {
   for (const id of createdIndexes) deletes.push(db.doc(`service_location_name_indexes/${id}`).delete());
   await Promise.all(deletes);
 });
+
+test("unchanged District-linked Area with both indexes missing requires manual review", async () => {
+  const uid = await createAdmin("admin", true);
+  const suffix = randomUUID();
+  const country = await saveCountry(uid, "Missing-Pair-Country-" + suffix);
+  const state = await saveServiceLocationWithNameIndex.run(request(uid, {
+    locationType: "state",
+    payload: { countryId: country.locationId, name: "Missing-Pair-State-" + suffix },
+  }));
+  const district = await saveServiceLocationWithNameIndex.run(request(uid, {
+    locationType: "district",
+    payload: {
+      countryId: country.locationId,
+      stateId: state.locationId,
+      name: "Missing-Pair-District-" + suffix,
+    },
+  }));
+  const city = await saveServiceLocationWithNameIndex.run(request(uid, {
+    locationType: "city",
+    payload: {
+      countryId: country.locationId,
+      stateId: state.locationId,
+      districtId: district.locationId,
+      name: "Missing-Pair-City-" + suffix,
+    },
+  }));
+  const areaName = "Missing-Pair-Area-" + suffix;
+  const payload = {
+    countryId: country.locationId,
+    stateId: state.locationId,
+    cityId: city.locationId,
+    name: areaName,
+  };
+  const area = await saveServiceLocationWithNameIndex.run(request(uid, {
+    locationType: "area", payload,
+  }));
+  const legacyId = serviceLocationNameIndexId(
+    "service_areas", [country.locationId, state.locationId, city.locationId], areaName,
+  );
+  const districtId = serviceLocationNameIndexId(
+    "service_areas", [country.locationId, state.locationId, district.locationId, city.locationId], areaName,
+  );
+  createdIndexes.add(legacyId);
+  createdIndexes.add(districtId);
+  await Promise.all([
+    db.doc("service_location_name_indexes/" + legacyId).delete(),
+    db.doc("service_location_name_indexes/" + districtId).delete(),
+  ]);
+
+  await assert.rejects(
+    () => saveServiceLocationWithNameIndex.run(request(uid, {
+      locationType: "area", locationId: area.locationId, payload,
+    })),
+    (error) => error && error.code === "failed-precondition",
+  );
+
+  const areaAfter = await db.doc("service_areas/" + area.locationId).get();
+  assert.equal(areaAfter.get("name"), areaName);
+  assert.equal((await db.doc("service_location_name_indexes/" + legacyId).get()).exists, false);
+  assert.equal((await db.doc("service_location_name_indexes/" + districtId).get()).exists, false);
+
+  for (const [collection, id] of [
+    ["service_states", state.locationId],
+    ["service_districts", district.locationId],
+    ["service_cities", city.locationId],
+    ["service_areas", area.locationId],
+  ]) {
+    await db.doc(collection + "/" + id).delete();
+  }
+});
