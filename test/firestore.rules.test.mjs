@@ -7,7 +7,7 @@ import {
   assertSucceeds,
   assertFails,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 
 const projectId = 'demo-dojo-rules-tests';
 let env;
@@ -665,4 +665,44 @@ test('clients cannot create an already-active Country or State', async () => {
     countryId: 'india', name: 'Active State', isActive: true,
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   }));
+});
+
+
+test('service District reads are super_admin-only and direct client writes are denied', async () => {
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'service_districts/gbn'), {
+      countryId: 'india',
+      stateId: 'up',
+      name: 'Gautam Buddha Nagar',
+      isServiceActive: false,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+  });
+
+  const adminDb = env.authenticatedContext('super-active').firestore();
+  await assertSucceeds(getDoc(doc(adminDb, 'service_districts/gbn')));
+  await assertSucceeds(getDocs(collection(adminDb, 'service_districts')));
+
+  const supportDb = env.authenticatedContext('support-active').firestore();
+  await assertFails(getDoc(doc(supportDb, 'service_districts/gbn')));
+  await assertFails(getDocs(collection(supportDb, 'service_districts')));
+
+  const unauthenticatedDb = env.unauthenticatedContext().firestore();
+  await assertFails(getDoc(doc(unauthenticatedDb, 'service_districts/gbn')));
+  await assertFails(getDocs(collection(unauthenticatedDb, 'service_districts')));
+
+  await assertFails(setDoc(doc(adminDb, 'service_districts/client-created'), {
+    countryId: 'india',
+    stateId: 'up',
+    name: 'Client Created District',
+    isServiceActive: false,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(adminDb, 'service_districts/gbn'), {
+    name: 'Client Modified District',
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(deleteDoc(doc(adminDb, 'service_districts/gbn')));
 });
