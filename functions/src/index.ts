@@ -1014,13 +1014,92 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
       const collection = runRef.collection("planned_nodes");
       for (let offset = 0; offset < canonicalNodes.length; offset += 200) {
         const batch = db.batch();
-        for (const node of canonicalNodes.slice(offset, offset + 200)) {
-          batch.create(collection.doc(node.id), { ...node, planHash, recordedAt: FieldValue.serverTimestamp() });
+        for (const [localIndex, node] of canonicalNodes.slice(offset, offset + 200).entries()) {
+          const ordinal = offset + localIndex;
+          batch.create(collection.doc(node.id), { ...node, ordinal, planHash, recordedAt: FieldValue.serverTimestamp() });
         }
         await batch.commit();
       }
       return result;
     });
+  }
+
+  if (action === "reconcilePlan") {
+    const run = await runRef.get();
+    if (!run.exists) throw new HttpsError("not-found", "Import run was not found.");
+    if (run.get("inputFingerprint") !== inputFingerprint || run.get("importedBy") !== uid) {
+      throw new HttpsError("failed-precondition", "Import run owner or fingerprint does not match.");
+    }
+    const plannedRecords = run.get("plannedRecords");
+    const expectedHash = run.get("planHash");
+    if (!Number.isSafeInteger(plannedRecords) || plannedRecords < 1 ||
+        plannedRecords > 300 || typeof expectedHash !== "string") {
+      return { ok: false, runId, status: "plan_missing_or_invalid", readOnly: true };
+    }
+    const planSnapshot = await runRef.collection("planned_nodes").get();
+    if (planSnapshot.size !== plannedRecords) {
+      return {
+        ok: false, runId, status: "plan_incomplete", expectedRecords: plannedRecords,
+        storedRecords: planSnapshot.size, readOnly: true,
+      };
+    }
+    const planned = planSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+      .sort((a, b) => Number(a.ordinal) - Number(b.ordinal));
+    if (planned.some((node, index) => !Number.isSafeInteger(node.ordinal) || node.ordinal !== index)) {
+      return { ok: false, runId, status: "plan_order_unverifiable", readOnly: true };
+    }
+    const canonical = planned.map((node) => ({
+      id: node.id, type: node.type, name: node.name, parentId: node.parentId,
+      alreadyExists: node.alreadyExists, sourceLine: node.sourceLine,
+    }));
+    const actualHash = createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
+    if (actualHash !== expectedHash || planned.some((node) => node.planHash !== expectedHash)) {
+      return { ok: false, runId, status: "plan_hash_mismatch", readOnly: true };
+    }
+
+    const collectionByType: Record<string, string> = {
+      state: "service_states", district: "service_districts",
+      city: "service_cities", area: "service_areas",
+    };
+    const parentFieldByType: Record<string, string> = {
+      state: "countryId", district: "stateId", city: "districtId", area: "cityId",
+    };
+    const missingIds: string[] = [];
+    const mismatchIds: string[] = [];
+    let matching = 0;
+    for (const node of planned) {
+      const collectionName = collectionByType[String(node.type)];
+      const parentField = parentFieldByType[String(node.type)];
+      if (!collectionName || !parentField) {
+        mismatchIds.push(String(node.id));
+        continue;
+      }
+      const actual = await db.doc(`${collectionName}/${node.id}`).get();
+      if (!actual.exists) {
+        missingIds.push(String(node.id));
+        continue;
+      }
+      const actualName = typeof actual.get("name") === "string" ? actual.get("name").trim() : "";
+      const actualParent = actual.get(parentField);
+      if (actualName !== node.name || actualParent !== node.parentId) {
+        mismatchIds.push(String(node.id));
+      } else {
+        matching++;
+      }
+    }
+    return {
+      ok: missingIds.length === 0 && mismatchIds.length === 0,
+      runId,
+      status: missingIds.length === 0 && mismatchIds.length === 0 ? "reconciled_match" : "reconciliation_mismatch",
+      plannedRecords,
+      matchingRecords: matching,
+      missingCount: missingIds.length,
+      mismatchCount: mismatchIds.length,
+      missingIds: missingIds.slice(0, 50),
+      mismatchIds: mismatchIds.slice(0, 50),
+      truncated: missingIds.length > 50 || mismatchIds.length > 50,
+      readOnly: true,
+    };
   }
 
   if (action === "finalize") {
@@ -1087,5 +1166,5 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
     });
   }
 
-  throw new HttpsError("invalid-argument", "Action must be begin, inspect, or finalize.");
+  throw new HttpsError("invalid-argument", "Action must be begin, inspect, recordPlan, reconcilePlan, or finalize.");
 });
