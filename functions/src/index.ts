@@ -888,6 +888,31 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
   }
 
   const runRef = db.doc(`service_location_import_runs/${runId}`);
+  if (action === "inspect") {
+    const run = await runRef.get();
+    if (!run.exists) throw new HttpsError("not-found", "Import run was not found.");
+    if (run.get("inputFingerprint") !== inputFingerprint) {
+      throw new HttpsError("failed-precondition", "Import run fingerprint does not match.");
+    }
+    // Return only reconciliation-relevant fields; never expose internal data
+    // or allow a client to mutate the durable run marker.
+    return {
+      runId,
+      countryId: run.get("countryId"),
+      fileName: run.get("fileName"),
+      status: run.get("status"),
+      plannedRecords: run.get("plannedRecords"),
+      createdRecords: run.get("createdRecords"),
+      reusedRecords: run.get("reusedRecords"),
+      importedBy: run.get("importedBy"),
+      inputFingerprint: run.get("inputFingerprint"),
+      createdAt: run.get("createdAt")?.toDate?.().toISOString?.() ?? null,
+      updatedAt: run.get("updatedAt")?.toDate?.().toISOString?.() ?? null,
+      finishedAt: run.get("finishedAt")?.toDate?.().toISOString?.() ?? null,
+      reconciliationRequired: run.get("status") !== "completed",
+    };
+  }
+
   if (action === "begin") {
     const countryId = data.countryId;
     const fileName = data.fileName;
@@ -973,5 +998,5 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
     });
   }
 
-  throw new HttpsError("invalid-argument", "Action must be begin or finalize.");
+  throw new HttpsError("invalid-argument", "Action must be begin, inspect, or finalize.");
 });
