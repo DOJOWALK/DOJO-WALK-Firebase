@@ -985,6 +985,21 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
         sourceLine: node.sourceLine,
       });
     }
+    const nodeById = new Map(canonicalNodes.map((node) => [node.id, node]));
+    const expectedParentType: Record<string, string> = {
+      district: "state", city: "district", area: "city",
+    };
+    for (const node of canonicalNodes) {
+      const parentType = expectedParentType[node.type];
+      if (!parentType) continue; // State parent is the country document.
+      const parent = nodeById.get(node.parentId);
+      if (!parent || parent.type !== parentType) {
+        throw new HttpsError(
+          "invalid-argument",
+          `The ${node.type} node ${node.id} must reference a planned ${parentType} parent.`,
+        );
+      }
+    }
     const planHash = createHash("sha256")
       .update(JSON.stringify(canonicalNodes)).digest("hex");
     return db.runTransaction(async (tx) => {
