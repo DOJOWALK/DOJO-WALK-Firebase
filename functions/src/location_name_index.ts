@@ -42,8 +42,8 @@ export function serviceLocationNameIndexId(
     service_states: 1,
     service_districts: 2,
     service_cities: [2, 3],
-    service_areas: 3,
-    service_localities: 4,
+    service_areas: [3, 4],
+    service_localities: [4, 5],
   };
   const allowedParentCounts = expectedParentCount[collectionPath];
   if (Array.isArray(allowedParentCounts)
