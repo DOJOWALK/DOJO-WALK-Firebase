@@ -1196,6 +1196,58 @@ test("District-aware index ownership conflict blocks Area creation without modif
   }
 });
 
+
+test("renaming a District-linked Area replaces both indexes atomically", async () => {
+  const uid = await createAdmin("admin", true);
+  const suffix = randomUUID();
+  const country = await saveCountry(uid, "Dual-Rename-Country-" + suffix);
+  const state = await saveServiceLocationWithNameIndex.run(request(uid, {
+    locationType: "state",
+    payload: { countryId: country.locationId, name: "Dual-Rename-State-" + suffix },
+  }));
+  const district = await saveServiceLocationWithNameIndex.run(request(uid, {
+    locationType: "district",
+    payload: { countryId: country.locationId, stateId: state.locationId, name: "Dual-Rename-District-" + suffix },
+  }));
+  const city = await saveServiceLocationWithNameIndex.run(request(uid, {
+    locationType: "city",
+    payload: {
+      countryId: country.locationId, stateId: state.locationId,
+      districtId: district.locationId, name: "Dual-Rename-City-" + suffix,
+    },
+  }));
+  const oldName = "Dual-Rename-Area-Old-" + suffix;
+  const newName = "Dual-Rename-Area-New-" + suffix;
+  const area = await saveServiceLocationWithNameIndex.run(request(uid, {
+    locationType: "area",
+    payload: { countryId: country.locationId, stateId: state.locationId, cityId: city.locationId, name: oldName },
+  }));
+  const oldLegacyId = serviceLocationNameIndexId("service_areas", [country.locationId, state.locationId, city.locationId], oldName);
+  const oldDistrictId = serviceLocationNameIndexId("service_areas", [country.locationId, state.locationId, district.locationId, city.locationId], oldName);
+  const newLegacyId = serviceLocationNameIndexId("service_areas", [country.locationId, state.locationId, city.locationId], newName);
+  const newDistrictId = serviceLocationNameIndexId("service_areas", [country.locationId, state.locationId, district.locationId, city.locationId], newName);
+  for (const id of [oldLegacyId, oldDistrictId, newLegacyId, newDistrictId]) createdIndexes.add(id);
+
+  const renamed = await saveServiceLocationWithNameIndex.run(request(uid, {
+    locationType: "area",
+    locationId: area.locationId,
+    payload: { countryId: country.locationId, stateId: state.locationId, cityId: city.locationId, name: newName },
+  }));
+  assert.equal(renamed.ok, true);
+  assert.equal((await db.doc("service_areas/" + area.locationId).get()).get("name"), newName);
+  assert.equal((await db.doc("service_location_name_indexes/" + oldLegacyId).get()).exists, false);
+  assert.equal((await db.doc("service_location_name_indexes/" + oldDistrictId).get()).exists, false);
+  assert.equal((await db.doc("service_location_name_indexes/" + newLegacyId).get()).get("documentId"), area.locationId);
+  assert.equal((await db.doc("service_location_name_indexes/" + newDistrictId).get()).get("documentId"), area.locationId);
+
+  for (const [collection, id] of [
+    ["service_states", state.locationId],
+    ["service_districts", district.locationId],
+    ["service_cities", city.locationId],
+    ["service_areas", area.locationId],
+  ]) await db.doc(collection + "/" + id).delete();
+});
+
 test.after(async () => {
   const deletes = [];
   for (const uid of createdAdmins) deletes.push(db.doc(`admin_users/${uid}`).delete());
