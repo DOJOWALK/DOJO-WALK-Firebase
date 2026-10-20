@@ -575,3 +575,27 @@ test("reconcilePlan detects accidental activation of newly imported hierarchy re
   assert.deepEqual(accidentallyActivated.mismatchIds, ["state_activation_guard"]);
   await stateRef.delete().catch(() => {});
 });
+
+
+test("reconcilePlan rejects a different active super_admin who does not own the run", async () => {
+  const uid = await createAdmin();
+  const other = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"e".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "recordPlan", runId, inputFingerprint: fingerprint,
+    nodes: [{
+      id: "state_owner_guard", type: "state", name: "Rajasthan",
+      parentId: "IN", alreadyExists: false, sourceLine: 2,
+    }],
+  }));
+
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(other, {
+      action: "reconcilePlan", runId, inputFingerprint: fingerprint,
+    })),
+    (error) => error && error.code === "failed-precondition",
+  );
+});
