@@ -101,3 +101,80 @@ test("CSV import callable flow writes an inactive State-District-City-Area hiera
     "a repeated import run must be blocked rather than replaying hierarchy writes",
   );
 });
+
+
+test("reconcilePlan is read-only and detects missing locations and a corrupted plan", async (t) => {
+  const uid = `reconcile-${randomUUID()}`;
+  const suffix = randomUUID().replace(/-/g, "");
+  const countryId = `country_${suffix}`;
+  const stateId = `state_${suffix}`;
+  const runId = `reconcile_run_${suffix}`;
+  const fingerprint = `sha256:${"b".repeat(64)}`;
+  const runRef = db.doc(`service_location_import_runs/${runId}`);
+  const planRef = runRef.collection("planned_nodes").doc(stateId);
+  const stateRef = db.doc(`service_states/${stateId}`);
+  const adminRef = db.doc(`admin_users/${uid}`);
+
+  t.after(async () => {
+    await Promise.all([
+      planRef.delete().catch(() => {}),
+      runRef.delete().catch(() => {}),
+      stateRef.delete().catch(() => {}),
+      adminRef.delete().catch(() => {}),
+    ]);
+  });
+
+  await adminRef.set({ role: "super_admin", isActive: true });
+  const plan = [{
+    id: stateId,
+    type: "state",
+    name: `Reconcile State ${suffix}`,
+    parentId: countryId,
+    alreadyExists: false,
+    sourceLine: 2,
+  }];
+
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "begin", runId, inputFingerprint: fingerprint,
+    countryId, fileName: "reconcile-test.csv",
+  }));
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "recordPlan", runId, inputFingerprint: fingerprint, nodes: plan,
+  }));
+
+  const beforeMissingCheck = await stateRef.get();
+  assert.equal(beforeMissingCheck.exists, false);
+  const missing = await manageServiceLocationImportRun.run(request(uid, {
+    action: "reconcilePlan", runId, inputFingerprint: fingerprint,
+  }));
+  assert.equal(missing.ok, false);
+  assert.equal(missing.status, "reconciliation_mismatch");
+  assert.equal(missing.missingCount, 1);
+  assert.equal(missing.readOnly, true);
+  assert.equal((await stateRef.get()).exists, false, "reconciliation must not create missing hierarchy documents");
+
+  await stateRef.set({
+    countryId,
+    name: plan[0].name,
+    isActive: false,
+  });
+  const matching = await manageServiceLocationImportRun.run(request(uid, {
+    action: "reconcilePlan", runId, inputFingerprint: fingerprint,
+  }));
+  assert.equal(matching.ok, true);
+  assert.equal(matching.status, "reconciled_match");
+  assert.equal(matching.matchingRecords, 1);
+  assert.equal(matching.readOnly, true);
+
+  await planRef.update({ name: "Tampered planned state" });
+  const corrupted = await manageServiceLocationImportRun.run(request(uid, {
+    action: "reconcilePlan", runId, inputFingerprint: fingerprint,
+  }));
+  assert.equal(corrupted.ok, false);
+  assert.equal(corrupted.status, "plan_hash_mismatch");
+  assert.equal(corrupted.readOnly, true);
+
+  const stateAfterCorruptionCheck = await stateRef.get();
+  assert.equal(stateAfterCorruptionCheck.get("name"), plan[0].name,
+    "a corrupt plan must not mutate the actual hierarchy document");
+});
