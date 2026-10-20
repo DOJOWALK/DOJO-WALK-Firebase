@@ -1267,6 +1267,20 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
           throw new HttpsError("failed-precondition", "The immutable import plan hash does not match.");
         }
 
+        // Counts are part of the durable audit contract, not merely a client
+        // summary. Derive them from the immutable plan so a caller cannot mark
+        // reused locations as newly created (or vice versa) while still making
+        // the totals add up to plannedRecords.
+        const expectedReusedRecords = planned.filter((node) => node.alreadyExists === true).length;
+        const expectedCreatedRecords = planned.length - expectedReusedRecords;
+        if (data.createdRecords !== expectedCreatedRecords ||
+            data.reusedRecords !== expectedReusedRecords) {
+          throw new HttpsError(
+            "failed-precondition",
+            "Import counts do not match the immutable plan. Reconcile the run before finalizing.",
+          );
+        }
+
         const collectionByType: Record<string, string> = {
           state: "service_states", district: "service_districts",
           city: "service_cities", area: "service_areas",
