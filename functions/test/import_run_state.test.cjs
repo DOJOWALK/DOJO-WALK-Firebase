@@ -618,6 +618,13 @@ test.after(async () => {
     await db.doc(path).delete().catch(() => {});
   }
   for (const runId of runs) {
+    const planSnapshot = await db.collection(`service_location_import_runs/${runId}/planned_nodes`).get().catch(() => null);
+    if (planSnapshot && !planSnapshot.empty) {
+      const batch = db.batch();
+      for (const doc of planSnapshot.docs) batch.delete(doc.ref);
+      await batch.commit().catch(() => {});
+    }
+    await db.doc(`service_location_imports/${runId}`).delete().catch(() => {});
     await db.doc(`service_location_import_runs/${runId}`).delete().catch(() => {});
   }
   for (const uid of admins) {
@@ -788,4 +795,47 @@ test("recordPlan writes a 250-node plan across batch boundaries with stable ordi
   const batch = db.batch();
   for (const doc of snapshot.docs) batch.delete(doc.ref);
   await batch.commit();
+});
+
+
+test("finalize completes the maximum 300-node plan and commits audit atomically", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"0".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+  const nodes = Array.from({ length: 300 }, (_, index) => ({
+    id: `state_max_finalize_${index}`,
+    type: "state",
+    name: `State ${index}`,
+    parentId: "IN",
+    alreadyExists: false,
+    sourceLine: index + 2,
+  }));
+  const recorded = await manageServiceLocationImportRun.run(request(uid, {
+    action: "recordPlan", runId, inputFingerprint: fingerprint, nodes,
+  }));
+  assert.equal(recorded.plannedRecords, 300);
+
+  for (let start = 0; start < nodes.length; start += 200) {
+    const batch = db.batch();
+    for (const node of nodes.slice(start, start + 200)) {
+      const path = `service_states/${node.id}`;
+      locationDocs.add(path);
+      batch.set(db.doc(path), { name: node.name, countryId: "IN", isActive: false });
+    }
+    await batch.commit();
+  }
+
+  const result = await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint, "finalize", {
+    status: "completed", plannedRecords: 300, createdRecords: 300, reusedRecords: 0,
+  })));
+  assert.equal(result.status, "completed");
+  assert.equal(result.auditWritten, true);
+  const run = await db.doc(`service_location_import_runs/${runId}`).get();
+  const audit = await db.doc(`service_location_imports/${runId}`).get();
+  assert.equal(run.get("status"), "completed");
+  assert.equal(run.get("plannedRecords"), 300);
+  assert.equal(audit.get("status"), "completed");
+  assert.equal(audit.get("createdRecords"), 300);
 });
