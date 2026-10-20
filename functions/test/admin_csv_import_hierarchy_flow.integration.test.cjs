@@ -36,7 +36,7 @@ test("CSV import callable flow writes an inactive State-District-City-Area hiera
 
   await db.doc(`admin_users/${uid}`).set({ role: "super_admin", isActive: true });
   // The country is selected in Admin before the CSV's State → Area hierarchy.
-  await save(uid, "country", countryId, { name: `Test Country ${suffix}`, code: `T${suffix.slice(0, 2)}` });
+  await save(uid, "country", countryId, { name: `Test Country ${suffix}`, code: "ZZ" });
 
   const plan = [
     { id: stateId, type: "state", name: `Test State ${suffix}`, parentId: countryId, alreadyExists: false, sourceLine: 2 },
