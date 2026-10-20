@@ -895,6 +895,9 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
     if (run.get("inputFingerprint") !== inputFingerprint) {
       throw new HttpsError("failed-precondition", "Import run fingerprint does not match.");
     }
+    if (run.get("importedBy") !== uid) {
+      throw new HttpsError("permission-denied", "Only the admin who started this import can inspect its run marker.");
+    }
     // Return only reconciliation-relevant fields; never expose internal data
     // or allow a client to mutate the durable run marker.
     return {
