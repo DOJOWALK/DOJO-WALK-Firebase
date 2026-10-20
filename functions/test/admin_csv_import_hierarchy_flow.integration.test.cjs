@@ -178,3 +178,67 @@ test("reconcilePlan is read-only and detects missing locations and a corrupted p
   assert.equal(stateAfterCorruptionCheck.get("name"), plan[0].name,
     "a corrupt plan must not mutate the actual hierarchy document");
 });
+
+
+test("import run inspection and reconciliation enforce active admin, owner, and fingerprint checks", async (t) => {
+  const ownerUid = `reconcile-owner-${randomUUID()}`;
+  const otherUid = `reconcile-other-${randomUUID()}`;
+  const inactiveUid = `reconcile-inactive-${randomUUID()}`;
+  const suffix = randomUUID().replace(/-/g, "");
+  const runId = `reconcile_access_${suffix}`;
+  const fingerprint = `sha256:${"c".repeat(64)}`;
+  const wrongFingerprint = `sha256:${"e".repeat(64)}`;
+  const runRef = db.doc(`service_location_import_runs/${runId}`);
+  const adminRefs = [ownerUid, otherUid, inactiveUid].map(uid => db.doc(`admin_users/${uid}`));
+
+  t.after(async () => {
+    await Promise.all([runRef.delete().catch(() => {}), ...adminRefs.map(ref => ref.delete().catch(() => {}))]);
+  });
+
+  await Promise.all([
+    adminRefs[0].set({ role: "super_admin", isActive: true }),
+    adminRefs[1].set({ role: "super_admin", isActive: true }),
+    adminRefs[2].set({ role: "super_admin", isActive: false }),
+  ]);
+
+  await manageServiceLocationImportRun.run(request(ownerUid, {
+    action: "begin", runId, inputFingerprint: fingerprint,
+    countryId: `country_${suffix}`, fileName: "access-check.csv",
+  }));
+
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(ownerUid, {
+      action: "inspect", runId, inputFingerprint: wrongFingerprint,
+    })),
+    error => error && error.code === "failed-precondition",
+    "an incorrect fingerprint must not disclose run details",
+  );
+
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(otherUid, {
+      action: "inspect", runId, inputFingerprint: fingerprint,
+    })),
+    error => error && error.code === "permission-denied",
+    "another active super_admin must not inspect the owner's run",
+  );
+
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(otherUid, {
+      action: "reconcilePlan", runId, inputFingerprint: fingerprint,
+    })),
+    error => error && error.code === "failed-precondition",
+    "another admin must not reconcile a run they do not own",
+  );
+
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(inactiveUid, {
+      action: "inspect", runId, inputFingerprint: fingerprint,
+    })),
+    error => error && error.code === "permission-denied",
+    "inactive admins must be denied before reading run details",
+  );
+
+  const stillStarted = await runRef.get();
+  assert.equal(stillStarted.get("status"), "started", "denied requests must not change durable run state");
+  assert.equal(stillStarted.get("importedBy"), ownerUid);
+});
