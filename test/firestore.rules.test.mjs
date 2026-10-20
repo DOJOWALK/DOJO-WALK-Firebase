@@ -7,7 +7,7 @@ import {
   assertSucceeds,
   assertFails,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 
 const projectId = 'demo-dojo-rules-tests';
 let env;
@@ -102,8 +102,30 @@ test('new hierarchy records require existing, correctly linked ancestors', async
   await assertFails(setDoc(doc(db, 'service_localities/missing-area-locality'), {
     ...childBase, countryId: 'india', stateId: 'up', cityId: 'city-parent', areaId: 'missing-area',
   }));
-  await assertSucceeds(setDoc(doc(db, 'service_states/valid-new-state'), {
+  await assertFails(setDoc(doc(db, 'service_states/valid-new-state'), {
     ...stateBase, countryId: 'india',
+  }));
+});
+
+test('active admins cannot directly create inactive service locations in any hierarchy collection', async () => {
+  const db = env.authenticatedContext('super-active').firestore();
+  const stamps = { createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+  await assertFails(setDoc(doc(db, 'service_countries/direct-country'), {
+    name: 'Direct Country', code: 'DC', isActive: false, ...stamps,
+  }));
+  await assertFails(setDoc(doc(db, 'service_states/direct-state'), {
+    countryId: 'india', name: 'Direct State', isActive: false, ...stamps,
+  }));
+  await assertFails(setDoc(doc(db, 'service_cities/direct-city'), {
+    countryId: 'india', stateId: 'up', name: 'Direct City', isServiceActive: false, ...stamps,
+  }));
+  await assertFails(setDoc(doc(db, 'service_areas/direct-area'), {
+    countryId: 'india', stateId: 'up', cityId: 'city-parent',
+    name: 'Direct Area', isServiceActive: false, ...stamps,
+  }));
+  await assertFails(setDoc(doc(db, 'service_localities/direct-locality'), {
+    countryId: 'india', stateId: 'up', cityId: 'city-parent', areaId: 'direct-area',
+    name: 'Direct Locality', isServiceActive: false, ...stamps,
   }));
 });
 
@@ -116,9 +138,9 @@ test('unauthenticated reads and writes to service locations are denied', async (
   }));
 });
 
-test('active super_admin can create a valid country', async () => {
+test('even an active super_admin must use the trusted callable to create a country', async () => {
   const db = env.authenticatedContext('super-active').firestore();
-  await assertSucceeds(setDoc(doc(db, 'service_countries/india-new'), {
+  await assertFails(setDoc(doc(db, 'service_countries/india-new'), {
     name: 'India', code: 'IN', isActive: false,
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   }));
@@ -190,22 +212,22 @@ test('direct city activation with a mismatched boundary is denied', async () => 
   }));
 });
 
-test('admin can bind a verified boundary to an inactive City', async () => {
+test('client cannot create or bind a verified boundary to an inactive City', async () => {
   const db = env.authenticatedContext('super-active').firestore();
-  await assertSucceeds(setDoc(doc(db, 'service_cities/city-1'), {
+  await assertFails(setDoc(doc(db, 'service_cities/city-1'), {
     countryId: 'india', stateId: 'up', name: 'Example City',
     isServiceActive: false,
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   }));
-  await assertSucceeds(updateDoc(doc(db, 'service_cities/city-1'), {
+  await assertFails(updateDoc(doc(db, 'service_cities/city-1'), {
     verifiedBoundaryId: 'city-boundary',
     updatedAt: serverTimestamp(),
   }));
 });
 
-test('admin can bind a verified boundary to an inactive Area under an active City', async () => {
+test('client cannot create or bind a verified boundary to an inactive Area', async () => {
   const db = env.authenticatedContext('super-active').firestore();
-  await assertSucceeds(setDoc(doc(db, 'service_areas/area-1'), {
+  await assertFails(setDoc(doc(db, 'service_areas/area-1'), {
     countryId: 'india', stateId: 'up', cityId: 'city-parent',
     name: 'Example Area', isServiceActive: false,
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
@@ -220,7 +242,7 @@ test('admin can bind a verified boundary to an inactive Area under an active Cit
       createdAt: new Date('2026-01-01T00:00:00Z'), updatedAt: new Date('2026-01-01T00:00:00Z'),
     });
   });
-  await assertSucceeds(updateDoc(doc(db, 'service_areas/area-1'), {
+  await assertFails(updateDoc(doc(db, 'service_areas/area-1'), {
     verifiedBoundaryId: 'area-boundary',
     updatedAt: serverTimestamp(),
   }));
@@ -335,20 +357,44 @@ test('direct area activation with a mismatched boundary is denied', async () => 
   }));
 });
 
-test('only active super_admin can write service location name indexes', async () => {
+test('name indexes can only be mutated by the trusted callable, not client SDKs', async () => {
   const superDb = env.authenticatedContext('super-active').firestore();
   const supportDb = env.authenticatedContext('support-active').firestore();
   const locationDb = env.authenticatedContext('location-active').firestore();
   const inactiveDb = env.authenticatedContext('super-inactive').firestore();
-  const index = { normalizedName: 'example-area', locationId: 'area-1', locationType: 'area' };
-  await assertSucceeds(setDoc(doc(superDb, 'service_location_name_indexes/area-example'), index));
+  const index = {
+    collectionPath: 'service_areas',
+    documentId: 'area-1',
+    name: 'example-area',
+    parentIds: ['india', 'up', 'city-1'],
+    updatedAt: serverTimestamp(),
+  };
+
+  // Even an active super_admin must use the trusted callable for index writes.
+  await assertFails(setDoc(doc(superDb, 'service_location_name_indexes/super-attempt'), index));
   await assertFails(setDoc(doc(supportDb, 'service_location_name_indexes/support-attempt'), index));
-  await assertFails(setDoc(doc(locationDb, 'service_location_name_indexes/location-attempt'), index));
+  await assertFails(setDoc(doc(locationDb, 'service_location_name_indexes/admin-attempt'), index));
   await assertFails(setDoc(doc(inactiveDb, 'service_location_name_indexes/inactive-attempt'), index));
-  await assertFails(deleteDoc(doc(supportDb, 'service_location_name_indexes/area-example')));
+
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'service_location_name_indexes/existing-index'), {
+      collectionPath: 'service_areas',
+      documentId: 'area-1',
+      name: 'example-area',
+      parentIds: ['india', 'up', 'city-1'],
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+  });
+
+  await assertFails(updateDoc(doc(superDb, 'service_location_name_indexes/existing-index'), {
+    name: 'tampered-name',
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(deleteDoc(doc(superDb, 'service_location_name_indexes/existing-index')));
+  await assertFails(deleteDoc(doc(supportDb, 'service_location_name_indexes/existing-index')));
 });
 
-test('import audit creation requires active super_admin and matching actor', async () => {
+test('import audit validates bounded strings, actor, and immutable create-only records', async () => {
   const superDb = env.authenticatedContext('super-active').firestore();
   const supportDb = env.authenticatedContext('support-active').firestore();
   const record = {
@@ -363,7 +409,51 @@ test('import audit creation requires active super_admin and matching actor', asy
   await assertFails(setDoc(doc(superDb, 'service_location_imports/import-spoofed'), {
     ...record, importedBy: 'support-active',
   }));
+  await assertFails(setDoc(doc(superDb, 'service_location_imports/empty-source'), {
+    ...record, source: '',
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_imports/blank-source'), {
+    ...record, source: '   ',
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_imports/blank-filename'), {
+    ...record, fileName: '   ',
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_imports/blank-status'), {
+    ...record, status: '   ',
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_imports/blank-verification'), {
+    ...record, verificationStatus: '   ',
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_imports/long-source'), {
+    ...record, source: 'x'.repeat(81),
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_imports/long-filename'), {
+    ...record, fileName: 'x'.repeat(181),
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_imports/empty-status'), {
+    ...record, status: '',
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_imports/long-verification'), {
+    ...record, verificationStatus: 'x'.repeat(33),
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_imports/missing-verification'), {
+    source: 'LGD', fileName: 'missing.csv', status: 'pending',
+    importedBy: 'super-active', importedAt: serverTimestamp(),
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_imports/unexpected-field'), {
+    ...record, internalNote: 'not allow-listed',
+  }));
+  await assertFails(setDoc(doc(superDb, 'service_location_imports/long-status'), {
+    ...record, status: 'x'.repeat(33),
+  }));
   await assertFails(updateDoc(doc(superDb, 'service_location_imports/import-ok'), {
+    status: 'completed',
+  }));
+  // Audit records are append-only: even the privileged role cannot delete
+  // a record or replace an existing document ID with a new payload.
+  await assertFails(deleteDoc(doc(superDb, 'service_location_imports/import-ok')));
+  await assertFails(setDoc(doc(superDb, 'service_location_imports/import-ok'), {
+    ...record,
     status: 'completed',
   }));
 });
@@ -462,63 +552,22 @@ test('clients cannot create, update, or delete service location activation audit
 
 // Direct client transactions must not be able to verify a boundary or bind it
 // to a City. The trusted callable integration suite covers the allowed server path.
-test('client transaction cannot verify boundary and bind inactive City', async () => {
+test('client transaction cannot create or bind a service location directly', async () => {
   const db = env.authenticatedContext('super-active').firestore();
-  const cityRef = doc(db, 'service_cities/city-transaction');
-  const boundaryRef = doc(db, 'service_location_boundaries/city-transaction-boundary');
-
-  await assertSucceeds(setDoc(cityRef, {
+  await assertFails(setDoc(doc(db, 'service_cities/city-transaction'), {
     countryId: 'india', stateId: 'up', name: 'Transaction City',
     isServiceActive: false,
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   }));
-  await assertSucceeds(setDoc(boundaryRef, {
-    locationId: 'city-transaction',
-    locationType: 'city',
-    points: [
-      { lat: 28.5, lng: 77.3 },
-      { lat: 28.6, lng: 77.3 },
-      { lat: 28.6, lng: 77.4 },
-    ],
-    sourceType: 'governmentGis',
-    sourceName: 'Test official source',
-    sourceReference: 'CITY-TRANSACTION-REF',
-    verificationStatus: 'pending',
-    verifiedBy: null,
-    verifiedAt: null,
-    verificationNotes: null,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+  await assertFails(setDoc(doc(db, 'service_areas/area-transaction'), {
+    countryId: 'india', stateId: 'up', cityId: 'city-parent', name: 'Transaction Area',
+    isServiceActive: false,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   }));
-
-  const { runTransaction } = await import('firebase/firestore');
-  await assertFails(runTransaction(db, async (transaction) => {
-    const boundarySnapshot = await transaction.get(boundaryRef);
-    const citySnapshot = await transaction.get(cityRef);
-    assert.equal(boundarySnapshot.data().verificationStatus, 'pending');
-    assert.equal(citySnapshot.data().isServiceActive, false);
-    transaction.update(boundaryRef, {
-      verificationStatus: 'verified',
-      verifiedBy: 'super-active',
-      verifiedAt: serverTimestamp(),
-      verificationNotes: 'Direct client transaction attempt',
-      updatedAt: serverTimestamp(),
-    });
-    transaction.update(cityRef, {
-      verifiedBoundaryId: 'city-transaction-boundary',
-      updatedAt: serverTimestamp(),
-    });
+  await assertFails(updateDoc(doc(db, 'service_cities/city-parent'), {
+    name: 'Tampered Parent City', updatedAt: serverTimestamp(),
   }));
-
-  const [savedBoundary, savedCity] = await Promise.all([
-    getDoc(boundaryRef),
-    getDoc(cityRef),
-  ]);
-  assert.equal(savedBoundary.data().verificationStatus, 'pending');
-  assert.equal(savedCity.data().verifiedBoundaryId, undefined);
-  assert.equal(savedCity.data().isServiceActive, false);
 });
-
 
 test('clients cannot directly deactivate Country, State, City, or Area', async () => {
   await env.withSecurityRulesDisabled(async (context) => {
@@ -623,4 +672,112 @@ test('clients cannot create an already-active Country or State', async () => {
     countryId: 'india', name: 'Active State', isActive: true,
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   }));
+});
+
+
+test('active admin role cannot read service hierarchy or write import audit; super_admin can', async () => {
+  const adminDb = env.authenticatedContext('location-active').firestore();
+  const superDb = env.authenticatedContext('super-active').firestore();
+
+  // Existing client UI and CSV preflight read these collections directly.
+  // Current policy deliberately limits direct hierarchy reads to super_admin.
+  await assertFails(getDoc(doc(adminDb, 'service_countries/india')));
+  await assertFails(getDocs(collection(adminDb, 'service_states')));
+  await assertSucceeds(getDoc(doc(superDb, 'service_countries/india')));
+  await assertSucceeds(getDocs(collection(superDb, 'service_states')));
+
+  const adminAudit = {
+    source: 'csv', fileName: 'areas.csv', status: 'failed',
+    importedBy: 'location-active', importedAt: serverTimestamp(),
+    verificationStatus: 'pending',
+  };
+  await assertFails(setDoc(doc(adminDb, 'service_location_imports/admin-failed'), adminAudit));
+  await assertSucceeds(getDocs(collection(superDb, 'service_location_imports')));
+  await assertSucceeds(setDoc(doc(superDb, 'service_location_imports/super-failed'), {
+    ...adminAudit,
+    importedBy: 'super-active',
+  }));
+});
+
+test('inactive super_admin cannot read hierarchy or create import audit records', async () => {
+  const db = env.authenticatedContext('super-inactive').firestore();
+
+  // Role alone is insufficient: the actor must also be active.
+  await assertFails(getDoc(doc(db, 'service_countries/india')));
+  await assertFails(getDocs(collection(db, 'service_states')));
+  await assertFails(getDocs(collection(db, 'service_location_imports')));
+  await assertFails(setDoc(doc(db, 'service_location_imports/inactive-attempt'), {
+    source: 'csv',
+    fileName: 'areas.csv',
+    status: 'failed',
+    importedBy: 'super-inactive',
+    importedAt: serverTimestamp(),
+    verificationStatus: 'pending',
+  }));
+});
+
+test('service District reads are super_admin-only and direct client writes are denied', async () => {
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'service_districts/gbn'), {
+      countryId: 'india',
+      stateId: 'up',
+      name: 'Gautam Buddha Nagar',
+      isServiceActive: false,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+  });
+
+  const adminDb = env.authenticatedContext('super-active').firestore();
+  await assertSucceeds(getDoc(doc(adminDb, 'service_districts/gbn')));
+  await assertSucceeds(getDocs(collection(adminDb, 'service_districts')));
+
+  const supportDb = env.authenticatedContext('support-active').firestore();
+  await assertFails(getDoc(doc(supportDb, 'service_districts/gbn')));
+  await assertFails(getDocs(collection(supportDb, 'service_districts')));
+
+  const unauthenticatedDb = env.unauthenticatedContext().firestore();
+  await assertFails(getDoc(doc(unauthenticatedDb, 'service_districts/gbn')));
+  await assertFails(getDocs(collection(unauthenticatedDb, 'service_districts')));
+
+  await assertFails(setDoc(doc(adminDb, 'service_districts/client-created'), {
+    countryId: 'india',
+    stateId: 'up',
+    name: 'Client Created District',
+    isServiceActive: false,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(adminDb, 'service_districts/gbn'), {
+    name: 'Client Modified District',
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(deleteDoc(doc(adminDb, 'service_districts/gbn')));
+});
+
+
+test('trusted service location import run state is inaccessible to direct client reads and writes', async () => {
+  const db = env.authenticatedContext('super-active').firestore();
+  const runRef = doc(db, 'service_location_import_runs/direct-client-run');
+  const runData = {
+    runId: 'direct-client-run',
+    countryId: 'IN',
+    fileName: 'states.csv',
+    inputFingerprint: `sha256:${'a'.repeat(64)}`,
+    importedBy: 'super-active',
+    status: 'started',
+    schemaVersion: 1,
+    plannedRecords: 0,
+    createdRecords: 0,
+    reusedRecords: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+  await assertFails(setDoc(runRef, runData));
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'service_location_import_runs/server-created'), runData);
+  });
+  await assertFails(getDoc(doc(db, 'service_location_import_runs/server-created')));
+  await assertFails(updateDoc(doc(db, 'service_location_import_runs/server-created'), { status: 'completed' }));
+  await assertFails(deleteDoc(doc(db, 'service_location_import_runs/server-created')));
 });

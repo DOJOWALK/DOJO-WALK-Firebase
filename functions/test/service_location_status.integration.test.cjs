@@ -9,7 +9,7 @@ const { getFirestore } = require("firebase-admin/firestore");
 const { setServiceLocationStatus } = require("../lib/index");
 const db = getFirestore();
 const suffix = randomUUID().replace(/-/g, "").slice(0, 12);
-const ids = Object.fromEntries(["admin","ordinary","country","state","city","area","locality","inactiveArea","pendingLocality"]
+const ids = Object.fromEntries(["admin","ordinary","inactiveAdmin","country","state","city","area","locality","inactiveArea","pendingLocality","districtState","district"]
   .map((key) => [key, `status-${key}-${suffix}`]));
 
 async function invoke(uid, locationType, locationId, isActive) {
@@ -27,9 +27,9 @@ async function expectCode(promise, code) {
 
 test("status callable enforces admin access and active-child guards", async (t) => {
   const paths = [
-    `admin_users/${ids.admin}`, `admin_users/${ids.ordinary}`,
-    `service_countries/${ids.country}`, `service_states/${ids.state}`,
-    `service_cities/${ids.city}`, `service_areas/${ids.area}`,
+    `admin_users/${ids.admin}`, `admin_users/${ids.ordinary}`, `admin_users/${ids.inactiveAdmin}`,
+    `service_countries/${ids.country}`, `service_states/${ids.state}`, `service_states/${ids.districtState}`,
+    `service_districts/${ids.district}`, `service_cities/${ids.city}`, `service_areas/${ids.area}`,
     `service_areas/${ids.inactiveArea}`, `service_localities/${ids.locality}`, `service_localities/${ids.pendingLocality}`,
   ];
   t.after(async () => {
@@ -41,8 +41,11 @@ test("status callable enforces admin access and active-child guards", async (t) 
   await Promise.all([
     db.doc(`admin_users/${ids.admin}`).set({ isActive: true, role: "super_admin" }),
     db.doc(`admin_users/${ids.ordinary}`).set({ isActive: true, role: "customer" }),
+    db.doc(`admin_users/${ids.inactiveAdmin}`).set({ isActive: false, role: "super_admin" }),
     db.doc(`service_countries/${ids.country}`).set({ isActive: true }),
     db.doc(`service_states/${ids.state}`).set({ countryId: ids.country, isActive: true }),
+    db.doc(`service_states/${ids.districtState}`).set({ countryId: ids.country, isActive: true }),
+    db.doc(`service_districts/${ids.district}`).set({ countryId: ids.country, stateId: ids.districtState, isServiceActive: true }),
     db.doc(`service_cities/${ids.city}`).set({ countryId: ids.country, stateId: ids.state, isServiceActive: true }),
     db.doc(`service_areas/${ids.area}`).set({ countryId: ids.country, stateId: ids.state, cityId: ids.city, isServiceActive: true }),
     db.doc(`service_areas/${ids.inactiveArea}`).set({ countryId: ids.country, stateId: ids.state, cityId: ids.city, isServiceActive: false }),
@@ -53,6 +56,7 @@ test("status callable enforces admin access and active-child guards", async (t) 
   await t.test("rejects unauthenticated and non-admin callers", async () => {
     await expectCode(invoke(undefined, "area", ids.area, false), "unauthenticated");
     await expectCode(invoke(ids.ordinary, "area", ids.area, false), "permission-denied");
+    await expectCode(invoke(ids.inactiveAdmin, "area", ids.area, false), "permission-denied");
   });
   await t.test("Country cannot be deactivated while an active State exists", async () => {
     await expectCode(invoke(ids.admin, "country", ids.country, false), "failed-precondition");
@@ -61,6 +65,10 @@ test("status callable enforces admin access and active-child guards", async (t) 
   await t.test("State cannot be deactivated while an active City exists", async () => {
     await expectCode(invoke(ids.admin, "state", ids.state, false), "failed-precondition");
     assert.equal((await db.doc(`service_states/${ids.state}`).get()).get("isActive"), true);
+  });
+  await t.test("State cannot be deactivated while an active District exists", async () => {
+    await expectCode(invoke(ids.admin, "state", ids.districtState, false), "failed-precondition");
+    assert.equal((await db.doc(`service_states/${ids.districtState}`).get()).get("isActive"), true);
   });
   await t.test("City cannot be deactivated while an active Area exists", async () => {
     await expectCode(invoke(ids.admin, "city", ids.city, false), "failed-precondition");
