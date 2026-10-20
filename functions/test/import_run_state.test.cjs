@@ -350,7 +350,7 @@ test("recordPlan rejects more than 300 nodes without persisting a partial plan",
   );
   const markerSnapshot = await db.doc(`service_location_import_runs/${runId}`).get();
   assert.equal(markerSnapshot.get("planHash"), undefined);
-  assert.equal(markerSnapshot.get("plannedRecords"), undefined);
+  assert.equal(markerSnapshot.get("plannedRecords"), 0, "begin marker has no recorded plan yet");
   assert.equal((await db.collection(`service_location_import_runs/${runId}/planned_nodes`).get()).size, 0);
 });
 
