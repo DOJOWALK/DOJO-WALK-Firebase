@@ -1118,12 +1118,6 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
         continue;
       }
       const expectedFields: Record<string, unknown> = { countryId };
-      // Newly created imports must remain inactive until an administrator
-      // separately verifies boundaries and explicitly activates service.
-      // Reused records preserve their existing activation state.
-      if (node.alreadyExists !== true) {
-        expectedFields[node.type === "state" ? "isActive" : "isServiceActive"] = false;
-      }
       if (node.type === "state") {
         if (node.parentId !== countryId) {
           mismatchIds.push(String(node.id));
@@ -1161,7 +1155,12 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
       const fieldsMatch = Object.entries(expectedFields).every(
         ([field, expected]) => actual.get(field) === expected,
       );
-      if (actualName !== node.name || !fieldsMatch) {
+      // Status is owned by the trusted activation workflow, not by the
+      // hierarchy save callable. An absent status field is therefore the
+      // normal inactive state; only an explicitly active new record is unsafe.
+      const unexpectedlyActive = node.alreadyExists !== true &&
+        actual.get(node.type === "state" ? "isActive" : "isServiceActive") === true;
+      if (actualName !== node.name || !fieldsMatch || unexpectedlyActive) {
         mismatchIds.push(String(node.id));
       } else {
         matching++;
