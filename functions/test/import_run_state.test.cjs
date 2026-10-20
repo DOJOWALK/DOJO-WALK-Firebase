@@ -215,14 +215,18 @@ test("reconcilePlan verifies the stored plan and hierarchy without writing", asy
   }));
   const stateRef = db.doc("service_states/state_reconcile");
   const districtRef = db.doc("service_districts/district_reconcile");
+  const cityRef = db.doc("service_cities/city_reconcile");
+  const areaRef = db.doc("service_areas/area_reconcile");
   await stateRef.set({ name: "Uttar Pradesh", countryId: "IN", isActive: false });
   await districtRef.set({ name: "Gautam Buddha Nagar", countryId: "IN", stateId: "state_reconcile", isActive: false });
+  await cityRef.set({ name: "Greater Noida", countryId: "IN", stateId: "state_reconcile", districtId: "district_reconcile", isServiceActive: false });
+  await areaRef.set({ name: "Gaur City", countryId: "IN", stateId: "state_reconcile", cityId: "city_reconcile", isServiceActive: false });
   const before = (await db.doc(`service_location_import_runs/${runId}`).get()).data();
   const result = await manageServiceLocationImportRun.run(request(uid, {
     action: "reconcilePlan", runId, inputFingerprint: fingerprint,
   }));
   assert.equal(result.status, "reconciled_match");
-  assert.equal(result.matchingRecords, 2);
+  assert.equal(result.matchingRecords, 4);
   assert.equal(result.readOnly, true);
   await stateRef.update({ isActive: true });
   const activatedUnexpectedly = await manageServiceLocationImportRun.run(request(uid, {
@@ -242,6 +246,8 @@ test("reconcilePlan verifies the stored plan and hierarchy without writing", asy
   assert.deepEqual(mismatch.mismatchIds, ["district_reconcile"]);
   await stateRef.delete();
   await districtRef.delete();
+  await cityRef.delete();
+  await areaRef.delete();
 });
 
 test("reconcilePlan reports incomplete plan and rejects fingerprint mismatch", async () => {
