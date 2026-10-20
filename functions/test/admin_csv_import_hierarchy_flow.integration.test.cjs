@@ -378,3 +378,64 @@ test("reconcilePlan detects mutated hierarchy parent and name without changing t
   assert.equal((await stateRef.get()).get("name"), "Unexpected renamed State",
     "reconciliation must not overwrite a mutated hierarchy name");
 });
+
+
+test("finalize recovers a missing audit summary without replaying hierarchy writes", async (t) => {
+  const uid = `audit-recovery-${randomUUID()}`;
+  const suffix = randomUUID().replace(/-/g, "");
+  const countryId = `country_${suffix}`;
+  const stateId = `state_${suffix}`;
+  const runId = `audit_recovery_${suffix}`;
+  const fingerprint = `sha256:${"b".repeat(64)}`;
+  const adminRef = db.doc(`admin_users/${uid}`);
+  const runRef = db.doc(`service_location_import_runs/${runId}`);
+  const planRef = runRef.collection("planned_nodes").doc(stateId);
+  const stateRef = db.doc(`service_states/${stateId}`);
+  const auditRef = db.doc(`service_location_imports/${runId}`);
+
+  t.after(async () => {
+    await Promise.all([
+      adminRef.delete().catch(() => {}),
+      runRef.delete().catch(() => {}),
+      planRef.delete().catch(() => {}),
+      stateRef.delete().catch(() => {}),
+      auditRef.delete().catch(() => {}),
+    ]);
+  });
+
+  await adminRef.set({ role: "super_admin", isActive: true });
+  const plan = [{
+    id: stateId, type: "state", name: `Recovery State ${suffix}`,
+    parentId: countryId, alreadyExists: false, sourceLine: 2,
+  }];
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "begin", runId, inputFingerprint: fingerprint,
+    countryId, fileName: "audit-recovery.csv",
+  }));
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "recordPlan", runId, inputFingerprint: fingerprint, nodes: plan,
+  }));
+  await stateRef.set({ countryId, name: plan[0].name, isActive: false });
+
+  const first = await manageServiceLocationImportRun.run(request(uid, {
+    action: "finalize", runId, inputFingerprint: fingerprint,
+    status: "completed", plannedRecords: 1, createdRecords: 1, reusedRecords: 0,
+  }));
+  assert.equal(first.auditWritten, true);
+  assert.equal((await runRef.get()).get("status"), "completed");
+  await auditRef.delete();
+
+  const retry = await manageServiceLocationImportRun.run(request(uid, {
+    action: "finalize", runId, inputFingerprint: fingerprint,
+    status: "completed", plannedRecords: 1, createdRecords: 1, reusedRecords: 0,
+  }));
+  assert.equal(retry.alreadyFinalized, true);
+  assert.equal(retry.auditRecovered, true);
+  assert.equal((await runRef.get()).get("status"), "completed");
+  const recoveredAudit = await auditRef.get();
+  assert.equal(recoveredAudit.exists, true);
+  assert.equal(recoveredAudit.get("status"), "completed");
+  assert.equal(recoveredAudit.get("inputFingerprint"), fingerprint);
+  assert.equal((await stateRef.get()).get("name"), plan[0].name,
+    "audit recovery must not replay or mutate hierarchy writes");
+});
