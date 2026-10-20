@@ -1354,6 +1354,9 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
           importedAt: FieldValue.serverTimestamp(),
           verificationStatus: "pending",
           inputFingerprint,
+          plannedRecords: run.get("plannedRecords"),
+          createdRecords: run.get("createdRecords"),
+          reusedRecords: run.get("reusedRecords"),
         });
         return { ok: true, runId, status, alreadyFinalized: true, auditRecovered: true };
       }
@@ -1380,6 +1383,9 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
         importedAt: now,
         verificationStatus: "pending",
         inputFingerprint,
+        plannedRecords: data.plannedRecords,
+        createdRecords: data.createdRecords,
+        reusedRecords: data.reusedRecords,
       });
       return { ok: true, runId, status, auditWritten: true };
     });
