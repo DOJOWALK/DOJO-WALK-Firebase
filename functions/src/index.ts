@@ -1225,16 +1225,106 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
       if (run.get("importedBy") !== uid || run.get("inputFingerprint") !== inputFingerprint) {
         throw new HttpsError("failed-precondition", "Import run owner or fingerprint does not match.");
       }
-      // A completed run must be backed by the immutable server-recorded plan.
-      if (status === "completed" &&
-          (typeof run.get("planHash") !== "string" ||
-           !Number.isSafeInteger(run.get("plannedRecords")) ||
-           run.get("plannedRecords") < 1 ||
-           run.get("plannedRecords") !== data.plannedRecords)) {
-        throw new HttpsError(
-          "failed-precondition",
-          "A completed import must match its immutable recorded plan. Reconcile the run before finalizing.",
-        );
+      // A completed run must match both the immutable server plan and the
+      // actual hierarchy documents. Keep these reads inside the same Firestore
+      // transaction as terminal-state/audit writes so a location cannot change
+      // between verification and finalization.
+      if (status === "completed") {
+        const expectedHash = run.get("planHash");
+        const recordedCount = run.get("plannedRecords");
+        if (typeof expectedHash !== "string" ||
+            !Number.isSafeInteger(recordedCount) ||
+            recordedCount < 1 || recordedCount > 300 ||
+            recordedCount !== data.plannedRecords) {
+          throw new HttpsError(
+            "failed-precondition",
+            "A completed import must match its immutable recorded plan. Reconcile the run before finalizing.",
+          );
+        }
+
+        const planSnapshot = await tx.get(runRef.collection("planned_nodes"));
+        if (planSnapshot.size !== recordedCount) {
+          throw new HttpsError(
+            "failed-precondition",
+            "The import plan is incomplete. Reconcile the run before finalizing.",
+          );
+        }
+        const planned = planSnapshot.docs
+          .map((doc) => ({ id: doc.id, ...doc.data() } as Record<string, any> & { id: string }))
+          .sort((a, b) => Number(a.ordinal) - Number(b.ordinal));
+        if (planned.some((node, index) => !Number.isSafeInteger(node.ordinal) || node.ordinal !== index)) {
+          throw new HttpsError("failed-precondition", "The import plan order cannot be verified.");
+        }
+        const canonical = planned.map((node) => ({
+          id: node.id, type: node.type, name: node.name, parentId: node.parentId,
+          alreadyExists: node.alreadyExists, sourceLine: node.sourceLine,
+        }));
+        const actualHash = createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
+        if (actualHash !== expectedHash || planned.some((node) => node.planHash !== expectedHash)) {
+          throw new HttpsError("failed-precondition", "The immutable import plan hash does not match.");
+        }
+
+        const collectionByType: Record<string, string> = {
+          state: "service_states", district: "service_districts",
+          city: "service_cities", area: "service_areas",
+        };
+        const plannedById = new Map(planned.map((node) => [node.id, node]));
+        const countryId = run.get("countryId");
+        const refs = planned.map((node) => {
+          const collectionName = collectionByType[String(node.type)];
+          if (!collectionName || typeof node.name !== "string" || !node.name.trim() ||
+              typeof node.parentId !== "string" || !node.parentId) {
+            throw new HttpsError("failed-precondition", "The import plan contains an invalid location node.");
+          }
+          return db.doc(`${collectionName}/${node.id}`);
+        });
+        const actualSnapshots = await Promise.all(refs.map((ref) => tx.get(ref)));
+        for (let index = 0; index < planned.length; index++) {
+          const node = planned[index];
+          const actual = actualSnapshots[index];
+          if (!actual.exists) {
+            throw new HttpsError("failed-precondition", `Planned location is missing: ${node.id}. Reconcile the run.`);
+          }
+          const expectedFields: Record<string, unknown> = { countryId };
+          if (node.type === "state") {
+            if (node.parentId !== countryId) {
+              throw new HttpsError("failed-precondition", `Invalid State parent in plan: ${node.id}.`);
+            }
+          } else if (node.type === "district") {
+            const parent = plannedById.get(node.parentId);
+            if (!parent || parent.type !== "state") {
+              throw new HttpsError("failed-precondition", `Invalid District parent in plan: ${node.id}.`);
+            }
+            expectedFields.stateId = node.parentId;
+          } else if (node.type === "city") {
+            const parent = plannedById.get(node.parentId);
+            if (!parent || parent.type !== "district") {
+              throw new HttpsError("failed-precondition", `Invalid City parent in plan: ${node.id}.`);
+            }
+            expectedFields.districtId = node.parentId;
+            expectedFields.stateId = parent.parentId;
+          } else if (node.type === "area") {
+            const parent = plannedById.get(node.parentId);
+            const district = parent ? plannedById.get(parent.parentId) : undefined;
+            if (!parent || parent.type !== "city" || !district || district.type !== "district") {
+              throw new HttpsError("failed-precondition", `Invalid Area parent in plan: ${node.id}.`);
+            }
+            expectedFields.cityId = node.parentId;
+            expectedFields.stateId = district.parentId;
+          }
+          const fieldsMatch = Object.entries(expectedFields).every(
+            ([field, expected]) => actual.get(field) === expected,
+          );
+          const actualName = typeof actual.get("name") === "string" ? actual.get("name").trim() : "";
+          const activeField = node.type === "state" ? "isActive" : "isServiceActive";
+          const unexpectedlyActive = node.alreadyExists !== true && actual.get(activeField) === true;
+          if (actualName !== node.name || !fieldsMatch || unexpectedlyActive) {
+            throw new HttpsError(
+              "failed-precondition",
+              `Planned location does not match the recorded import plan: ${node.id}. Reconcile the run.`,
+            );
+          }
+        }
       }
       const currentStatus = run.get("status");
       if (currentStatus !== "started") {
