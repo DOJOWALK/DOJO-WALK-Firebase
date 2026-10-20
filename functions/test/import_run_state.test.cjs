@@ -927,3 +927,66 @@ test("recordPlan batch failure leaves an immutable marker and requires read-only
     "a partially recorded immutable plan must never be replayed",
   );
 });
+
+test("reconcilePlan reports committed location after an ambiguous client response without replaying writes", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"b".repeat(64)}`;
+
+  // Begin and persist the immutable plan before any hierarchy write.
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "recordPlan",
+    runId,
+    inputFingerprint: fingerprint,
+    nodes: [{
+      id: "state_ambiguous_response",
+      type: "state",
+      name: "Rajasthan",
+      parentId: "IN",
+      alreadyExists: false,
+      sourceLine: 2,
+    }],
+  }));
+
+  // Model the server-side write committing even though the caller does not
+  // receive a successful response (e.g. a client-side deadline/connection loss).
+  const locationRef = db.doc("service_states/state_ambiguous_response");
+  locationDocs.add("service_states/state_ambiguous_response");
+  await locationRef.create({
+    name: "Rajasthan",
+    countryId: "IN",
+    isActive: false,
+  });
+
+  // Recovery is read-only: it must discover the committed document, not write it again.
+  const reconciled = await manageServiceLocationImportRun.run(request(uid, {
+    action: "reconcilePlan",
+    runId,
+    inputFingerprint: fingerprint,
+  }));
+  assert.equal(reconciled.status, "reconciled_match");
+  assert.equal(reconciled.readOnly, true);
+  assert.equal(reconciled.matchingRecords, 1);
+  assert.equal((await locationRef.get()).get("name"), "Rajasthan");
+
+  // The immutable plan cannot be replayed as a new plan after an ambiguous result.
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(uid, {
+      action: "recordPlan",
+      runId,
+      inputFingerprint: fingerprint,
+      nodes: [{
+        id: "state_ambiguous_response",
+        type: "state",
+        name: "Rajasthan",
+        parentId: "IN",
+        alreadyExists: false,
+        sourceLine: 2,
+      }],
+    })),
+    (error) => error && error.code === "already-exists",
+  );
+});
+
