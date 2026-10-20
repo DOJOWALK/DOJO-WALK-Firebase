@@ -599,3 +599,44 @@ test("reconcilePlan rejects a different active super_admin who does not own the 
     (error) => error && error.code === "failed-precondition",
   );
 });
+
+test("recordPlan rejects invalid hierarchy parent references before recording any plan", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"7".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+
+  const invalidPlans = [
+    [
+      { id: "state_parent_1", type: "state", name: "State", parentId: "WRONG_COUNTRY", alreadyExists: false, sourceLine: 2 },
+    ],
+    [
+      { id: "state_parent_2", type: "state", name: "State", parentId: "IN", alreadyExists: false, sourceLine: 2 },
+      { id: "district_missing_parent", type: "district", name: "District", parentId: "not_in_plan", alreadyExists: false, sourceLine: 3 },
+    ],
+    [
+      { id: "state_parent_3", type: "state", name: "State", parentId: "IN", alreadyExists: false, sourceLine: 2 },
+      { id: "district_wrong_parent_type", type: "district", name: "District", parentId: "IN", alreadyExists: false, sourceLine: 3 },
+    ],
+    [
+      { id: "district_before_state", type: "district", name: "District", parentId: "state_after_child", alreadyExists: false, sourceLine: 2 },
+      { id: "state_after_child", type: "state", name: "State", parentId: "IN", alreadyExists: false, sourceLine: 3 },
+    ],
+  ];
+
+  for (const nodes of invalidPlans) {
+    await assert.rejects(
+      () => manageServiceLocationImportRun.run(request(uid, {
+        action: "recordPlan", runId, inputFingerprint: fingerprint, nodes,
+      })),
+      (error) => error && error.code === "invalid-argument",
+    );
+  }
+
+  const marker = await db.doc(`service_location_import_runs/${runId}`).get();
+  assert.equal(marker.get("planHash"), undefined);
+  assert.equal(marker.get("plannedRecords"), 0);
+  const savedNodes = await db.collection(`service_location_import_runs/${runId}/planned_nodes`).get();
+  assert.equal(savedNodes.size, 0);
+});
