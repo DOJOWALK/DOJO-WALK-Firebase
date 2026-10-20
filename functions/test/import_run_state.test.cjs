@@ -425,6 +425,27 @@ test("reconcilePlan detects changed location names across the full hierarchy", a
   ]) await db.doc(path).delete().catch(() => {});
 });
 
+test("recordPlan rejects descendants placed before their parent", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"9".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(uid, {
+      action: "recordPlan", runId, inputFingerprint: fingerprint,
+      nodes: [
+        { id: "district_before_state", type: "district", name: "Jaipur", parentId: "state_after", alreadyExists: false, sourceLine: 2 },
+        { id: "state_after", type: "state", name: "Rajasthan", parentId: "IN", alreadyExists: false, sourceLine: 3 },
+      ],
+    })),
+    (error) => error && error.code === "invalid-argument",
+  );
+  const marker = await db.doc(`service_location_import_runs/${runId}`).get();
+  assert.equal(marker.get("planHash"), undefined);
+  assert.equal((await db.collection(`service_location_import_runs/${runId}/planned_nodes`).get()).size, 0);
+});
+
 test.after(async () => {
   for (const runId of runs) {
     await db.doc(`service_location_import_runs/${runId}`).delete().catch(() => {});
