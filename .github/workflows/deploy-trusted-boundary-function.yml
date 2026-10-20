@@ -62,7 +62,7 @@ jobs:
           echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/firebase-service-account.json" >> "$GITHUB_ENV"
 
       - name: Deploy trusted location callables only
-        run: npx --yes firebase-tools deploy --only functions:reviewServiceLocationBoundary,functions:activateServiceLocation,functions:setServiceLocationStatus --project dojo-platform-b68a3 --non-interactive
+        run: npx --yes firebase-tools deploy --only functions:reviewServiceLocationBoundary,functions:activateServiceLocation,functions:setServiceLocationStatus --project dojo-platform-b68a3 --non-interactive --force
 
       - name: Post-deploy reminder
         run: |
