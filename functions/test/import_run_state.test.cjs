@@ -198,6 +198,33 @@ test("recordPlan stores a bounded immutable canonical plan before location write
   );
 });
 
+test("recordPlan rejects plans above the 300-node safety limit without persisting a plan", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"6".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+  const nodes = Array.from({ length: 301 }, (_, index) => ({
+    id: `state_limit_${index}`,
+    type: "state",
+    name: `State ${index}`,
+    parentId: "IN",
+    alreadyExists: false,
+    sourceLine: index + 2,
+  }));
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(uid, {
+      action: "recordPlan", runId, inputFingerprint: fingerprint, nodes,
+    })),
+    (error) => error && error.code === "invalid-argument",
+  );
+  const marker = await db.doc(`service_location_import_runs/${runId}`).get();
+  assert.equal(marker.get("planHash"), undefined);
+  assert.equal(marker.get("plannedRecords"), undefined);
+  const savedNodes = await db.collection(`service_location_import_runs/${runId}/planned_nodes`).get();
+  assert.equal(savedNodes.size, 0);
+});
+
 test("reconcilePlan verifies the stored plan and hierarchy without writing", async () => {
   const uid = await createAdmin();
   const runId = `run-${randomUUID()}`;
