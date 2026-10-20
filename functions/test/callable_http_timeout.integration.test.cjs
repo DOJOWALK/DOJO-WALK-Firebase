@@ -37,13 +37,13 @@ test("real callable HTTP timeout after committed begin is recovered read-only wi
   let user;
   let proxy;
   let proxyUrl;
-  const actorRef = db.doc(`admin_users/${suffix}`);
+  let adminRef;
   const runRef = db.doc(`service_location_import_runs/${runId}`);
 
   t.after(async () => {
     if (proxy) await new Promise((resolve) => proxy.close(resolve));
     await runRef.delete().catch(() => {});
-    await actorRef.delete().catch(() => {});
+    if (adminRef) await adminRef.delete().catch(() => {});
     if (user) await deleteUser(user).catch(() => {});
     await deleteApp(app).catch(() => {});
   });
@@ -56,7 +56,7 @@ test("real callable HTTP timeout after committed begin is recovered read-only wi
   user = credential.user;
   const token = await user.getIdToken();
   await db.doc(`admin_users/${user.uid}`).set({ role: "super_admin", isActive: true });
-  const adminRef = db.doc(`admin_users/${user.uid}`);
+  adminRef = db.doc(`admin_users/${user.uid}`);
 
   // Proxy waits until the Functions Emulator has completed the request, then
   // deliberately drops the successful response as a deterministic client timeout.
@@ -133,6 +133,6 @@ test("real callable HTTP timeout after committed begin is recovered read-only wi
   assert.equal(afterReplay.id, runId);
   assert.equal(afterReplay.get("status"), "started");
   assert.equal(afterReplay.get("importedBy"), user.uid);
-  assert.equal((await db.collection("service_location_import_runs").where("runId", "==", runId).get()).size, 0,
-    "run identity is stored in the document ID; no duplicate query-field record should be created");
+  assert.equal((await db.collection("service_location_import_runs").where("importedBy", "==", user.uid).get()).size, 1,
+    "exactly one durable run marker should exist for this authenticated admin");
 });
