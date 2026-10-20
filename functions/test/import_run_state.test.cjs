@@ -227,7 +227,7 @@ test("recordPlan rejects plans above the 300-node safety limit without persistin
   );
   const marker = await db.doc(`service_location_import_runs/${runId}`).get();
   assert.equal(marker.get("planHash"), undefined);
-  assert.equal(marker.get("plannedRecords"), undefined);
+  assert.equal(marker.get("plannedRecords"), 0);
   const savedNodes = await db.collection(`service_location_import_runs/${runId}/planned_nodes`).get();
   assert.equal(savedNodes.size, 0);
 });
