@@ -315,3 +315,66 @@ test("finalize rejects a hierarchy parent mismatch and safely retries after succ
   assert.equal((await auditRef.get()).exists, true);
   assert.equal((await runRef.get()).get("status"), "completed");
 });
+
+
+test("reconcilePlan detects mutated hierarchy parent and name without changing the record", async (t) => {
+  const uid = `reconcile-mutation-${randomUUID()}`;
+  const suffix = randomUUID().replace(/-/g, "");
+  const countryId = `country_${suffix}`;
+  const wrongCountryId = `country_wrong_${suffix}`;
+  const stateId = `state_${suffix}`;
+  const runId = `reconcile_mutation_${suffix}`;
+  const fingerprint = `sha256:${"f".repeat(64)}`;
+  const runRef = db.doc(`service_location_import_runs/${runId}`);
+  const planRef = runRef.collection("planned_nodes").doc(stateId);
+  const stateRef = db.doc(`service_states/${stateId}`);
+  const adminRef = db.doc(`admin_users/${uid}`);
+
+  t.after(async () => {
+    await Promise.all([
+      runRef.delete().catch(() => {}),
+      planRef.delete().catch(() => {}),
+      stateRef.delete().catch(() => {}),
+      adminRef.delete().catch(() => {}),
+    ]);
+  });
+
+  await adminRef.set({ role: "super_admin", isActive: true });
+  const plan = [{
+    id: stateId, type: "state", name: `Mutation State ${suffix}`,
+    parentId: countryId, alreadyExists: false, sourceLine: 2,
+  }];
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "begin", runId, inputFingerprint: fingerprint,
+    countryId, fileName: "reconcile-mutation.csv",
+  }));
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "recordPlan", runId, inputFingerprint: fingerprint, nodes: plan,
+  }));
+
+  await stateRef.set({
+    countryId: wrongCountryId,
+    name: plan[0].name,
+    isActive: false,
+  });
+  const parentMismatch = await manageServiceLocationImportRun.run(request(uid, {
+    action: "reconcilePlan", runId, inputFingerprint: fingerprint,
+  }));
+  assert.equal(parentMismatch.ok, false);
+  assert.equal(parentMismatch.status, "reconciliation_mismatch");
+  assert.equal(parentMismatch.mismatchCount, 1);
+  assert.equal(parentMismatch.readOnly, true);
+  assert.equal((await stateRef.get()).get("countryId"), wrongCountryId,
+    "reconciliation must report but never repair a mutated parent");
+
+  await stateRef.update({ countryId, name: "Unexpected renamed State" });
+  const nameMismatch = await manageServiceLocationImportRun.run(request(uid, {
+    action: "reconcilePlan", runId, inputFingerprint: fingerprint,
+  }));
+  assert.equal(nameMismatch.ok, false);
+  assert.equal(nameMismatch.status, "reconciliation_mismatch");
+  assert.equal(nameMismatch.mismatchCount, 1);
+  assert.equal(nameMismatch.readOnly, true);
+  assert.equal((await stateRef.get()).get("name"), "Unexpected renamed State",
+    "reconciliation must not overwrite a mutated hierarchy name");
+});
