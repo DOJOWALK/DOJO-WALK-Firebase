@@ -1,36 +1,53 @@
-name: Deploy Firestore Rules
+name: Manual Deploy Firestore Rules
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "firestore.rules"
-      - "firebase.json"
-      - ".firebaserc"
-      - ".github/workflows/deploy-firestore-rules.yml"
-
   workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type DEPLOY_FIRESTORE_RULES to authorize deploying Firestore Rules"
+        required: true
+        type: string
+      target_project:
+        description: "Must match the intended Firebase project ID"
+        required: true
+        type: string
 
 permissions:
   contents: read
 
+concurrency:
+  group: firestore-rules-deploy
+  cancel-in-progress: false
+
 jobs:
   deploy:
-    name: Deploy Firestore Security Rules
+    name: Test and deploy Firestore Rules only
+    if: ${{ github.ref == 'refs/heads/main' && inputs.confirmation == 'DEPLOY_FIRESTORE_RULES' && inputs.target_project == 'dojo-platform-b68a3' }}
     runs-on: ubuntu-latest
-
+    environment: production
+    timeout-minutes: 25
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout main
+        uses: actions/checkout@v5
+        with:
+          ref: main
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "22"
 
-      - name: Install Firebase CLI
-        run: npm install --global firebase-tools
+      - name: Setup Java for Firestore Emulator
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install Rules test dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Run Firestore Rules Emulator tests
+        run: npx firebase emulators:exec --only firestore --project demo-dojo-rules-tests "npm test"
 
       - name: Authenticate Firebase
         env:
@@ -41,11 +58,14 @@ jobs:
             exit 1
           fi
 
-          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" \
-            > "$RUNNER_TEMP/firebase-service-account.json"
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/firebase-service-account.json" >> "$GITHUB_ENV"
 
-          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/firebase-service-account.json" \
-            >> "$GITHUB_ENV"
+      - name: Deploy Firestore Rules only
+        run: npx --yes firebase-tools deploy --only firestore:rules --project dojo-platform-b68a3 --non-interactive
 
-      - name: Deploy Firestore Rules
-        run: firebase deploy --only firestore:rules --project dojo-platform-b68a3 --non-interactive
+      - name: Post-deploy reminder
+        run: |
+          echo "Rules deployment command completed."
+          echo "Verify critical customer, walker, admin, and trusted-boundary flows after deployment."
+          echo "This workflow does not deploy Functions or activate/import locations."

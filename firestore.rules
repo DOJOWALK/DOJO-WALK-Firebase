@@ -987,6 +987,30 @@ service cloud.firestore {
         && data.name.size() <= 150;
     }
 
+    // Parent existence and linkage are enforced on every new hierarchy record.
+    // Inactive parents are allowed for draft setup; activation has stricter callable guards.
+    function hasCountry(countryId) {
+      return exists(/databases/$(database)/documents/service_countries/$(countryId));
+    }
+
+    function hasStateForCountry(stateId, countryId) {
+      return exists(/databases/$(database)/documents/service_states/$(stateId))
+        && get(/databases/$(database)/documents/service_states/$(stateId)).data.countryId == countryId;
+    }
+
+    function hasCityForParents(cityId, countryId, stateId) {
+      return exists(/databases/$(database)/documents/service_cities/$(cityId))
+        && get(/databases/$(database)/documents/service_cities/$(cityId)).data.countryId == countryId
+        && get(/databases/$(database)/documents/service_cities/$(cityId)).data.stateId == stateId;
+    }
+
+    function hasAreaForParents(areaId, countryId, stateId, cityId) {
+      return exists(/databases/$(database)/documents/service_areas/$(areaId))
+        && get(/databases/$(database)/documents/service_areas/$(areaId)).data.countryId == countryId
+        && get(/databases/$(database)/documents/service_areas/$(areaId)).data.stateId == stateId
+        && get(/databases/$(database)/documents/service_areas/$(areaId)).data.cityId == cityId;
+    }
+
     function validBoundaryLocation(data) {
       return data.locationId is string
         && data.locationId.size() > 0
@@ -1213,9 +1237,9 @@ service cloud.firestore {
 
       allow create: if validBoundaryCreate();
 
-      allow update: if validBoundaryDraftUpdate()
-        || validBoundaryVerification()
-        || validBoundaryRejection();
+      // Verification/rejection transitions are performed only by the trusted
+      // callable using the Admin SDK. Client writes may edit eligible drafts only.
+      allow update: if validBoundaryDraftUpdate();
 
       // Verified boundary records cannot be deleted.
       allow delete: if isAdmin()
@@ -1227,9 +1251,10 @@ service cloud.firestore {
     // =====================================================
 
     match /service_location_name_indexes/{indexId} {
+      // Name-index integrity is maintained atomically by the trusted callable
+      // using the Admin SDK. Client SDKs must never mutate these records.
       allow get, list: if isAdmin();
-
-      allow create, update, delete: if isAdmin();
+      allow create, update, delete: if false;
     }
 
     // =====================================================
@@ -1239,36 +1264,9 @@ service cloud.firestore {
     match /service_countries/{countryId} {
       allow get, list: if isAdmin();
 
-      allow create: if isAdmin()
-        && request.resource.data.keys().hasOnly([
-          'name',
-          'code',
-          'isActive',
-          'createdAt',
-          'updatedAt'
-        ])
-        && validLocationName(request.resource.data)
-        && request.resource.data.code is string
-        && request.resource.data.code.size() > 0
-        && request.resource.data.isActive is bool
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time;
+      allow create: if false;
 
-      allow update: if isAdmin()
-        && request.resource.data.diff(resource.data)
-          .affectedKeys()
-          .hasOnly([
-            'name',
-            'code',
-            'isActive',
-            'updatedAt'
-          ])
-        && validLocationName(request.resource.data)
-        && request.resource.data.code is string
-        && request.resource.data.code.size() > 0
-        && request.resource.data.isActive is bool
-        && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.updatedAt == request.time;
+      allow update: if false;
 
       allow delete: if false;
     }
@@ -1280,36 +1278,25 @@ service cloud.firestore {
     match /service_states/{stateId} {
       allow get, list: if isAdmin();
 
-      allow create: if isAdmin()
-        && request.resource.data.keys().hasOnly([
-          'countryId',
-          'name',
-          'isActive',
-          'createdAt',
-          'updatedAt'
-        ])
-        && request.resource.data.countryId is string
-        && request.resource.data.countryId.size() > 0
-        && validLocationName(request.resource.data)
-        && request.resource.data.isActive is bool
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time;
+      allow create: if false;
 
-      allow update: if isAdmin()
-        && request.resource.data.diff(resource.data)
-          .affectedKeys()
-          .hasOnly([
-            'countryId',
-            'name',
-            'isActive',
-            'updatedAt'
-          ])
-        && request.resource.data.countryId is string
-        && request.resource.data.countryId.size() > 0
-        && validLocationName(request.resource.data)
-        && request.resource.data.isActive is bool
-        && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.updatedAt == request.time;
+      allow update: if false;
+
+      allow delete: if false;
+    }
+
+    // =====================================================
+    // SERVICE DISTRICTS
+    // =====================================================
+
+    // District hierarchy records are read-only to Admin clients. All mutations
+    // must go through the trusted callable so name indexes remain consistent.
+    match /service_districts/{districtId} {
+      allow get, list: if isAdmin();
+
+      allow create: if false;
+
+      allow update: if false;
 
       allow delete: if false;
     }
@@ -1321,74 +1308,9 @@ service cloud.firestore {
     match /service_cities/{cityId} {
       allow get, list: if isAdmin();
 
-      allow create: if isAdmin()
-        && request.resource.data.keys().hasOnly([
-          'countryId',
-          'stateId',
-          'name',
-          'verifiedBoundaryId',
-          'isServiceActive',
-          'createdAt',
-          'updatedAt',
-          'state',
-          'country',
-          'boundary',
-          'boundarySource',
-          'boundaryVerified'
-        ])
-        && request.resource.data.countryId is string
-        && request.resource.data.countryId.size() > 0
-        && request.resource.data.stateId is string
-        && request.resource.data.stateId.size() > 0
-        && validLocationName(request.resource.data)
-        && request.resource.data.isServiceActive is bool
-        && validCityActivation(request.resource.data, cityId)
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time
-        && validOptionalString(request.resource.data, 'state')
-        && validOptionalString(request.resource.data, 'country')
-        && validOptionalString(request.resource.data, 'verifiedBoundaryId')
-        && validOptionalBool(request.resource.data, 'boundaryVerified')
-        && (
-          !('boundary' in request.resource.data)
-          || request.resource.data.boundary is list
-        )
-        && validOptionalString(request.resource.data, 'boundarySource');
+      allow create: if false;
 
-      allow update: if isAdmin()
-        && request.resource.data.diff(resource.data)
-          .affectedKeys()
-          .hasOnly([
-            'countryId',
-            'stateId',
-            'name',
-            'verifiedBoundaryId',
-            'isServiceActive',
-            'updatedAt',
-            'state',
-            'country',
-            'boundary',
-            'boundarySource',
-            'boundaryVerified'
-          ])
-        && request.resource.data.countryId is string
-        && request.resource.data.countryId.size() > 0
-        && request.resource.data.stateId is string
-        && request.resource.data.stateId.size() > 0
-        && validLocationName(request.resource.data)
-        && request.resource.data.isServiceActive is bool
-        && validCityActivation(request.resource.data, cityId)
-        && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.updatedAt == request.time
-        && validOptionalString(request.resource.data, 'state')
-        && validOptionalString(request.resource.data, 'country')
-        && validOptionalString(request.resource.data, 'verifiedBoundaryId')
-        && validOptionalBool(request.resource.data, 'boundaryVerified')
-        && (
-          !('boundary' in request.resource.data)
-          || request.resource.data.boundary is list
-        )
-        && validOptionalString(request.resource.data, 'boundarySource');
+      allow update: if false;
 
       allow delete: if false;
     }
@@ -1400,72 +1322,9 @@ service cloud.firestore {
     match /service_areas/{areaId} {
       allow get, list: if isAdmin();
 
-      allow create: if isAdmin()
-        && request.resource.data.keys().hasOnly([
-          'countryId',
-          'stateId',
-          'cityId',
-          'name',
-          'verifiedBoundaryId',
-          'isServiceActive',
-          'createdAt',
-          'updatedAt',
-          'boundary',
-          'boundarySource',
-          'boundaryVerified'
-        ])
-        && request.resource.data.countryId is string
-        && request.resource.data.countryId.size() > 0
-        && request.resource.data.stateId is string
-        && request.resource.data.stateId.size() > 0
-        && request.resource.data.cityId is string
-        && request.resource.data.cityId.size() > 0
-        && validLocationName(request.resource.data)
-        && request.resource.data.isServiceActive is bool
-        && validAreaActivation(request.resource.data, areaId)
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time
-        && validOptionalString(request.resource.data, 'verifiedBoundaryId')
-        && validOptionalBool(request.resource.data, 'boundaryVerified')
-        && (
-          !('boundary' in request.resource.data)
-          || request.resource.data.boundary is list
-        )
-        && validOptionalString(request.resource.data, 'boundarySource');
+      allow create: if false;
 
-      allow update: if isAdmin()
-        && request.resource.data.diff(resource.data)
-          .affectedKeys()
-          .hasOnly([
-            'countryId',
-            'stateId',
-            'cityId',
-            'name',
-            'verifiedBoundaryId',
-            'isServiceActive',
-            'updatedAt',
-            'boundary',
-            'boundarySource',
-            'boundaryVerified'
-          ])
-        && request.resource.data.countryId is string
-        && request.resource.data.countryId.size() > 0
-        && request.resource.data.stateId is string
-        && request.resource.data.stateId.size() > 0
-        && request.resource.data.cityId is string
-        && request.resource.data.cityId.size() > 0
-        && validLocationName(request.resource.data)
-        && request.resource.data.isServiceActive is bool
-        && validAreaActivation(request.resource.data, areaId)
-        && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.updatedAt == request.time
-        && validOptionalString(request.resource.data, 'verifiedBoundaryId')
-        && validOptionalBool(request.resource.data, 'boundaryVerified')
-        && (
-          !('boundary' in request.resource.data)
-          || request.resource.data.boundary is list
-        )
-        && validOptionalString(request.resource.data, 'boundarySource');
+      allow update: if false;
 
       allow delete: if false;
     }
@@ -1477,76 +1336,9 @@ service cloud.firestore {
     match /service_localities/{localityId} {
       allow get, list: if isAdmin();
 
-      allow create: if isAdmin()
-        && request.resource.data.keys().hasOnly([
-          'countryId',
-          'stateId',
-          'cityId',
-          'areaId',
-          'name',
-          'pincode',
-          'isServiceActive',
-          'createdAt',
-          'updatedAt',
-          'boundary',
-          'boundarySource',
-          'boundaryVerified'
-        ])
-        && request.resource.data.countryId is string
-        && request.resource.data.countryId.size() > 0
-        && request.resource.data.stateId is string
-        && request.resource.data.stateId.size() > 0
-        && request.resource.data.cityId is string
-        && request.resource.data.cityId.size() > 0
-        && request.resource.data.areaId is string
-        && request.resource.data.areaId.size() > 0
-        && validLocationName(request.resource.data)
-        && validOptionalString(request.resource.data, 'pincode')
-        && request.resource.data.isServiceActive is bool
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time
-        && (
-          !('boundary' in request.resource.data)
-          || request.resource.data.boundary is list
-        )
-        && validOptionalString(request.resource.data, 'boundarySource')
-        && validOptionalBool(request.resource.data, 'boundaryVerified');
+      allow create: if false;
 
-      allow update: if isAdmin()
-        && request.resource.data.diff(resource.data)
-          .affectedKeys()
-          .hasOnly([
-            'countryId',
-            'stateId',
-            'cityId',
-            'areaId',
-            'name',
-            'pincode',
-            'isServiceActive',
-            'updatedAt',
-            'boundary',
-            'boundarySource',
-            'boundaryVerified'
-          ])
-        && request.resource.data.countryId is string
-        && request.resource.data.countryId.size() > 0
-        && request.resource.data.stateId is string
-        && request.resource.data.stateId.size() > 0
-        && request.resource.data.cityId is string
-        && request.resource.data.cityId.size() > 0
-        && request.resource.data.areaId is string
-        && request.resource.data.areaId.size() > 0
-        && validLocationName(request.resource.data)
-        && validOptionalString(request.resource.data, 'pincode')
-        && request.resource.data.isServiceActive is bool
-        && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.updatedAt == request.time
-        && (
-          !('boundary' in request.resource.data)
-          || request.resource.data.boundary is list
-        )
-        && validOptionalString(request.resource.data, 'boundarySource')
-        && validOptionalBool(request.resource.data, 'boundaryVerified');
+      allow update: if false;
 
       allow delete: if false;
     }
@@ -1555,11 +1347,16 @@ service cloud.firestore {
     // SERVICE LOCATION IMPORT AUDIT
     // =====================================================
 
+    // Run state is writable only by the trusted Admin SDK callable.
+    match /service_location_import_runs/{runId} {
+      allow read, write: if false;
+    }
+
     match /service_location_imports/{importId} {
       allow get, list: if isAdmin();
 
       allow create: if isAdmin()
-        && request.resource.data.keys().hasOnly([
+        && request.resource.data.keys().hasAll([
           'source',
           'fileName',
           'status',
@@ -1567,12 +1364,36 @@ service cloud.firestore {
           'importedAt',
           'verificationStatus'
         ])
+        && request.resource.data.keys().hasOnly([
+          'source',
+          'fileName',
+          'status',
+          'importedBy',
+          'importedAt',
+          'verificationStatus',
+          'inputFingerprint'
+        ])
         && request.resource.data.source is string
+        && request.resource.data.source.matches('.*\\S.*')
+        && request.resource.data.source.size() <= 80
         && request.resource.data.fileName is string
+        && request.resource.data.fileName.matches('.*\\S.*')
+        && request.resource.data.fileName.size() <= 180
         && request.resource.data.status is string
+        && request.resource.data.status.matches('.*\\S.*')
+        && request.resource.data.status.size() <= 32
         && request.resource.data.importedBy == request.auth.uid
         && request.resource.data.importedAt == request.time
-        && request.resource.data.verificationStatus is string;
+        && request.resource.data.verificationStatus is string
+        && request.resource.data.verificationStatus.matches('.*\\S.*')
+        && request.resource.data.verificationStatus.size() <= 32
+        && (
+          !('inputFingerprint' in request.resource.data)
+          || (
+            request.resource.data.inputFingerprint is string
+            && request.resource.data.inputFingerprint.matches('^sha256:[0-9a-f]{64}$')
+          )
+        );
 
       allow update, delete: if false;
     }

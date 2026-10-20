@@ -1,0 +1,71 @@
+name: Manual Deploy Trusted Location Functions
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type DEPLOY_TRUSTED_LOCATION_FUNCTIONS to authorize deploying the trusted location callables"
+        required: true
+        type: string
+      target_project:
+        description: "Must match the intended Firebase project ID"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trusted-boundary-function-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Test and deploy trusted location callables
+    if: ${{ github.ref == 'refs/heads/main' && inputs.confirmation == 'DEPLOY_TRUSTED_LOCATION_FUNCTIONS' && inputs.target_project == 'dojo-platform-b68a3' }}
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 25
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v5
+        with:
+          ref: main
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
+      - name: Setup Java for Firestore Emulator
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install function dependencies
+        working-directory: functions
+        run: npm install --no-audit --no-fund
+
+      - name: Build and run Functions tests with Firestore Emulator
+        run: npx --yes firebase-tools emulators:exec --config firebase.json --only firestore --project demo-dojo-rules-tests "cd functions && npm test"
+
+      - name: Authenticate Firebase
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "Missing FIREBASE_SERVICE_ACCOUNT secret"
+            exit 1
+          fi
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/firebase-service-account.json" >> "$GITHUB_ENV"
+
+      - name: Deploy trusted location callables only
+        run: npx --yes firebase-tools deploy --only functions:reviewServiceLocationBoundary,functions:activateServiceLocation,functions:setServiceLocationStatus --project dojo-platform-b68a3 --non-interactive
+
+      - name: Post-deploy reminder
+        run: |
+          echo "Function deployment command completed."
+          echo "Verify all three deployed callables, region asia-south1, logs, and authorized/unauthorized behavior before deploying Firestore Rules."
+          echo "This workflow does not deploy Firestore Rules or activate/import any locations."
