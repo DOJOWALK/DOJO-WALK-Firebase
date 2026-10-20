@@ -195,6 +195,63 @@ test("finalize rejects completed status when a planned location is missing", asy
   assert.equal((await db.doc(`service_location_imports/${runId}`).get()).exists, false);
 });
 
+test("finalize rejects a location whose parent ID differs from the immutable plan", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"5".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "recordPlan", runId, inputFingerprint: fingerprint,
+    nodes: [
+      { id: "state_parent_check", type: "state", name: "Uttar Pradesh", parentId: "IN", alreadyExists: false, sourceLine: 2 },
+      { id: "district_parent_check", type: "district", name: "Gautam Buddha Nagar", parentId: "state_parent_check", alreadyExists: false, sourceLine: 3 },
+    ],
+  }));
+  for (const [path, data] of [
+    ["service_states/state_parent_check", { name: "Uttar Pradesh", countryId: "IN", isActive: false }],
+    ["service_states/wrong_state_parent", { name: "Wrong State", countryId: "IN", isActive: false }],
+    ["service_districts/district_parent_check", { name: "Gautam Buddha Nagar", countryId: "IN", stateId: "wrong_state_parent", isServiceActive: false }],
+  ]) {
+    locationDocs.add(path);
+    await db.doc(path).set(data);
+  }
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint, "finalize", {
+      status: "completed", plannedRecords: 2, createdRecords: 2, reusedRecords: 0,
+    }))),
+    (error) => error && error.code === "failed-precondition",
+    "completed must be rejected when a location's parent ID is incorrect",
+  );
+  assert.equal((await db.doc(`service_location_import_runs/${runId}`).get()).get("status"), "started");
+});
+
+test("finalize rejects a location whose name differs from the immutable plan", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"7".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "recordPlan", runId, inputFingerprint: fingerprint,
+    nodes: [
+      { id: "state_name_check", type: "state", name: "Rajasthan", parentId: "IN", alreadyExists: false, sourceLine: 2 },
+    ],
+  }));
+  locationDocs.add("service_states/state_name_check");
+  await db.doc("service_states/state_name_check").set({
+    name: "Gujarat", countryId: "IN", isActive: false,
+  });
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint, "finalize", {
+      status: "completed", plannedRecords: 1, createdRecords: 1, reusedRecords: 0,
+    }))),
+    (error) => error && error.code === "failed-precondition",
+    "completed must be rejected when a location's name differs from the plan",
+  );
+  assert.equal((await db.doc(`service_location_import_runs/${runId}`).get()).get("status"), "started");
+});
+
 test("finalize rejects invalid or inconsistent counts and unknown actions", async () => {
   const uid = await createAdmin();
   const runId = `run-${randomUUID()}`;
