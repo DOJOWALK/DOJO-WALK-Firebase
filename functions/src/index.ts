@@ -1107,9 +1107,7 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
       // separately verifies boundaries and explicitly activates service.
       // Reused records preserve their existing activation state.
       if (node.alreadyExists !== true) {
-        expectedFields[node.type === "state" || node.type === "district"
-          ? "isActive"
-          : "isServiceActive"] = false;
+        expectedFields[node.type === "state" ? "isActive" : "isServiceActive"] = false;
       }
       if (node.type === "state") {
         if (node.parentId !== countryId) {
