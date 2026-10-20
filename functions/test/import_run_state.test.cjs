@@ -463,7 +463,7 @@ test("reconcilePlan detects changed location names across the full hierarchy", a
     action: "recordPlan", runId, inputFingerprint: fingerprint, nodes,
   }));
   await db.doc("service_states/state_name_check").set({ name: "Rajasthan", countryId: "IN", isActive: false });
-  await db.doc("service_districts/district_name_check").set({ name: "Jaipur", countryId: "IN", stateId: "state_name_check", isActive: false });
+  await db.doc("service_districts/district_name_check").set({ name: "Jaipur", countryId: "IN", stateId: "state_name_check", isServiceActive: false });
   await db.doc("service_cities/city_name_check").set({ name: "Jaipur City", countryId: "IN", stateId: "state_name_check", districtId: "district_name_check", isServiceActive: false });
   await db.doc("service_areas/area_name_check").set({ name: "Central Area", countryId: "IN", stateId: "state_name_check", cityId: "city_name_check", isServiceActive: false });
 
