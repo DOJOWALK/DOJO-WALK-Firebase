@@ -71,8 +71,9 @@ test("begin persists a started marker before writes and blocks duplicate run IDs
   );
 });
 
-test("inspect returns durable run status only for a matching fingerprint", async () => {
+test("inspect returns durable run status only to the owner with a matching fingerprint", async () => {
   const uid = await createAdmin();
+  const other = await createAdmin();
   const runId = `run-${randomUUID()}`;
   runs.add(runId);
   const fingerprint = `sha256:${"9".repeat(64)}`;
@@ -85,6 +86,12 @@ test("inspect returns durable run status only for a matching fingerprint", async
   assert.equal(inspected.reconciliationRequired, true);
   assert.equal(inspected.inputFingerprint, fingerprint);
   assert.equal("secret" in inspected, false);
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(other, {
+      action: "inspect", runId, inputFingerprint: fingerprint,
+    })),
+    (error) => error && error.code === "permission-denied",
+  );
   await assert.rejects(
     () => manageServiceLocationImportRun.run(request(uid, {
       action: "inspect", runId, inputFingerprint: `sha256:${"8".repeat(64)}`,
