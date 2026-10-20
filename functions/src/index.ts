@@ -648,9 +648,9 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
         !["super_admin", "admin"].includes(actorSnap.get("role"))) {
       throw new HttpsError("permission-denied", "An active admin account is required.");
     }
-    if (locationId && !targetSnap.exists) {
-      throw new HttpsError("not-found", "Service location was not found.");
-    }
+    // A supplied ID is also used by deterministic CSV imports for first-time
+    // creates. Existing documents are updated only after the parent and name-index
+    // checks below; absent documents with a supplied ID are created inactive.
     if (targetSnap.exists) {
       const current = targetSnap.data() ?? {};
       if (type === "city" && (current.districtId !== undefined) !== (proposed.districtId !== undefined)) {
