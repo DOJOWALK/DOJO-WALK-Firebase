@@ -491,3 +491,66 @@ test("finalize refuses a pre-existing audit for a started run without changing e
   assert.equal(auditAfter.get("inputFingerprint"), collision.inputFingerprint,
     "finalization must not overwrite a conflicting audit");
 });
+
+
+test("finalize rejects invalid count summaries without changing the started run", async (t) => {
+  const uid = `finalize-counts-${randomUUID()}`;
+  const suffix = randomUUID().replace(/-/g, "");
+  const runId = `finalize_counts_${suffix}`;
+  const countryId = `country_${suffix}`;
+  const fingerprint = `sha256:${"e".repeat(64)}`;
+  const adminRef = db.doc(`admin_users/${uid}`);
+  const runRef = db.doc(`service_location_import_runs/${runId}`);
+  const auditRef = db.doc(`service_location_imports/${runId}`);
+
+  t.after(async () => {
+    await Promise.all([
+      adminRef.delete().catch(() => {}),
+      runRef.delete().catch(() => {}),
+      auditRef.delete().catch(() => {}),
+    ]);
+  });
+
+  await adminRef.set({ role: "super_admin", isActive: true });
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "begin", runId, inputFingerprint: fingerprint,
+    countryId, fileName: "finalize-counts.csv",
+  }));
+
+  const invalidSummaries = [
+    {
+      status: "completed", plannedRecords: 3, createdRecords: 1, reusedRecords: 1,
+      reason: "completed counts must account for every planned record",
+    },
+    {
+      status: "failed", plannedRecords: 1, createdRecords: 1, reusedRecords: 1,
+      reason: "created plus reused counts cannot exceed planned records",
+    },
+    {
+      status: "failed", plannedRecords: -1, createdRecords: 0, reusedRecords: 0,
+      reason: "counts cannot be negative",
+    },
+    {
+      status: "failed", plannedRecords: 1.5, createdRecords: 0, reusedRecords: 0,
+      reason: "counts must be safe integers",
+    },
+  ];
+
+  for (const summary of invalidSummaries) {
+    await assert.rejects(
+      () => manageServiceLocationImportRun.run(request(uid, {
+        action: "finalize", runId, inputFingerprint: fingerprint,
+        status: summary.status,
+        plannedRecords: summary.plannedRecords,
+        createdRecords: summary.createdRecords,
+        reusedRecords: summary.reusedRecords,
+      })),
+      (error) => error && error.code === "invalid-argument",
+      summary.reason,
+    );
+    assert.equal((await runRef.get()).get("status"), "started",
+      "invalid count summaries must not terminalize the run");
+    assert.equal((await auditRef.get()).exists, false,
+      "invalid count summaries must not write an audit record");
+  }
+});
