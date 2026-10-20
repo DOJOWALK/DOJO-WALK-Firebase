@@ -79,10 +79,9 @@ test("real callable HTTP timeout after committed begin is recovered read-only wi
         res.end(upstreamBody);
         return;
       }
-      // Reaching this point proves the callable returned success; the test client
-      // sees only a timeout, exactly the ambiguous-response case under test.
-      res.writeHead(504, { "content-type": "application/json" });
-      res.end(JSON.stringify({ error: "simulated response loss after server commit" }));
+      // Reaching this point proves the callable returned success. Destroy the
+      // client-facing socket without sending a response to simulate a lost reply.
+      res.destroy();
     } catch (error) {
       res.writeHead(502, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: error instanceof Error ? error.message : "proxy failure" }));
@@ -101,8 +100,11 @@ test("real callable HTTP timeout after committed begin is recovered read-only wi
     countryId: "IN",
     fileName: "states.csv",
   };
-  const timedOut = await callCallable(proxyUrl, token, beginPayload);
-  assert.equal(timedOut.status, 504, "client must observe the deliberately lost successful response");
+  await assert.rejects(
+    callCallable(proxyUrl, token, beginPayload),
+    /fetch failed|socket|reset|terminated|aborted/i,
+    "client must observe a transport failure after the server committed begin",
+  );
 
   // Verify durable server-side state directly, then use the real callable's
   // authenticated inspect action as the supported recovery path.
