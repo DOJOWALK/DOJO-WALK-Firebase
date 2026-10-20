@@ -7,6 +7,7 @@ const { manageServiceLocationImportRun } = require("../lib/index");
 const db = getFirestore();
 const admins = new Set();
 const runs = new Set();
+const locationDocs = new Set();
 
 function request(uid, data) {
   return {
@@ -129,6 +130,15 @@ test("finalize checks owner and fingerprint, then permits only idempotent same-r
     (error) => error && error.code === "failed-precondition",
   );
 
+  // Finalization now verifies every planned hierarchy document inside its transaction.
+  for (let index = 0; index < 4; index++) {
+    const locationId = `state_finalize_${index}`;
+    locationDocs.add(`service_states/${locationId}`);
+    await db.doc(`service_states/${locationId}`).set({
+      name: `State ${index}`, countryId: "IN", isActive: false,
+    });
+  }
+
   const completed = await manageServiceLocationImportRun.run(request(uid, finalize));
   assert.equal(completed.status, "completed");
   assert.equal(completed.auditWritten, true);
@@ -154,6 +164,35 @@ test("finalize checks owner and fingerprint, then permits only idempotent same-r
   const saved = await db.doc(`service_location_import_runs/${runId}`).get();
   assert.equal(saved.get("status"), "completed");
   assert.equal(saved.get("plannedRecords"), 4);
+});
+
+test("finalize rejects completed status when a planned location is missing", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"4".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "recordPlan", runId, inputFingerprint: fingerprint,
+    nodes: [
+      { id: "state_missing_finalize", type: "state", name: "Rajasthan", parentId: "IN", alreadyExists: false, sourceLine: 2 },
+      { id: "state_present_finalize", type: "state", name: "Uttar Pradesh", parentId: "IN", alreadyExists: false, sourceLine: 3 },
+    ],
+  }));
+  locationDocs.add("service_states/state_present_finalize");
+  await db.doc("service_states/state_present_finalize").set({
+    name: "Uttar Pradesh", countryId: "IN", isActive: false,
+  });
+
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint, "finalize", {
+      status: "completed", plannedRecords: 2, createdRecords: 2, reusedRecords: 0,
+    }))),
+    (error) => error && error.code === "failed-precondition",
+    "completed must be rejected when any planned location is absent",
+  );
+  assert.equal((await db.doc(`service_location_import_runs/${runId}`).get()).get("status"), "started");
+  assert.equal((await db.doc(`service_location_imports/${runId}`).get()).exists, false);
 });
 
 test("finalize rejects invalid or inconsistent counts and unknown actions", async () => {
@@ -518,6 +557,9 @@ test("recordPlan rejects descendants placed before their parent", async () => {
 });
 
 test.after(async () => {
+  for (const path of locationDocs) {
+    await db.doc(path).delete().catch(() => {});
+  }
   for (const runId of runs) {
     await db.doc(`service_location_import_runs/${runId}`).delete().catch(() => {});
   }
