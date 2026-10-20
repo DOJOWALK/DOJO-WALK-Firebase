@@ -308,6 +308,26 @@ test("reconcilePlan verifies city and area parent links and reports missing desc
   for (const ref of refs) await ref.delete().catch(() => {});
 });
 
+test("recordPlan rejects a state attached to a different country before recording", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"a".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(uid, {
+      action: "recordPlan", runId, inputFingerprint: fingerprint,
+      nodes: [
+        { id: "state_wrong_country", type: "state", name: "Rajasthan", parentId: "OTHER", alreadyExists: false, sourceLine: 2 },
+      ],
+    })),
+    (error) => error && error.code === "invalid-argument",
+  );
+  const markerSnapshot = await db.doc(`service_location_import_runs/${runId}`).get();
+  assert.equal(markerSnapshot.get("planHash"), undefined);
+  assert.equal((await db.collection(`service_location_import_runs/${runId}/planned_nodes`).get()).size, 0);
+});
+
 test("recordPlan rejects missing or wrong-type hierarchy parents before recording", async () => {
   const uid = await createAdmin();
   const runId = `run-${randomUUID()}`;
