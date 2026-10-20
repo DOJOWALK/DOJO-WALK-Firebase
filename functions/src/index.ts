@@ -1096,6 +1096,14 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
         continue;
       }
       const expectedFields: Record<string, unknown> = { countryId };
+      // Newly created imports must remain inactive until an administrator
+      // separately verifies boundaries and explicitly activates service.
+      // Reused records preserve their existing activation state.
+      if (node.alreadyExists !== true) {
+        expectedFields[node.type === "state" || node.type === "district"
+          ? "isActive"
+          : "isServiceActive"] = false;
+      }
       if (node.type === "state") {
         if (node.parentId !== countryId) {
           mismatchIds.push(String(node.id));
