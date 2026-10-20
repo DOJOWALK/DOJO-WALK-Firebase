@@ -1212,8 +1212,11 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
         "Created and reused counts cannot exceed plannedRecords.",
       );
     }
+    const auditRef = db.doc(`service_location_imports/${runId}`);
     return db.runTransaction(async (tx) => {
-      const [currentActor, run] = await Promise.all([tx.get(actorRef), tx.get(runRef)]);
+      const [currentActor, run, audit] = await Promise.all([
+        tx.get(actorRef), tx.get(runRef), tx.get(auditRef),
+      ]);
       if (!currentActor.exists || currentActor.get("isActive") !== true ||
           currentActor.get("role") !== "super_admin") {
         throw new HttpsError("permission-denied", "Admin access changed during import finalization.");
@@ -1223,8 +1226,6 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
         throw new HttpsError("failed-precondition", "Import run owner or fingerprint does not match.");
       }
       // A completed run must be backed by the immutable server-recorded plan.
-      // Never let a client overwrite the plan's canonical record count during
-      // finalization or mark an empty/unplanned run as completed.
       if (status === "completed" &&
           (typeof run.get("planHash") !== "string" ||
            !Number.isSafeInteger(run.get("plannedRecords")) ||
@@ -1237,13 +1238,35 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
       }
       const currentStatus = run.get("status");
       if (currentStatus !== "started") {
-        if (currentStatus === status &&
-            run.get("plannedRecords") === data.plannedRecords &&
-            run.get("createdRecords") === data.createdRecords &&
-            run.get("reusedRecords") === data.reusedRecords) {
+        if (currentStatus !== status ||
+            run.get("plannedRecords") !== data.plannedRecords ||
+            run.get("createdRecords") !== data.createdRecords ||
+            run.get("reusedRecords") !== data.reusedRecords) {
+          throw new HttpsError("failed-precondition", "Import run is already finalized or needs manual reconciliation.");
+        }
+        if (audit.exists) {
+          if (audit.get("importedBy") !== uid ||
+              audit.get("inputFingerprint") !== inputFingerprint ||
+              audit.get("status") !== status) {
+            throw new HttpsError("failed-precondition", "The immutable import audit conflicts with the finalized run.");
+          }
           return { ok: true, runId, status, alreadyFinalized: true };
         }
-        throw new HttpsError("failed-precondition", "Import run is already finalized or needs manual reconciliation.");
+        // Recover only the missing summary for a run whose terminal state is
+        // already immutable. Never replay or mutate hierarchy writes.
+        tx.create(auditRef, {
+          source: "csv",
+          fileName: run.get("fileName"),
+          status,
+          importedBy: uid,
+          importedAt: FieldValue.serverTimestamp(),
+          verificationStatus: "pending",
+          inputFingerprint,
+        });
+        return { ok: true, runId, status, alreadyFinalized: true, auditRecovered: true };
+      }
+      if (audit.exists) {
+        throw new HttpsError("failed-precondition", "An import audit already exists for this started run; manual reconciliation is required.");
       }
       const now = FieldValue.serverTimestamp();
       tx.update(runRef, {
@@ -1254,7 +1277,19 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
         updatedAt: now,
         finishedAt: now,
       });
-      return { ok: true, runId, status };
+      // Keep the operator-facing history and trusted run state atomic. The
+      // admin client must not separately create an audit that can disagree
+      // with a successfully finalized run after a network timeout.
+      tx.create(auditRef, {
+        source: "csv",
+        fileName: run.get("fileName"),
+        status,
+        importedBy: uid,
+        importedAt: now,
+        verificationStatus: "pending",
+        inputFingerprint,
+      });
+      return { ok: true, runId, status, auditWritten: true };
     });
   }
 
