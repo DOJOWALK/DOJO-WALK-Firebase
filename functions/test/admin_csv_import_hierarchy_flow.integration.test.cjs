@@ -439,3 +439,55 @@ test("finalize recovers a missing audit summary without replaying hierarchy writ
   assert.equal((await stateRef.get()).get("name"), plan[0].name,
     "audit recovery must not replay or mutate hierarchy writes");
 });
+
+
+test("finalize refuses a pre-existing audit for a started run without changing either record", async (t) => {
+  const uid = `audit-collision-${randomUUID()}`;
+  const suffix = randomUUID().replace(/-/g, "");
+  const countryId = `country_${suffix}`;
+  const runId = `audit_collision_${suffix}`;
+  const fingerprint = `sha256:${"c".repeat(64)}`;
+  const adminRef = db.doc(`admin_users/${uid}`);
+  const runRef = db.doc(`service_location_import_runs/${runId}`);
+  const auditRef = db.doc(`service_location_imports/${runId}`);
+
+  t.after(async () => {
+    await Promise.all([
+      adminRef.delete().catch(() => {}),
+      runRef.delete().catch(() => {}),
+      auditRef.delete().catch(() => {}),
+    ]);
+  });
+
+  await adminRef.set({ role: "super_admin", isActive: true });
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "begin", runId, inputFingerprint: fingerprint,
+    countryId, fileName: "audit-collision.csv",
+  }));
+  const collision = {
+    source: "csv",
+    fileName: "unexpected-audit.csv",
+    status: "failed",
+    importedBy: "different-owner",
+    inputFingerprint: `sha256:${"d".repeat(64)}`,
+  };
+  await auditRef.set(collision);
+
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(uid, {
+      action: "finalize", runId, inputFingerprint: fingerprint,
+      status: "failed", plannedRecords: 0, createdRecords: 0, reusedRecords: 0,
+    })),
+    (error) => error && error.code === "failed-precondition",
+  );
+
+  const runAfter = await runRef.get();
+  assert.equal(runAfter.get("status"), "started",
+    "a conflicting audit must not terminalize the durable run");
+  assert.equal(runAfter.get("finishedAt"), undefined);
+  const auditAfter = await auditRef.get();
+  assert.equal(auditAfter.get("fileName"), collision.fileName);
+  assert.equal(auditAfter.get("importedBy"), collision.importedBy);
+  assert.equal(auditAfter.get("inputFingerprint"), collision.inputFingerprint,
+    "finalization must not overwrite a conflicting audit");
+});
