@@ -213,8 +213,8 @@ test("reconcilePlan verifies the stored plan and hierarchy without writing", asy
   }));
   const stateRef = db.doc("service_states/state_reconcile");
   const districtRef = db.doc("service_districts/district_reconcile");
-  await stateRef.set({ name: "Uttar Pradesh", countryId: "IN" });
-  await districtRef.set({ name: "Gautam Buddha Nagar", countryId: "IN", stateId: "state_reconcile" });
+  await stateRef.set({ name: "Uttar Pradesh", countryId: "IN", isActive: false });
+  await districtRef.set({ name: "Gautam Buddha Nagar", countryId: "IN", stateId: "state_reconcile", isActive: false });
   const before = (await db.doc(`service_location_import_runs/${runId}`).get()).data();
   const result = await manageServiceLocationImportRun.run(request(uid, {
     action: "reconcilePlan", runId, inputFingerprint: fingerprint,
@@ -222,6 +222,13 @@ test("reconcilePlan verifies the stored plan and hierarchy without writing", asy
   assert.equal(result.status, "reconciled_match");
   assert.equal(result.matchingRecords, 2);
   assert.equal(result.readOnly, true);
+  await stateRef.update({ isActive: true });
+  const activatedUnexpectedly = await manageServiceLocationImportRun.run(request(uid, {
+    action: "reconcilePlan", runId, inputFingerprint: fingerprint,
+  }));
+  assert.equal(activatedUnexpectedly.status, "reconciliation_mismatch");
+  assert.deepEqual(activatedUnexpectedly.mismatchIds, ["state_reconcile"]);
+  await stateRef.update({ isActive: false });
   const after = (await db.doc(`service_location_import_runs/${runId}`).get()).data();
   assert.equal(after.status, before.status);
   assert.equal(after.updatedAt.isEqual(before.updatedAt), true);
@@ -280,10 +287,10 @@ test("reconcilePlan verifies city and area parent links and reports missing desc
     db.doc("service_cities/city_full"),
     db.doc("service_areas/area_full"),
   ];
-  await refs[0].set({ name: "Rajasthan", countryId: "IN" });
-  await refs[1].set({ name: "Jaipur", countryId: "IN", stateId: "state_full" });
-  await refs[2].set({ name: "Jaipur City", countryId: "IN", stateId: "state_full", districtId: "district_full" });
-  await refs[3].set({ name: "Central Area", countryId: "IN", stateId: "state_full", cityId: "city_full" });
+  await refs[0].set({ name: "Rajasthan", countryId: "IN", isActive: false });
+  await refs[1].set({ name: "Jaipur", countryId: "IN", stateId: "state_full", isActive: false });
+  await refs[2].set({ name: "Jaipur City", countryId: "IN", stateId: "state_full", districtId: "district_full", isServiceActive: false });
+  await refs[3].set({ name: "Central Area", countryId: "IN", stateId: "state_full", cityId: "city_full", isServiceActive: false });
 
   const matched = await manageServiceLocationImportRun.run(request(uid, {
     action: "reconcilePlan", runId, inputFingerprint: fingerprint,
