@@ -1229,7 +1229,10 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
       // actual hierarchy documents. Keep these reads inside the same Firestore
       // transaction as terminal-state/audit writes so a location cannot change
       // between verification and finalization.
-      if (status === "completed") {
+      const currentStatus = run.get("status");
+      // Terminal retries and audit recovery must not depend on hierarchy writes
+      // being replayed or revalidated after the original terminal result is immutable.
+      if (status === "completed" && currentStatus === "started") {
         const expectedHash = run.get("planHash");
         const recordedCount = run.get("plannedRecords");
         if (typeof expectedHash !== "string" ||
@@ -1326,7 +1329,6 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
           }
         }
       }
-      const currentStatus = run.get("status");
       if (currentStatus !== "started") {
         if (currentStatus !== status ||
             run.get("plannedRecords") !== data.plannedRecords ||
