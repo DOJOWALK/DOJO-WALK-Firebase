@@ -990,3 +990,49 @@ test("reconcilePlan reports committed location after an ambiguous client respons
   );
 });
 
+
+
+test("finalize rejects created/reused counts that disagree with the immutable plan", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"c".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+
+  const nodes = [
+    {
+      id: "state_count_created",
+      type: "state",
+      name: "Rajasthan",
+      parentId: "IN",
+      alreadyExists: false,
+      sourceLine: 2,
+    },
+    {
+      id: "state_count_reused",
+      type: "state",
+      name: "Uttar Pradesh",
+      parentId: "IN",
+      alreadyExists: true,
+      sourceLine: 3,
+    },
+  ];
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "recordPlan", runId, inputFingerprint: fingerprint, nodes,
+  }));
+
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint, "finalize", {
+      status: "completed",
+      plannedRecords: 2,
+      createdRecords: 2,
+      reusedRecords: 0,
+    }))),
+    (error) => error && error.code === "failed-precondition",
+  );
+
+  const run = await db.doc(`service_location_import_runs/${runId}`).get();
+  const audit = await db.doc(`service_location_imports/${runId}`).get();
+  assert.equal(run.get("status"), "started", "invalid counts must not finalize the run");
+  assert.equal(audit.exists, false, "invalid counts must not create a completed audit");
+});
