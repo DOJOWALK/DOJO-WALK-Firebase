@@ -107,6 +107,13 @@ test("finalize checks owner and fingerprint, then permits only idempotent same-r
   runs.add(runId);
   const fingerprint = `sha256:${"d".repeat(64)}`;
   await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "recordPlan", runId, inputFingerprint: fingerprint,
+    nodes: Array.from({ length: 4 }, (_, index) => ({
+      id: `state_finalize_${index}`, type: "state", name: `State ${index}`,
+      parentId: "IN", alreadyExists: index === 3, sourceLine: index + 2,
+    })),
+  }));
   const finalize = payload(runId, fingerprint, "finalize", {
     status: "completed", plannedRecords: 4, createdRecords: 3, reusedRecords: 1,
   });
