@@ -154,7 +154,11 @@ test("finalize checks owner and fingerprint, then permits only idempotent same-r
   const recovered = await manageServiceLocationImportRun.run(request(uid, finalize));
   assert.equal(recovered.alreadyFinalized, true);
   assert.equal(recovered.auditRecovered, true);
-  assert.equal((await auditRef.get()).exists, true, "retry may recover a missing summary without replaying hierarchy writes");
+  const recoveredAudit = await auditRef.get();
+  assert.equal(recoveredAudit.exists, true, "retry may recover a missing summary without replaying hierarchy writes");
+  assert.equal(recoveredAudit.get("plannedRecords"), 4);
+  assert.equal(recoveredAudit.get("createdRecords"), 3);
+  assert.equal(recoveredAudit.get("reusedRecords"), 1);
   await assert.rejects(
     () => manageServiceLocationImportRun.run(request(uid, {
       ...finalize, status: "failed",
