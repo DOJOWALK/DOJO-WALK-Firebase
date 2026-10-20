@@ -381,6 +381,42 @@ test("recordPlan rejects more than 300 nodes without persisting a partial plan",
   assert.equal((await db.collection(`service_location_import_runs/${runId}/planned_nodes`).get()).size, 0);
 });
 
+
+
+test("reconcilePlan detects changed location names across the full hierarchy", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"b".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+  const nodes = [
+    { id: "state_name_check", type: "state", name: "Rajasthan", parentId: "IN", alreadyExists: false, sourceLine: 2 },
+    { id: "district_name_check", type: "district", name: "Jaipur", parentId: "state_name_check", alreadyExists: false, sourceLine: 3 },
+    { id: "city_name_check", type: "city", name: "Jaipur City", parentId: "district_name_check", alreadyExists: false, sourceLine: 4 },
+    { id: "area_name_check", type: "area", name: "Central Area", parentId: "city_name_check", alreadyExists: false, sourceLine: 5 },
+  ];
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "recordPlan", runId, inputFingerprint: fingerprint, nodes,
+  }));
+  await db.doc("service_states/state_name_check").set({ name: "Rajasthan", countryId: "IN", isActive: false });
+  await db.doc("service_districts/district_name_check").set({ name: "Jaipur", countryId: "IN", stateId: "state_name_check", isActive: false });
+  await db.doc("service_cities/city_name_check").set({ name: "Jaipur City", countryId: "IN", stateId: "state_name_check", districtId: "district_name_check", isServiceActive: false });
+  await db.doc("service_areas/area_name_check").set({ name: "Central Area", countryId: "IN", stateId: "state_name_check", cityId: "city_name_check", isServiceActive: false });
+
+  await db.doc("service_areas/area_name_check").update({ name: "Different Area" });
+  const result = await manageServiceLocationImportRun.run(request(uid, {
+    action: "reconcilePlan", runId, inputFingerprint: fingerprint,
+  }));
+  assert.equal(result.status, "reconciliation_mismatch");
+  assert.deepEqual(result.mismatchIds, ["area_name_check"]);
+  for (const path of [
+    "service_states/state_name_check",
+    "service_districts/district_name_check",
+    "service_cities/city_name_check",
+    "service_areas/area_name_check",
+  ]) await db.doc(path).delete().catch(() => {});
+});
+
 test.after(async () => {
   for (const runId of runs) {
     await db.doc(`service_location_import_runs/${runId}`).delete().catch(() => {});
