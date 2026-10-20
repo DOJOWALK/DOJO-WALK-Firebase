@@ -7,6 +7,7 @@ const { manageServiceLocationImportRun } = require("../lib/index");
 const db = getFirestore();
 const admins = new Set();
 const runs = new Set();
+const locationDocs = new Set();
 
 function request(uid, data) {
   return {
@@ -129,6 +130,15 @@ test("finalize checks owner and fingerprint, then permits only idempotent same-r
     (error) => error && error.code === "failed-precondition",
   );
 
+  // Finalization now verifies every planned hierarchy document inside its transaction.
+  for (let index = 0; index < 4; index++) {
+    const locationId = `state_finalize_${index}`;
+    locationDocs.add(`service_states/${locationId}`);
+    await db.doc(`service_states/${locationId}`).set({
+      name: `State ${index}`, countryId: "IN", isActive: false,
+    });
+  }
+
   const completed = await manageServiceLocationImportRun.run(request(uid, finalize));
   assert.equal(completed.status, "completed");
   assert.equal(completed.auditWritten, true);
@@ -144,7 +154,11 @@ test("finalize checks owner and fingerprint, then permits only idempotent same-r
   const recovered = await manageServiceLocationImportRun.run(request(uid, finalize));
   assert.equal(recovered.alreadyFinalized, true);
   assert.equal(recovered.auditRecovered, true);
-  assert.equal((await auditRef.get()).exists, true, "retry may recover a missing summary without replaying hierarchy writes");
+  const recoveredAudit = await auditRef.get();
+  assert.equal(recoveredAudit.exists, true, "retry may recover a missing summary without replaying hierarchy writes");
+  assert.equal(recoveredAudit.get("plannedRecords"), 4);
+  assert.equal(recoveredAudit.get("createdRecords"), 3);
+  assert.equal(recoveredAudit.get("reusedRecords"), 1);
   await assert.rejects(
     () => manageServiceLocationImportRun.run(request(uid, {
       ...finalize, status: "failed",
@@ -154,6 +168,118 @@ test("finalize checks owner and fingerprint, then permits only idempotent same-r
   const saved = await db.doc(`service_location_import_runs/${runId}`).get();
   assert.equal(saved.get("status"), "completed");
   assert.equal(saved.get("plannedRecords"), 4);
+});
+
+test("finalize rejects completed status when a planned location is missing", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"4".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "recordPlan", runId, inputFingerprint: fingerprint,
+    nodes: [
+      { id: "state_missing_finalize", type: "state", name: "Rajasthan", parentId: "IN", alreadyExists: false, sourceLine: 2 },
+      { id: "state_present_finalize", type: "state", name: "Uttar Pradesh", parentId: "IN", alreadyExists: false, sourceLine: 3 },
+    ],
+  }));
+  locationDocs.add("service_states/state_present_finalize");
+  await db.doc("service_states/state_present_finalize").set({
+    name: "Uttar Pradesh", countryId: "IN", isActive: false,
+  });
+
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint, "finalize", {
+      status: "completed", plannedRecords: 2, createdRecords: 2, reusedRecords: 0,
+    }))),
+    (error) => error && error.code === "failed-precondition",
+    "completed must be rejected when any planned location is absent",
+  );
+  assert.equal((await db.doc(`service_location_import_runs/${runId}`).get()).get("status"), "started");
+  assert.equal((await db.doc(`service_location_imports/${runId}`).get()).exists, false);
+});
+
+test("finalize rejects a location whose parent ID differs from the immutable plan", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"5".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "recordPlan", runId, inputFingerprint: fingerprint,
+    nodes: [
+      { id: "state_parent_check", type: "state", name: "Uttar Pradesh", parentId: "IN", alreadyExists: false, sourceLine: 2 },
+      { id: "district_parent_check", type: "district", name: "Gautam Buddha Nagar", parentId: "state_parent_check", alreadyExists: false, sourceLine: 3 },
+    ],
+  }));
+  for (const [path, data] of [
+    ["service_states/state_parent_check", { name: "Uttar Pradesh", countryId: "IN", isActive: false }],
+    ["service_states/wrong_state_parent", { name: "Wrong State", countryId: "IN", isActive: false }],
+    ["service_districts/district_parent_check", { name: "Gautam Buddha Nagar", countryId: "IN", stateId: "wrong_state_parent", isServiceActive: false }],
+  ]) {
+    locationDocs.add(path);
+    await db.doc(path).set(data);
+  }
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint, "finalize", {
+      status: "completed", plannedRecords: 2, createdRecords: 2, reusedRecords: 0,
+    }))),
+    (error) => error && error.code === "failed-precondition",
+    "completed must be rejected when a location's parent ID is incorrect",
+  );
+  assert.equal((await db.doc(`service_location_import_runs/${runId}`).get()).get("status"), "started");
+});
+
+test("finalize rejects a location whose name differs from the immutable plan", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"7".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "recordPlan", runId, inputFingerprint: fingerprint,
+    nodes: [
+      { id: "state_name_check", type: "state", name: "Rajasthan", parentId: "IN", alreadyExists: false, sourceLine: 2 },
+    ],
+  }));
+  locationDocs.add("service_states/state_name_check");
+  await db.doc("service_states/state_name_check").set({
+    name: "Gujarat", countryId: "IN", isActive: false,
+  });
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint, "finalize", {
+      status: "completed", plannedRecords: 1, createdRecords: 1, reusedRecords: 0,
+    }))),
+    (error) => error && error.code === "failed-precondition",
+    "completed must be rejected when a location's name differs from the plan",
+  );
+  assert.equal((await db.doc(`service_location_import_runs/${runId}`).get()).get("status"), "started");
+});
+
+test("finalize rejects a terminal retry when the audit summary conflicts with the immutable run", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"8".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+  const finalize = payload(runId, fingerprint, "finalize", {
+    status: "failed", plannedRecords: 1, createdRecords: 0, reusedRecords: 0,
+  });
+
+  const first = await manageServiceLocationImportRun.run(request(uid, finalize));
+  assert.equal(first.status, "failed");
+  assert.equal(first.auditWritten, true);
+
+  const auditRef = db.doc(`service_location_imports/${runId}`);
+  await auditRef.update({ inputFingerprint: `sha256:${"9".repeat(64)}` });
+
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(uid, finalize)),
+    (error) => error && error.code === "failed-precondition",
+    "a conflicting audit must not be accepted or silently repaired",
+  );
+  assert.equal((await db.doc(`service_location_import_runs/${runId}`).get()).get("status"), "failed");
+  assert.equal((await auditRef.get()).get("inputFingerprint"), `sha256:${"9".repeat(64)}`);
 });
 
 test("finalize rejects invalid or inconsistent counts and unknown actions", async () => {
@@ -518,7 +644,17 @@ test("recordPlan rejects descendants placed before their parent", async () => {
 });
 
 test.after(async () => {
+  for (const path of locationDocs) {
+    await db.doc(path).delete().catch(() => {});
+  }
   for (const runId of runs) {
+    const planSnapshot = await db.collection(`service_location_import_runs/${runId}/planned_nodes`).get().catch(() => null);
+    if (planSnapshot && !planSnapshot.empty) {
+      const batch = db.batch();
+      for (const doc of planSnapshot.docs) batch.delete(doc.ref);
+      await batch.commit().catch(() => {});
+    }
+    await db.doc(`service_location_imports/${runId}`).delete().catch(() => {});
     await db.doc(`service_location_import_runs/${runId}`).delete().catch(() => {});
   }
   for (const uid of admins) {
@@ -690,3 +826,167 @@ test("recordPlan writes a 250-node plan across batch boundaries with stable ordi
   for (const doc of snapshot.docs) batch.delete(doc.ref);
   await batch.commit();
 });
+
+
+test("finalize completes the maximum 300-node plan and commits audit atomically", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"0".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+  const nodes = Array.from({ length: 300 }, (_, index) => ({
+    id: `state_max_finalize_${index}`,
+    type: "state",
+    name: `State ${index}`,
+    parentId: "IN",
+    alreadyExists: false,
+    sourceLine: index + 2,
+  }));
+  const recorded = await manageServiceLocationImportRun.run(request(uid, {
+    action: "recordPlan", runId, inputFingerprint: fingerprint, nodes,
+  }));
+  assert.equal(recorded.plannedRecords, 300);
+
+  for (let start = 0; start < nodes.length; start += 200) {
+    const batch = db.batch();
+    for (const node of nodes.slice(start, start + 200)) {
+      const path = `service_states/${node.id}`;
+      locationDocs.add(path);
+      batch.set(db.doc(path), { name: node.name, countryId: "IN", isActive: false });
+    }
+    await batch.commit();
+  }
+
+  const result = await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint, "finalize", {
+    status: "completed", plannedRecords: 300, createdRecords: 300, reusedRecords: 0,
+  })));
+  assert.equal(result.status, "completed");
+  assert.equal(result.auditWritten, true);
+  const run = await db.doc(`service_location_import_runs/${runId}`).get();
+  const audit = await db.doc(`service_location_imports/${runId}`).get();
+  assert.equal(run.get("status"), "completed");
+  assert.equal(run.get("plannedRecords"), 300);
+  assert.equal(audit.get("status"), "completed");
+  assert.equal(audit.get("createdRecords"), 300);
+});
+
+
+test("recordPlan batch failure leaves an immutable marker and requires read-only reconciliation", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"a".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+
+  // Simulate a conflicting planned-node document so the first atomic batch fails.
+  // The run marker is already durable by design and must not be replayed as a new plan.
+  const planCollection = db.collection(`service_location_import_runs/${runId}/planned_nodes`);
+  await planCollection.doc("state_collision").create({
+    id: "state_collision",
+    type: "state",
+    name: "Unexpected pre-existing node",
+    parentId: "IN",
+    alreadyExists: false,
+    sourceLine: 2,
+    ordinal: 0,
+    planHash: "conflicting-hash",
+  });
+
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(uid, {
+      action: "recordPlan", runId, inputFingerprint: fingerprint,
+      nodes: [
+        { id: "state_collision", type: "state", name: "Rajasthan", parentId: "IN", alreadyExists: false, sourceLine: 2 },
+        { id: "state_after_collision", type: "state", name: "Uttar Pradesh", parentId: "IN", alreadyExists: false, sourceLine: 3 },
+      ],
+    })),
+  );
+
+  const marker = await db.doc(`service_location_import_runs/${runId}`).get();
+  assert.equal(marker.get("status"), "started");
+  assert.equal(marker.get("plannedRecords"), 2);
+  assert.match(marker.get("planHash"), /^[0-9a-f]{64}$/);
+
+  const reconciliation = await manageServiceLocationImportRun.run(request(uid, {
+    action: "reconcilePlan", runId, inputFingerprint: fingerprint,
+  }));
+  assert.equal(reconciliation.status, "plan_incomplete");
+  assert.equal(reconciliation.expectedRecords, 2);
+  assert.equal(reconciliation.storedRecords, 1);
+  assert.equal(reconciliation.readOnly, true);
+
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(uid, {
+      action: "recordPlan", runId, inputFingerprint: fingerprint,
+      nodes: [
+        { id: "state_collision", type: "state", name: "Rajasthan", parentId: "IN", alreadyExists: false, sourceLine: 2 },
+        { id: "state_after_collision", type: "state", name: "Uttar Pradesh", parentId: "IN", alreadyExists: false, sourceLine: 3 },
+      ],
+    })),
+    (error) => error && error.code === "already-exists",
+    "a partially recorded immutable plan must never be replayed",
+  );
+});
+
+test("reconcilePlan reports committed location after an ambiguous client response without replaying writes", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"b".repeat(64)}`;
+
+  // Begin and persist the immutable plan before any hierarchy write.
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "recordPlan",
+    runId,
+    inputFingerprint: fingerprint,
+    nodes: [{
+      id: "state_ambiguous_response",
+      type: "state",
+      name: "Rajasthan",
+      parentId: "IN",
+      alreadyExists: false,
+      sourceLine: 2,
+    }],
+  }));
+
+  // Model the server-side write committing even though the caller does not
+  // receive a successful response (e.g. a client-side deadline/connection loss).
+  const locationRef = db.doc("service_states/state_ambiguous_response");
+  locationDocs.add("service_states/state_ambiguous_response");
+  await locationRef.create({
+    name: "Rajasthan",
+    countryId: "IN",
+    isActive: false,
+  });
+
+  // Recovery is read-only: it must discover the committed document, not write it again.
+  const reconciled = await manageServiceLocationImportRun.run(request(uid, {
+    action: "reconcilePlan",
+    runId,
+    inputFingerprint: fingerprint,
+  }));
+  assert.equal(reconciled.status, "reconciled_match");
+  assert.equal(reconciled.readOnly, true);
+  assert.equal(reconciled.matchingRecords, 1);
+  assert.equal((await locationRef.get()).get("name"), "Rajasthan");
+
+  // The immutable plan cannot be replayed as a new plan after an ambiguous result.
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(uid, {
+      action: "recordPlan",
+      runId,
+      inputFingerprint: fingerprint,
+      nodes: [{
+        id: "state_ambiguous_response",
+        type: "state",
+        name: "Rajasthan",
+        parentId: "IN",
+        alreadyExists: false,
+        sourceLine: 2,
+      }],
+    })),
+    (error) => error && error.code === "already-exists",
+  );
+});
+
