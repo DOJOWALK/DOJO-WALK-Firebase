@@ -640,3 +640,38 @@ test("recordPlan rejects invalid hierarchy parent references before recording an
   const savedNodes = await db.collection(`service_location_import_runs/${runId}/planned_nodes`).get();
   assert.equal(savedNodes.size, 0);
 });
+
+
+test("recordPlan writes a 250-node plan across batch boundaries with stable ordinals", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"f".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+  const nodes = Array.from({ length: 250 }, (_, index) => ({
+    id: `state_batch_${index}`,
+    type: "state",
+    name: `State ${index}`,
+    parentId: "IN",
+    alreadyExists: false,
+    sourceLine: index + 2,
+  }));
+
+  const recorded = await manageServiceLocationImportRun.run(request(uid, {
+    action: "recordPlan", runId, inputFingerprint: fingerprint, nodes,
+  }));
+  assert.equal(recorded.plannedRecords, 250);
+  assert.match(recorded.planHash, /^[0-9a-f]{64}$/);
+
+  const snapshot = await db.collection(`service_location_import_runs/${runId}/planned_nodes`).get();
+  assert.equal(snapshot.size, 250);
+  assert.equal(snapshot.docs.find((doc) => doc.id === "state_batch_0").get("ordinal"), 0);
+  assert.equal(snapshot.docs.find((doc) => doc.id === "state_batch_199").get("ordinal"), 199);
+  assert.equal(snapshot.docs.find((doc) => doc.id === "state_batch_200").get("ordinal"), 200);
+  assert.equal(snapshot.docs.find((doc) => doc.id === "state_batch_249").get("ordinal"), 249);
+  assert.ok(snapshot.docs.every((doc) => doc.get("planHash") === recorded.planHash));
+
+  const batch = db.batch();
+  for (const doc of snapshot.docs) batch.delete(doc.ref);
+  await batch.commit();
+});
