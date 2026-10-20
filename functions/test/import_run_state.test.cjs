@@ -256,6 +256,32 @@ test("finalize rejects a location whose name differs from the immutable plan", a
   assert.equal((await db.doc(`service_location_import_runs/${runId}`).get()).get("status"), "started");
 });
 
+test("finalize rejects a terminal retry when the audit summary conflicts with the immutable run", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"8".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+  const finalize = payload(runId, fingerprint, "finalize", {
+    status: "failed", plannedRecords: 1, createdRecords: 0, reusedRecords: 0,
+  });
+
+  const first = await manageServiceLocationImportRun.run(request(uid, finalize));
+  assert.equal(first.status, "failed");
+  assert.equal(first.auditWritten, true);
+
+  const auditRef = db.doc(`service_location_imports/${runId}`);
+  await auditRef.update({ inputFingerprint: `sha256:${"9".repeat(64)}` });
+
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(uid, finalize)),
+    (error) => error && error.code === "failed-precondition",
+    "a conflicting audit must not be accepted or silently repaired",
+  );
+  assert.equal((await db.doc(`service_location_import_runs/${runId}`).get()).get("status"), "failed");
+  assert.equal((await auditRef.get()).get("inputFingerprint"), `sha256:${"9".repeat(64)}`);
+});
+
 test("finalize rejects invalid or inconsistent counts and unknown actions", async () => {
   const uid = await createAdmin();
   const runId = `run-${randomUUID()}`;
