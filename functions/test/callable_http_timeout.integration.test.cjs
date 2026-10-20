@@ -5,6 +5,7 @@ const { randomUUID } = require("node:crypto");
 const { initializeApp, deleteApp } = require("firebase/app");
 const { getAuth, connectAuthEmulator, createUserWithEmailAndPassword, deleteUser } = require("firebase/auth");
 const { getFirestore } = require("firebase-admin/firestore");
+require("../lib/index"); // initialize the Admin SDK used by the real callable and emulator-backed Firestore
 
 const projectId = process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || "demo-dojo-rules-tests";
 const functionsHost = process.env.FUNCTIONS_EMULATOR_HOST || "127.0.0.1:5001";
