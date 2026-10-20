@@ -1096,6 +1096,21 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
     const missingIds: string[] = [];
     const mismatchIds: string[] = [];
     let matching = 0;
+
+    // Fetch actual hierarchy documents in bounded parallel batches instead of
+    // one network round-trip per node. A 300-node reconciliation should not
+    // spend hundreds of sequential reads inside a callable timeout window.
+    const actualById = new Map<string, any>();
+    const validNodes = planned.filter((node) => collectionByType[String(node.type)]);
+    for (let offset = 0; offset < validNodes.length; offset += 50) {
+      const batchNodes = validNodes.slice(offset, offset + 50);
+      const refs = batchNodes.map((node) =>
+        db.doc(`${collectionByType[String(node.type)]}/${node.id}`),
+      );
+      const snapshots = await db.getAll(...refs);
+      snapshots.forEach((snapshot, index) => actualById.set(batchNodes[index].id, snapshot));
+    }
+
     for (const node of planned) {
       const collectionName = collectionByType[String(node.type)];
       if (!collectionName || typeof countryId !== "string") {
@@ -1137,8 +1152,8 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
         mismatchIds.push(String(node.id));
         continue;
       }
-      const actual = await db.doc(`${collectionName}/${node.id}`).get();
-      if (!actual.exists) {
+      const actual = actualById.get(node.id);
+      if (!actual || !actual.exists) {
         missingIds.push(String(node.id));
         continue;
       }
