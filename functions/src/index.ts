@@ -1208,6 +1208,19 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
       if (run.get("importedBy") !== uid || run.get("inputFingerprint") !== inputFingerprint) {
         throw new HttpsError("failed-precondition", "Import run owner or fingerprint does not match.");
       }
+      // A completed run must be backed by the immutable server-recorded plan.
+      // Never let a client overwrite the plan's canonical record count during
+      // finalization or mark an empty/unplanned run as completed.
+      if (status === "completed" &&
+          (typeof run.get("planHash") !== "string" ||
+           !Number.isSafeInteger(run.get("plannedRecords")) ||
+           run.get("plannedRecords") < 1 ||
+           run.get("plannedRecords") !== data.plannedRecords)) {
+        throw new HttpsError(
+          "failed-precondition",
+          "A completed import must match its immutable recorded plan. Reconcile the run before finalizing.",
+        );
+      }
       const currentStatus = run.get("status");
       if (currentStatus !== "started") {
         if (currentStatus === status &&
