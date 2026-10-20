@@ -986,6 +986,7 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
       });
     }
     const nodeById = new Map(canonicalNodes.map((node) => [node.id, node]));
+    const ordinalById = new Map(canonicalNodes.map((node, index) => [node.id, index]));
     const expectedParentType: Record<string, string> = {
       district: "state", city: "district", area: "city",
     };
@@ -993,10 +994,13 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
       const parentType = expectedParentType[node.type];
       if (!parentType) continue; // State parent is the country document.
       const parent = nodeById.get(node.parentId);
-      if (!parent || parent.type !== parentType) {
+      const parentOrdinal = ordinalById.get(node.parentId);
+      const nodeOrdinal = ordinalById.get(node.id);
+      if (!parent || parent.type !== parentType || parentOrdinal === undefined ||
+          nodeOrdinal === undefined || parentOrdinal >= nodeOrdinal) {
         throw new HttpsError(
           "invalid-argument",
-          `The ${node.type} node ${node.id} must reference a planned ${parentType} parent.`,
+          `The ${node.type} node ${node.id} must reference a planned ${parentType} parent that appears earlier in the import plan.`,
         );
       }
     }
