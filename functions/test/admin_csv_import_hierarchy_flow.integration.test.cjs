@@ -83,9 +83,14 @@ test("CSV import callable flow writes an inactive State-District-City-Area hiera
   const audit = await db.doc(`service_location_imports/${runId}`).get();
   assert.equal(audit.exists, true);
   assert.equal(audit.get("status"), "completed");
-  assert.equal(audit.get("plannedRecords"), 4);
-  assert.equal(audit.get("createdRecords"), 4);
   assert.equal(audit.get("inputFingerprint"), fingerprint);
+  // Counts live on the durable run marker; the operator-facing audit stores
+  // immutable status/source metadata and intentionally omits mutable summaries.
+  const run = await db.doc(`service_location_import_runs/${runId}`).get();
+  assert.equal(run.exists, true);
+  assert.equal(run.get("plannedRecords"), 4);
+  assert.equal(run.get("createdRecords"), 4);
+  assert.equal(run.get("reusedRecords"), 0);
 
   await assert.rejects(
     () => manageServiceLocationImportRun.run(request(uid, {
