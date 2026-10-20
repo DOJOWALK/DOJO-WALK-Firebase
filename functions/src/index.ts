@@ -1012,6 +1012,13 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
           run.get("importedBy") !== uid || run.get("inputFingerprint") !== inputFingerprint) {
         throw new HttpsError("failed-precondition", "A matching started import run is required.");
       }
+      const runCountryId = run.get("countryId");
+      if (canonicalNodes.some((node) => node.type === "state" && node.parentId !== runCountryId)) {
+        throw new HttpsError(
+          "invalid-argument",
+          "Every planned state must reference the country selected for this import run.",
+        );
+      }
       if (run.get("planHash")) {
         throw new HttpsError("already-exists", "This import run already has an immutable plan.");
       }
