@@ -265,10 +265,10 @@ test("reconcilePlan verifies the stored plan and hierarchy without writing", asy
   const districtRef = db.doc("service_districts/district_reconcile");
   const cityRef = db.doc("service_cities/city_reconcile");
   const areaRef = db.doc("service_areas/area_reconcile");
-  await stateRef.set({ name: "Uttar Pradesh", countryId: "IN", isActive: false });
-  await districtRef.set({ name: "Gautam Buddha Nagar", countryId: "IN", stateId: "state_reconcile", isServiceActive: false });
-  await cityRef.set({ name: "Greater Noida", countryId: "IN", stateId: "state_reconcile", districtId: "district_reconcile", isServiceActive: false });
-  await areaRef.set({ name: "Gaur City", countryId: "IN", stateId: "state_reconcile", cityId: "city_reconcile", isServiceActive: false });
+  await stateRef.set({ name: "Uttar Pradesh", countryId: "IN" });
+  await districtRef.set({ name: "Gautam Buddha Nagar", countryId: "IN", stateId: "state_reconcile" });
+  await cityRef.set({ name: "Greater Noida", countryId: "IN", stateId: "state_reconcile", districtId: "district_reconcile" });
+  await areaRef.set({ name: "Gaur City", countryId: "IN", stateId: "state_reconcile", cityId: "city_reconcile" });
   const before = (await db.doc(`service_location_import_runs/${runId}`).get()).data();
   const result = await manageServiceLocationImportRun.run(request(uid, {
     action: "reconcilePlan", runId, inputFingerprint: fingerprint,
