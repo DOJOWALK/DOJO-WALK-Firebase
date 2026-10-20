@@ -207,6 +207,8 @@ test("reconcilePlan verifies the stored plan and hierarchy without writing", asy
   const nodes = [
     { id: "state_reconcile", type: "state", name: "Uttar Pradesh", parentId: "IN", alreadyExists: false, sourceLine: 2 },
     { id: "district_reconcile", type: "district", name: "Gautam Buddha Nagar", parentId: "state_reconcile", alreadyExists: false, sourceLine: 3 },
+    { id: "city_reconcile", type: "city", name: "Greater Noida", parentId: "district_reconcile", alreadyExists: false, sourceLine: 4 },
+    { id: "area_reconcile", type: "area", name: "Gaur City", parentId: "city_reconcile", alreadyExists: false, sourceLine: 5 },
   ];
   await manageServiceLocationImportRun.run(request(uid, {
     action: "recordPlan", runId, inputFingerprint: fingerprint, nodes,
