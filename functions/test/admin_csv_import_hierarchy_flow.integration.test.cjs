@@ -554,3 +554,62 @@ test("finalize rejects invalid count summaries without changing the started run"
       "invalid count summaries must not write an audit record");
   }
 });
+
+
+test("finalize rejects a different owner and fingerprint without mutating the run", async (t) => {
+  const ownerUid = `finalize-owner-${randomUUID()}`;
+  const otherUid = `finalize-other-${randomUUID()}`;
+  const suffix = randomUUID().replace(/-/g, "");
+  const runId = `finalize_owner_${suffix}`;
+  const fingerprint = `sha256:${"f".repeat(64)}`;
+  const wrongFingerprint = `sha256:${"a".repeat(64)}`;
+  const ownerRef = db.doc(`admin_users/${ownerUid}`);
+  const otherRef = db.doc(`admin_users/${otherUid}`);
+  const runRef = db.doc(`service_location_import_runs/${runId}`);
+  const auditRef = db.doc(`service_location_imports/${runId}`);
+
+  t.after(async () => {
+    await Promise.all([
+      ownerRef.delete().catch(() => {}),
+      otherRef.delete().catch(() => {}),
+      runRef.delete().catch(() => {}),
+      auditRef.delete().catch(() => {}),
+    ]);
+  });
+
+  await Promise.all([
+    ownerRef.set({ role: "super_admin", isActive: true }),
+    otherRef.set({ role: "super_admin", isActive: true }),
+  ]);
+  await manageServiceLocationImportRun.run(request(ownerUid, {
+    action: "begin", runId, inputFingerprint: fingerprint,
+    countryId: `country_${suffix}`, fileName: "finalize-owner.csv",
+  }));
+
+  const baseFinalize = {
+    action: "finalize", runId, status: "failed",
+    plannedRecords: 0, createdRecords: 0, reusedRecords: 0,
+  };
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(otherUid, {
+      ...baseFinalize, inputFingerprint: fingerprint,
+    })),
+    (error) => error && error.code === "failed-precondition",
+    "another active super_admin must not finalize the owner's run",
+  );
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(ownerUid, {
+      ...baseFinalize, inputFingerprint: wrongFingerprint,
+    })),
+    (error) => error && error.code === "failed-precondition",
+    "a mismatched CSV fingerprint must not finalize the run",
+  );
+
+  const runAfter = await runRef.get();
+  assert.equal(runAfter.get("status"), "started");
+  assert.equal(runAfter.get("importedBy"), ownerUid);
+  assert.equal(runAfter.get("inputFingerprint"), fingerprint);
+  assert.equal(runAfter.get("finishedAt"), undefined);
+  assert.equal((await auditRef.get()).exists, false,
+    "unauthorized finalization attempts must not create an audit");
+});
