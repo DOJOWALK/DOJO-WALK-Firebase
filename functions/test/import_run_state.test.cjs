@@ -869,3 +869,61 @@ test("finalize completes the maximum 300-node plan and commits audit atomically"
   assert.equal(audit.get("status"), "completed");
   assert.equal(audit.get("createdRecords"), 300);
 });
+
+
+test("recordPlan batch failure leaves an immutable marker and requires read-only reconciliation", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"a".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+
+  // Simulate a conflicting planned-node document so the first atomic batch fails.
+  // The run marker is already durable by design and must not be replayed as a new plan.
+  const planCollection = db.collection(`service_location_import_runs/${runId}/planned_nodes`);
+  await planCollection.doc("state_collision").create({
+    id: "state_collision",
+    type: "state",
+    name: "Unexpected pre-existing node",
+    parentId: "IN",
+    alreadyExists: false,
+    sourceLine: 2,
+    ordinal: 0,
+    planHash: "conflicting-hash",
+  });
+
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(uid, {
+      action: "recordPlan", runId, inputFingerprint: fingerprint,
+      nodes: [
+        { id: "state_collision", type: "state", name: "Rajasthan", parentId: "IN", alreadyExists: false, sourceLine: 2 },
+        { id: "state_after_collision", type: "state", name: "Uttar Pradesh", parentId: "IN", alreadyExists: false, sourceLine: 3 },
+      ],
+    })),
+  );
+
+  const marker = await db.doc(`service_location_import_runs/${runId}`).get();
+  assert.equal(marker.get("status"), "started");
+  assert.equal(marker.get("plannedRecords"), 2);
+  assert.match(marker.get("planHash"), /^[0-9a-f]{64}$/);
+
+  const reconciliation = await manageServiceLocationImportRun.run(request(uid, {
+    action: "reconcilePlan", runId, inputFingerprint: fingerprint,
+  }));
+  assert.equal(reconciliation.status, "plan_incomplete");
+  assert.equal(reconciliation.expectedRecords, 2);
+  assert.equal(reconciliation.storedRecords, 1);
+  assert.equal(reconciliation.readOnly, true);
+
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(uid, {
+      action: "recordPlan", runId, inputFingerprint: fingerprint,
+      nodes: [
+        { id: "state_collision", type: "state", name: "Rajasthan", parentId: "IN", alreadyExists: false, sourceLine: 2 },
+        { id: "state_after_collision", type: "state", name: "Uttar Pradesh", parentId: "IN", alreadyExists: false, sourceLine: 3 },
+      ],
+    })),
+    (error) => error && error.code === "already-exists",
+    "a partially recorded immutable plan must never be replayed",
+  );
+});
