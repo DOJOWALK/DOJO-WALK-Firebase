@@ -348,6 +348,14 @@ test("reconcilePlan verifies city and area parent links and reports missing desc
   assert.deepEqual(ancestorMismatch.mismatchIds, ["city_full"]);
   await refs[2].update({ stateId: "state_full" });
 
+  await refs[3].update({ stateId: "wrong_state" });
+  const areaAncestorMismatch = await manageServiceLocationImportRun.run(request(uid, {
+    action: "reconcilePlan", runId, inputFingerprint: fingerprint,
+  }));
+  assert.equal(areaAncestorMismatch.status, "reconciliation_mismatch");
+  assert.deepEqual(areaAncestorMismatch.mismatchIds, ["area_full"]);
+  await refs[3].update({ stateId: "state_full" });
+
   await refs[3].delete();
   const missing = await manageServiceLocationImportRun.run(request(uid, {
     action: "reconcilePlan", runId, inputFingerprint: fingerprint,
