@@ -131,8 +131,20 @@ test("finalize checks owner and fingerprint, then permits only idempotent same-r
 
   const completed = await manageServiceLocationImportRun.run(request(uid, finalize));
   assert.equal(completed.status, "completed");
+  assert.equal(completed.auditWritten, true);
+  const auditRef = db.doc(`service_location_imports/${runId}`);
+  const audit = await auditRef.get();
+  assert.equal(audit.exists, true, "final run state and audit summary must be committed together");
+  assert.equal(audit.get("status"), "completed");
+  assert.equal(audit.get("inputFingerprint"), fingerprint);
+  assert.equal(audit.get("importedBy"), uid);
   const retry = await manageServiceLocationImportRun.run(request(uid, finalize));
   assert.equal(retry.alreadyFinalized, true);
+  await auditRef.delete();
+  const recovered = await manageServiceLocationImportRun.run(request(uid, finalize));
+  assert.equal(recovered.alreadyFinalized, true);
+  assert.equal(recovered.auditRecovered, true);
+  assert.equal((await auditRef.get()).exists, true, "retry may recover a missing summary without replaying hierarchy writes");
   await assert.rejects(
     () => manageServiceLocationImportRun.run(request(uid, {
       ...finalize, status: "failed",
@@ -175,6 +187,9 @@ test("finalize rejects invalid or inconsistent counts and unknown actions", asyn
     status: "partial_failure", plannedRecords: 4, createdRecords: 2, reusedRecords: 0,
   })));
   assert.equal(partial.status, "partial_failure", "partial failures may account for only the writes completed so far");
+  const failureAudit = await db.doc(`service_location_imports/${runId}`).get();
+  assert.equal(failureAudit.exists, true, "partial failure status must have an immutable audit summary");
+  assert.equal(failureAudit.get("status"), "partial_failure");
   await assert.rejects(
     () => manageServiceLocationImportRun.run(request(uid, {
       action: "delete", runId, inputFingerprint: fingerprint,
