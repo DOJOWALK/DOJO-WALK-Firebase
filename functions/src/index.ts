@@ -865,7 +865,7 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
  *
  * The durable run document is written before hierarchy writes. It is not
  * client-writable under Firestore rules. Existing run IDs are deliberately
- * blocked until a separate authoritative reconciliation flow is implemented.
+ * blocked from replay; the read-only reconciliation action inspects the immutable plan and actual hierarchy state but never resumes or repairs writes.
  */
 export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in is required.");
