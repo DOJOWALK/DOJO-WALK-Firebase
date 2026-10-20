@@ -530,3 +530,34 @@ test("reconcilePlan detects tampered plan hashes and unverifiable ordinal order"
   await first.delete();
   await second.delete();
 });
+
+
+test("reconcilePlan detects accidental activation of newly imported hierarchy records", async () => {
+  const uid = await createAdmin();
+  const runId = `run-${randomUUID()}`;
+  runs.add(runId);
+  const fingerprint = `sha256:${"c".repeat(64)}`;
+  await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
+  const nodes = [
+    { id: "state_activation_guard", type: "state", name: "Rajasthan", parentId: "IN", alreadyExists: false, sourceLine: 2 },
+  ];
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "recordPlan", runId, inputFingerprint: fingerprint, nodes,
+  }));
+  const stateRef = db.doc("service_states/state_activation_guard");
+  await stateRef.set({ name: "Rajasthan", countryId: "IN", isActive: false });
+
+  const initiallyMatching = await manageServiceLocationImportRun.run(request(uid, {
+    action: "reconcilePlan", runId, inputFingerprint: fingerprint,
+  }));
+  assert.equal(initiallyMatching.status, "reconciled_match");
+  assert.equal(initiallyMatching.matchingRecords, 1);
+
+  await stateRef.update({ isActive: true });
+  const accidentallyActivated = await manageServiceLocationImportRun.run(request(uid, {
+    action: "reconcilePlan", runId, inputFingerprint: fingerprint,
+  }));
+  assert.equal(accidentallyActivated.status, "reconciliation_mismatch");
+  assert.deepEqual(accidentallyActivated.mismatchIds, ["state_activation_guard"]);
+  await stateRef.delete().catch(() => {});
+});
