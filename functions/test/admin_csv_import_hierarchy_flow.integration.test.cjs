@@ -242,3 +242,76 @@ test("import run inspection and reconciliation enforce active admin, owner, and 
   assert.equal(stillStarted.get("status"), "started", "denied requests must not change durable run state");
   assert.equal(stillStarted.get("importedBy"), ownerUid);
 });
+
+
+test("finalize rejects a hierarchy parent mismatch and safely retries after success", async (t) => {
+  const uid = `finalize-integrity-${randomUUID()}`;
+  const suffix = randomUUID().replace(/-/g, "");
+  const countryId = `country_${suffix}`;
+  const wrongCountryId = `country_wrong_${suffix}`;
+  const stateId = `state_${suffix}`;
+  const runId = `finalize_integrity_${suffix}`;
+  const fingerprint = `sha256:${"d".repeat(64)}`;
+  const runRef = db.doc(`service_location_import_runs/${runId}`);
+  const stateRef = db.doc(`service_states/${stateId}`);
+  const auditRef = db.doc(`service_location_imports/${runId}`);
+  const adminRef = db.doc(`admin_users/${uid}`);
+
+  t.after(async () => {
+    await Promise.all([
+      runRef.delete().catch(() => {}),
+      runRef.collection("planned_nodes").doc(stateId).delete().catch(() => {}),
+      stateRef.delete().catch(() => {}),
+      auditRef.delete().catch(() => {}),
+      adminRef.delete().catch(() => {}),
+    ]);
+  });
+
+  await adminRef.set({ role: "super_admin", isActive: true });
+  const plan = [{
+    id: stateId, type: "state", name: `Integrity State ${suffix}`,
+    parentId: countryId, alreadyExists: false, sourceLine: 2,
+  }];
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "begin", runId, inputFingerprint: fingerprint,
+    countryId, fileName: "finalize-integrity.csv",
+  }));
+  await manageServiceLocationImportRun.run(request(uid, {
+    action: "recordPlan", runId, inputFingerprint: fingerprint, nodes: plan,
+  }));
+
+  await stateRef.set({
+    countryId: wrongCountryId,
+    name: plan[0].name,
+    isActive: false,
+  });
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(uid, {
+      action: "finalize", runId, inputFingerprint: fingerprint,
+      status: "completed", plannedRecords: 1, createdRecords: 1, reusedRecords: 0,
+    })),
+    error => error && error.code === "failed-precondition",
+    "finalization must reject a State whose country parent differs from the immutable plan",
+  );
+  assert.equal((await runRef.get()).get("status"), "started",
+    "failed integrity validation must not terminally finalize the run");
+  assert.equal((await auditRef.get()).exists, false,
+    "failed integrity validation must not write an operator audit");
+
+  await stateRef.update({ countryId });
+  const finalized = await manageServiceLocationImportRun.run(request(uid, {
+    action: "finalize", runId, inputFingerprint: fingerprint,
+    status: "completed", plannedRecords: 1, createdRecords: 1, reusedRecords: 0,
+  }));
+  assert.equal(finalized.status, "completed");
+  assert.equal(finalized.auditWritten, true);
+
+  const retry = await manageServiceLocationImportRun.run(request(uid, {
+    action: "finalize", runId, inputFingerprint: fingerprint,
+    status: "completed", plannedRecords: 1, createdRecords: 1, reusedRecords: 0,
+  }));
+  assert.equal(retry.status, "completed");
+  assert.equal(retry.alreadyFinalized, true);
+  assert.equal((await auditRef.get()).exists, true);
+  assert.equal((await runRef.get()).get("status"), "completed");
+});
