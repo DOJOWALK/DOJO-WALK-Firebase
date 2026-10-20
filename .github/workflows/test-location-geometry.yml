@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - "functions/**"
+      - "test/**"
+      - "package.json"
+      - "package-lock.json"
       - "firebase.json"
       - "firestore.rules"
       - ".github/workflows/test-location-geometry.yml"
@@ -29,8 +32,10 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+      - name: Install root Firestore Rules test dependencies
+        run: npm install --no-audit --no-fund
       - name: Install function dependencies
         working-directory: functions
         run: npm install --no-audit --no-fund
-      - name: Build and run tests against Firestore Emulator
-        run: npx --yes firebase-tools emulators:exec --project demo-dojo-walk-tests --only firestore "cd functions && npm test"
+      - name: Run root Firestore Rules and Functions tests against Firestore Emulator
+        run: npx --yes firebase-tools emulators:exec --project demo-dojo-rules-tests --only firestore "npm test && cd functions && npm test"
