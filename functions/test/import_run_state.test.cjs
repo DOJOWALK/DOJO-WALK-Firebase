@@ -152,6 +152,13 @@ test("finalize rejects invalid or inconsistent counts and unknown actions", asyn
   await manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint)));
   await assert.rejects(
     () => manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint, "finalize", {
+      status: "completed", plannedRecords: 4, createdRecords: 3, reusedRecords: 1,
+    }))),
+    (error) => error && error.code === "failed-precondition",
+    "completed status requires an immutable recorded plan",
+  );
+  await assert.rejects(
+    () => manageServiceLocationImportRun.run(request(uid, payload(runId, fingerprint, "finalize", {
       status: "completed", plannedRecords: -1, createdRecords: 0, reusedRecords: 0,
     }))),
     (error) => error && error.code === "invalid-argument",
