@@ -90,9 +90,9 @@ test("real callable HTTP timeout after committed begin is recovered read-only wi
       // Write a small part of the declared body before closing. This avoids
       // relying on a headers-only close, which some fetch/HTTP combinations
       // can surface as an empty response instead of a body-stream error.
-      const socket = res.socket;
-      socket?.write('{"partial":');
-      socket?.destroy();
+      // Wait until Node has flushed the partial body bytes before dropping
+      // the connection, so the client reliably sees a truncated response.
+      res.write('{"partial":', () => res.destroy());
     } catch (error) {
       res.writeHead(502, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: error instanceof Error ? error.message : "proxy failure" }));
