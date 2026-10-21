@@ -51,6 +51,26 @@ export function classifyLegacyCityDistrictMapping(input: {
   });
   const validId = (value: unknown): value is string =>
     typeof value === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(value) && value === value.trim();
+  const validTimestamp = (value: unknown): value is string => {
+    if (typeof value !== "string") return false;
+    const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|([+-])(\d{2}):(\d{2}))$/.exec(value);
+    if (!match) return false;
+    const [, yearText, monthText, dayText, hourText, minuteText, secondText, , zone, , offsetHourText, offsetMinuteText] = match;
+    const year = Number(yearText);
+    const month = Number(monthText);
+    const day = Number(dayText);
+    const hour = Number(hourText);
+    const minute = Number(minuteText);
+    const second = Number(secondText);
+    const daysInMonth = month >= 1 && month <= 12
+      ? new Date(Date.UTC(year, month, 0)).getUTCDate()
+      : 0;
+    if (year < 1 || day < 1 || day > daysInMonth ||
+        hour > 23 || minute > 59 || second > 59) return false;
+    if (zone !== "Z" &&
+        (Number(offsetHourText) > 23 || Number(offsetMinuteText) > 59)) return false;
+    return Number.isFinite(Date.parse(value));
+  };
 
   if (!input || typeof input !== "object" ||
       !validId(input.cityId) || !validId(input.countryId) ||
@@ -137,7 +157,7 @@ export function classifyLegacyCityDistrictMapping(input: {
       !mapping.evidenceReference.trim() ||
       mapping.evidenceReference !== candidate.evidenceReference ||
       typeof mapping.reviewer !== "string" || !mapping.reviewer.trim() ||
-      typeof mapping.reviewedAt !== "string" || !mapping.reviewedAt.trim()) {
+      !validTimestamp(mapping.reviewedAt)) {
     return {
       status: "MANIFEST_MISMATCH",
       safeToApply: false,
