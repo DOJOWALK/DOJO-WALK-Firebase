@@ -101,7 +101,7 @@ test("inventory paginates and classifies linked, legacy, broken and read-error C
       district_a: { countryId: "country_a", stateId: "state_a" },
     },
   };
-  const denied = new Error("permission denied");
+  const denied = new Error("permission denied for service_states/SECRET_LOCATION_ID");
   denied.code = "permission-denied";
   const adjusted = fakeFirestore(collections, { "service_states/state_read_error": denied });
   collections.service_cities.city_d = {
@@ -128,6 +128,8 @@ test("inventory paginates and classifies linked, legacy, broken and read-error C
   assert.equal(report.records.every((record) => !("cityId" in record)), true);
   assert.equal(json.includes("city_a"), false);
   assert.equal(json.includes("city_b"), false);
+  assert.equal(json.includes("SECRET_LOCATION_ID"), false);
+  assert.equal(json.includes("permission denied"), false);
   assert.equal(report.safety.firestoreWritesPerformed, false);
   assert.equal(report.safety.districtNamesUsedForInference, false);
   assert.equal(report.safety.locationNamesIncluded, false);
