@@ -9,17 +9,16 @@ const { applicationDefault, initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
 const { classifyCityDistrictCompatibility } = require("../lib/district_schema_contract");
 
-const projectId = process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT;
-if (!projectId) {
-  console.error("Set GCLOUD_PROJECT or GOOGLE_CLOUD_PROJECT explicitly; refusing to guess a Firebase project.");
-  process.exit(2);
+function resolveProjectId(env = process.env) {
+  return env.GCLOUD_PROJECT || env.GOOGLE_CLOUD_PROJECT || "";
 }
-const pageSize = Math.min(500, Math.max(1, Number.parseInt(process.env.PAGE_SIZE || "200", 10) || 200));
-const outputPath = process.env.REPORT_PATH;
-initializeApp({ credential: applicationDefault(), projectId });
-const db = getFirestore();
 
-async function readDoc(collection, id) {
+function parsePageSize(value) {
+  const parsed = Number.parseInt(value || "200", 10);
+  return Math.min(500, Math.max(1, Number.isFinite(parsed) && parsed !== 0 ? parsed : 200));
+}
+
+async function readDoc(db, collection, id) {
   if (typeof id !== "string" || !id.trim()) return null;
   // Validate document IDs before calling Firestore: slash-containing IDs are
   // malformed data, not a network/permission read failure.
@@ -30,15 +29,21 @@ async function readDoc(collection, id) {
   return snap.exists ? { ...snap.data(), id: snap.id } : null;
 }
 
-async function writeReport(path, json) {
+async function writeReport(path, json, fs = require("node:fs")) {
   if (!path) return;
-  const fs = require("node:fs");
   const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL;
   const fd = fs.openSync(path, flags, 0o600);
-  try { fs.writeFileSync(fd, json, "utf8"); } finally { fs.closeSync(fd); }
+  try {
+    fs.writeFileSync(fd, json, "utf8");
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
-async function run() {
+async function runInventory({ db, projectId, pageSize = 200, outputPath = null, writeReportFn = writeReport }) {
+  if (!db) throw new Error("FIRESTORE_CLIENT_REQUIRED");
+  if (typeof projectId !== "string" || !projectId.trim()) throw new Error("PROJECT_ID_REQUIRED");
+  const safePageSize = parsePageSize(String(pageSize));
   const counts = {
     DISTRICT_LINKED: 0,
     LEGACY_NO_DISTRICT: 0,
@@ -50,7 +55,7 @@ async function run() {
   let scanned = 0;
 
   while (true) {
-    let query = db.collection("service_cities").orderBy("__name__").limit(pageSize);
+    let query = db.collection("service_cities").orderBy("__name__").limit(safePageSize);
     if (lastDoc) query = query.startAfter(lastDoc);
     const page = await query.get();
     if (page.empty) break;
@@ -66,15 +71,15 @@ async function run() {
           throw new Error("CITY_PARENT_FIELDS_INVALID");
         }
         const [country, state] = await Promise.all([
-          readDoc("service_countries", city.countryId),
-          readDoc("service_states", city.stateId),
+          readDoc(db, "service_countries", city.countryId),
+          readDoc(db, "service_states", city.stateId),
         ]);
         if (!country) throw new Error("COUNTRY_MISSING");
         if (!state || state.countryId !== city.countryId) throw new Error("STATE_COUNTRY_MISMATCH");
 
         let district = null;
         const hasDistrict = city.districtId !== undefined && city.districtId !== null && city.districtId !== "";
-        if (hasDistrict) district = await readDoc("service_districts", city.districtId);
+        if (hasDistrict) district = await readDoc(db, "service_districts", city.districtId);
         status = classifyCityDistrictCompatibility({
           city, district, expectedCountryId: city.countryId, expectedStateId: city.stateId,
         });
@@ -91,7 +96,7 @@ async function run() {
       records.push({ cityId: snap.id, status, reason });
     }
     lastDoc = page.docs[page.docs.length - 1];
-    if (page.size < pageSize) break;
+    if (page.size < safePageSize) break;
   }
 
   const report = {
@@ -111,12 +116,31 @@ async function run() {
     },
   };
   const json = JSON.stringify(report, null, 2) + "\n";
-  await writeReport(outputPath, json);
-  if (!outputPath) process.stdout.write(json);
-  else console.log(`Read-only inventory written to ${outputPath}; scanned ${scanned} City records.`);
+  await writeReportFn(outputPath, json);
+  return { report, json };
 }
 
-run().catch((error) => {
-  console.error("City inventory failed; no migration writes are performed.", error && error.message ? error.message : error);
-  process.exitCode = 1;
-});
+async function main(env = process.env) {
+  const projectId = resolveProjectId(env);
+  if (!projectId) {
+    console.error("Set GCLOUD_PROJECT or GOOGLE_CLOUD_PROJECT explicitly; refusing to guess a Firebase project.");
+    process.exitCode = 2;
+    return;
+  }
+  initializeApp({ credential: applicationDefault(), projectId });
+  const db = getFirestore();
+  const outputPath = env.REPORT_PATH || null;
+  const pageSize = parsePageSize(env.PAGE_SIZE);
+  const { json, report } = await runInventory({ db, projectId, pageSize, outputPath });
+  if (!outputPath) process.stdout.write(json);
+  else console.log(`Read-only inventory written to ${outputPath}; scanned ${report.scanned} City records.`);
+}
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error("City inventory failed; no migration writes are performed.", error && error.message ? error.message : error);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { resolveProjectId, parsePageSize, readDoc, writeReport, runInventory, main };
