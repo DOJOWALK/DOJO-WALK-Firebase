@@ -80,8 +80,9 @@ test("real callable HTTP timeout after committed begin is recovered read-only wi
         return;
       }
       // Reaching this point proves the callable returned success. Destroy the
-      // client-facing socket without sending a response to simulate a lost reply.
-      res.destroy();
+      // underlying client socket before ServerResponse can implicitly flush
+      // default success headers; this must be a transport failure, not an empty 200.
+      req.socket.destroy();
     } catch (error) {
       res.writeHead(502, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: error instanceof Error ? error.message : "proxy failure" }));
