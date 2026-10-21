@@ -89,8 +89,20 @@ async function runInventory({ db, projectId, pageSize = 200, outputPath = null, 
             ? "DISTRICT_ID_MISSING_MANUAL_REVIEW_REQUIRED"
             : "DISTRICT_OR_PARENT_CHAIN_MISMATCH";
       } catch (error) {
-        status = error && error.code ? "READ_ERROR" : "BROKEN_PARENT_CHAIN";
-        reason = error && typeof error.message === "string" ? error.message : "UNKNOWN_READ_ERROR";
+        // Do not export raw SDK exception text: it can contain document paths or IDs.
+        const message = error && typeof error.message === "string" ? error.message : "";
+        const code = error && typeof error.code === "string" ? error.code : "";
+        if (message === "CITY_PARENT_FIELDS_INVALID" || message === "DOCUMENT_ID_INVALID" ||
+            message === "COUNTRY_MISSING" || message === "STATE_COUNTRY_MISMATCH") {
+          status = "BROKEN_PARENT_CHAIN";
+          reason = message;
+        } else if (code) {
+          status = "READ_ERROR";
+          reason = "READ_FAILED";
+        } else {
+          status = "BROKEN_PARENT_CHAIN";
+          reason = "VALIDATION_FAILED";
+        }
       }
       counts[status] = (counts[status] || 0) + 1;
       // Do not include raw Firestore document IDs: some projects use readable
