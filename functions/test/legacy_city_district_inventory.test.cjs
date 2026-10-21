@@ -103,9 +103,7 @@ test("inventory paginates and classifies linked, legacy, broken and read-error C
   };
   const denied = new Error("permission denied");
   denied.code = "permission-denied";
-  const db = fakeFirestore(collections, { "service_states/state_a": denied });
-  // Keep one valid State readable by using a targeted failing City below instead.
-  delete db.collection;
+  // Keep the ordinary parent chain readable and simulate one isolated read failure.
   const adjusted = fakeFirestore(collections, { "service_states/state_read_error": denied });
   collections.service_cities.city_d = {
     countryId: "country_a", stateId: "state_read_error", districtId: "district_a",
