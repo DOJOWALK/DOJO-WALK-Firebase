@@ -101,7 +101,12 @@ test("real callable HTTP timeout after committed begin is recovered read-only wi
     fileName: "states.csv",
   };
   await assert.rejects(
-    callCallable(proxyUrl, token, beginPayload),
+    async () => {
+      const response = await callCallable(proxyUrl, token, beginPayload);
+      // Fetch may resolve once headers arrive; consume the body so a dropped
+      // response is observed as a transport failure rather than a false success.
+      await response.arrayBuffer();
+    },
     /fetch failed|socket|reset|terminated|aborted/i,
     "client must observe a transport failure after the server committed begin",
   );
