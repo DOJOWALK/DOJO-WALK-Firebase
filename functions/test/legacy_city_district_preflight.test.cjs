@@ -65,7 +65,17 @@ test("matching reviewed manifest may be marked ready but performs no write", () 
 });
 
 test("malformed reviewedAt timestamps are rejected", () => {
-  for (const reviewedAt of ["not-a-date", "2026-99-99T00:00:00Z", "", "2026-10-22"]) {
+  for (const reviewedAt of [
+    "not-a-date",
+    "2026-99-99T00:00:00Z",
+    "2026-02-30T00:00:00Z",
+    "2026-04-31T00:00:00Z",
+    "2026-10-22T25:00:00Z",
+    "2026-10-22T12:61:00Z",
+    "2026-10-22T12:00:00+99:00",
+    "",
+    "2026-10-22",
+  ]) {
     const result = classifyLegacyCityDistrictMapping({
       ...base,
       approvedMapping: { ...approval, reviewedAt },
