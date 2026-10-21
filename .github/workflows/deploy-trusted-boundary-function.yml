@@ -47,6 +47,10 @@ jobs:
         working-directory: functions
         run: npm install --no-audit --no-fund
 
+      - name: Build Functions before emulator discovery
+        working-directory: functions
+        run: npm run build
+
       - name: Build and run Functions tests with required emulators
         run: npx --yes firebase-tools emulators:exec --config firebase.json --only auth,firestore,functions --project demo-dojo-rules-tests "cd functions && npm test"
 
