@@ -87,7 +87,12 @@ test("real callable HTTP timeout after committed begin is recovered read-only wi
       // Content-Length, an empty close can be interpreted as a valid empty 200.
       res.writeHead(200, { "content-type": "application/json", "content-length": "100" });
       res.flushHeaders();
-      res.socket?.destroy();
+      // Write a small part of the declared body before closing. This avoids
+      // relying on a headers-only close, which some fetch/HTTP combinations
+      // can surface as an empty response instead of a body-stream error.
+      const socket = res.socket;
+      socket?.write('{"partial":');
+      socket?.destroy();
     } catch (error) {
       res.writeHead(502, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: error instanceof Error ? error.message : "proxy failure" }));
