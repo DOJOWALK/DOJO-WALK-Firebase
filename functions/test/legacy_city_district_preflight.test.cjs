@@ -64,6 +64,17 @@ test("matching reviewed manifest may be marked ready but performs no write", () 
   assert.match(result.reason, /separately approved write implementation/);
 });
 
+test("malformed reviewedAt timestamps are rejected", () => {
+  for (const reviewedAt of ["not-a-date", "2026-99-99T00:00:00Z", "", "2026-10-22"]) {
+    const result = classifyLegacyCityDistrictMapping({
+      ...base,
+      approvedMapping: { ...approval, reviewedAt },
+    });
+    assert.equal(result.status, "MANIFEST_MISMATCH", reviewedAt);
+    assert.equal(result.safeToApply, false, reviewedAt);
+  }
+});
+
 test("wrong District or stale parent in manifest is rejected", () => {
   const result = classifyLegacyCityDistrictMapping({
     ...base,
