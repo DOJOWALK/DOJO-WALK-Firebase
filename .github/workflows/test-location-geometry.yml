@@ -10,6 +10,7 @@ on:
       - "firebase.json"
       - "firestore.rules"
       - ".github/workflows/test-location-geometry.yml"
+      - ".github/workflows/deploy-trusted-boundary-function.yml"
   workflow_dispatch:
 
 permissions:

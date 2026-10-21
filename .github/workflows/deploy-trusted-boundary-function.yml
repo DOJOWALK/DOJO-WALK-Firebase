@@ -47,8 +47,8 @@ jobs:
         working-directory: functions
         run: npm install --no-audit --no-fund
 
-      - name: Build and run Functions tests with Firestore Emulator
-        run: npx --yes firebase-tools emulators:exec --config firebase.json --only firestore --project demo-dojo-rules-tests "cd functions && npm test"
+      - name: Build and run Functions tests with required emulators
+        run: npx --yes firebase-tools emulators:exec --config firebase.json --only auth,firestore,functions --project demo-dojo-rules-tests "cd functions && npm test"
 
       - name: Authenticate Firebase
         env:
