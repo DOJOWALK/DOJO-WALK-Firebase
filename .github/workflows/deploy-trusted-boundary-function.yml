@@ -66,10 +66,10 @@ jobs:
           echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/firebase-service-account.json" >> "$GITHUB_ENV"
 
       - name: Deploy trusted location callables only
-        run: npx --yes firebase-tools deploy --only functions:reviewServiceLocationBoundary,functions:activateServiceLocation,functions:setServiceLocationStatus,functions:manageServiceLocationImportRun --project dojo-platform-b68a3 --non-interactive --force
+        run: npx --yes firebase-tools deploy --only functions:reviewServiceLocationBoundary,functions:activateServiceLocation,functions:setServiceLocationStatus,functions:manageServiceLocationImportRun,functions:saveServiceLocationWithNameIndex --project dojo-platform-b68a3 --non-interactive --force
 
       - name: Post-deploy reminder
         run: |
           echo "Function deployment command completed."
-          echo "Verify all four deployed callables (reviewServiceLocationBoundary, activateServiceLocation, setServiceLocationStatus, manageServiceLocationImportRun), region asia-south1, logs, and authorized/unauthorized behavior before deploying Firestore Rules."
+          echo "Verify all five deployed callables (reviewServiceLocationBoundary, activateServiceLocation, setServiceLocationStatus, manageServiceLocationImportRun, saveServiceLocationWithNameIndex), region asia-south1, logs, and authorized/unauthorized behavior before deploying Firestore Rules."
           echo "This workflow does not deploy Firestore Rules or activate/import any locations."
