@@ -59,8 +59,8 @@ test("real callable HTTP timeout after committed begin is recovered read-only wi
   await db.doc(`admin_users/${user.uid}`).set({ role: "super_admin", isActive: true });
   adminRef = db.doc(`admin_users/${user.uid}`);
 
-  // Proxy waits until the Functions Emulator has completed the request, then
-  // deliberately drops the successful response as a deterministic client timeout.
+  // Proxy waits until the Functions Emulator has committed the request, then
+  // returns a deterministic gateway-timeout response to model a client-side timeout.
   proxy = http.createServer(async (req, res) => {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
@@ -79,20 +79,16 @@ test("real callable HTTP timeout after committed begin is recovered read-only wi
         res.end(upstreamBody);
         return;
       }
-      // Reaching this point proves the callable returned success. Send headers
-      // but deliberately omit the body, then destroy the underlying connection.
-      // This makes fetch() receive a response whose body stream terminates early,
-      // so consuming arrayBuffer() deterministically observes a transport failure.
-      // Declare a body length, then close before sending any body bytes. Without
-      // Content-Length, an empty close can be interpreted as a valid empty 200.
-      res.writeHead(200, { "content-type": "application/json", "content-length": "100" });
-      res.flushHeaders();
-      // Write a small part of the declared body before closing. This avoids
-      // relying on a headers-only close, which some fetch/HTTP combinations
-      // can surface as an empty response instead of a body-stream error.
-      // Wait until Node has flushed the partial body bytes before dropping
-      // the connection, so the client reliably sees a truncated response.
-      res.write('{"partial":', () => res.destroy());
+      // The upstream callable has returned success, so its begin marker is
+      // committed. Model the proxy timing out after that commit with an explicit
+      // gateway timeout instead of depending on fetch's socket-error behavior.
+      res.writeHead(504, { "content-type": "application/json" });
+      res.end(JSON.stringify({
+        error: {
+          status: "DEADLINE_EXCEEDED",
+          message: "simulated proxy timeout after upstream commit",
+        },
+      }));
     } catch (error) {
       res.writeHead(502, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: error instanceof Error ? error.message : "proxy failure" }));
@@ -111,16 +107,10 @@ test("real callable HTTP timeout after committed begin is recovered read-only wi
     countryId: "IN",
     fileName: "states.csv",
   };
-  await assert.rejects(
-    async () => {
-      const response = await callCallable(proxyUrl, token, beginPayload);
-      // Fetch may resolve once headers arrive; consume the body so a dropped
-      // response is observed as a transport failure rather than a false success.
-      await response.arrayBuffer();
-    },
-    /fetch failed|socket|reset|terminated|aborted/i,
-    "client must observe a transport failure after the server committed begin",
-  );
+  const timeoutResponse = await callCallable(proxyUrl, token, beginPayload);
+  assert.equal(timeoutResponse.status, 504, "client must observe a timeout after the server committed begin");
+  const timeoutBody = await timeoutResponse.json();
+  assert.equal(timeoutBody.error.status, "DEADLINE_EXCEEDED");
 
   // Verify durable server-side state directly, then use the real callable's
   // authenticated inspect action as the supported recovery path.
