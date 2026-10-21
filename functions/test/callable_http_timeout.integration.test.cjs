@@ -79,11 +79,13 @@ test("real callable HTTP timeout after committed begin is recovered read-only wi
         res.end(upstreamBody);
         return;
       }
-      // Reaching this point proves the callable returned success. Destroy the
-      // ServerResponse itself so Node closes the client connection without
-      // implicitly flushing default success headers; this must be a transport
-      // failure, not an empty 200.
-      res.destroy();
+      // Reaching this point proves the callable returned success. Send headers
+      // but deliberately omit the body, then destroy the underlying connection.
+      // This makes fetch() receive a response whose body stream terminates early,
+      // so consuming arrayBuffer() deterministically observes a transport failure.
+      res.writeHead(200, { "content-type": "application/json" });
+      res.flushHeaders();
+      res.socket?.destroy();
     } catch (error) {
       res.writeHead(502, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: error instanceof Error ? error.message : "proxy failure" }));
