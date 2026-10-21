@@ -67,7 +67,8 @@ export function buildLegacyCityDistrictInventory(input: {
     const currentDistrictId = nonEmptyId(rawDistrictId) ? rawDistrictId : null;
     const parentIdsValid = nonEmptyId(city?.countryId) && nonEmptyId(city?.stateId);
 
-    if (!city || !validId(city.id) || !parentIdsValid) {
+    if (!city || !validId(city.id) || !parentIdsValid ||
+        (rawDistrictId !== undefined && rawDistrictId !== null && rawDistrictId !== "" && !validId(rawDistrictId))) {
       return {
         cityId,
         cityName,
