@@ -67,5 +67,5 @@ jobs:
       - name: Post-deploy reminder
         run: |
           echo "Function deployment command completed."
-          echo "Verify all three deployed callables, region asia-south1, logs, and authorized/unauthorized behavior before deploying Firestore Rules."
+          echo "Verify all four deployed callables (reviewServiceLocationBoundary, activateServiceLocation, setServiceLocationStatus, manageServiceLocationImportRun), region asia-south1, logs, and authorized/unauthorized behavior before deploying Firestore Rules."
           echo "This workflow does not deploy Firestore Rules or activate/import any locations."
