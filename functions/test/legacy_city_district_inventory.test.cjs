@@ -84,18 +84,18 @@ test("page size is clamped to the supported range", () => {
   assert.equal(parsePageSize("2"), 2);
 });
 
-test("inventory paginates and classifies linked, legacy, broken and read-error Cities", async () => {
+test("inventory paginates and classifies linked, legacy, broken and read-error Cities without exporting IDs", async () => {
   const collections = {
     service_cities: {
       city_a: { countryId: "country_a", stateId: "state_a", districtId: "district_a" },
       city_b: { countryId: "country_a", stateId: "state_a" },
-      city_c: { countryId: "country_a", stateId: "state_wrong", districtId: "district_a" },
+      city_c: { countryId: "country_a", stateId: "district_wrong", districtId: "district_a" },
       city_d: { countryId: "country_a", stateId: "state_a" },
     },
     service_countries: { country_a: { active: true } },
     service_states: {
       state_a: { countryId: "country_a" },
-      state_wrong: { countryId: "country_a" },
+      district_wrong: { countryId: "country_a" },
     },
     service_districts: {
       district_a: { countryId: "country_a", stateId: "state_a" },
@@ -103,20 +103,19 @@ test("inventory paginates and classifies linked, legacy, broken and read-error C
   };
   const denied = new Error("permission denied");
   denied.code = "permission-denied";
-  // Keep the ordinary parent chain readable and simulate one isolated read failure.
   const adjusted = fakeFirestore(collections, { "service_states/state_read_error": denied });
   collections.service_cities.city_d = {
     countryId: "country_a", stateId: "state_read_error", districtId: "district_a",
   };
   collections.service_states.state_read_error = { countryId: "country_a" };
 
-  const { report } = await runInventory({
+  const { report, json } = await runInventory({
     db: adjusted,
     projectId: "test-project",
     pageSize: 2,
-    writeReportFn: async (pathValue, json) => {
+    writeReportFn: async (pathValue, reportJson) => {
       assert.equal(pathValue, null);
-      assert.ok(json.includes('"firestoreWritesPerformed": false'));
+      assert.ok(reportJson.includes('"firestoreWritesPerformed": false'));
     },
   });
 
@@ -125,10 +124,14 @@ test("inventory paginates and classifies linked, legacy, broken and read-error C
   assert.equal(report.counts.LEGACY_NO_DISTRICT, 1);
   assert.equal(report.counts.BROKEN_PARENT_CHAIN, 1);
   assert.equal(report.counts.READ_ERROR, 1);
-  assert.deepEqual(report.records.map((record) => record.cityId), ["city_a", "city_b", "city_c", "city_d"]);
+  assert.equal(report.records.length, 4);
+  assert.equal(report.records.every((record) => !("cityId" in record)), true);
+  assert.equal(json.includes("city_a"), false);
+  assert.equal(json.includes("city_b"), false);
   assert.equal(report.safety.firestoreWritesPerformed, false);
   assert.equal(report.safety.districtNamesUsedForInference, false);
   assert.equal(report.safety.locationNamesIncluded, false);
+  assert.equal(report.safety.rawDocumentIdsIncluded, false);
   assert.equal(report.safety.approvalForMigration, false);
 });
 
