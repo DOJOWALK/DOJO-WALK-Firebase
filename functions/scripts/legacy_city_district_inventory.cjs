@@ -93,7 +93,9 @@ async function runInventory({ db, projectId, pageSize = 200, outputPath = null, 
         reason = error && typeof error.message === "string" ? error.message : "UNKNOWN_READ_ERROR";
       }
       counts[status] = (counts[status] || 0) + 1;
-      records.push({ cityId: snap.id, status, reason });
+      // Do not include raw Firestore document IDs: some projects use readable
+      // location names as IDs. Keep this exported report free of those values.
+      records.push({ status, reason });
     }
     lastDoc = page.docs[page.docs.length - 1];
     if (page.size < safePageSize) break;
@@ -111,8 +113,9 @@ async function runInventory({ db, projectId, pageSize = 200, outputPath = null, 
       firestoreWritesPerformed: false,
       districtNamesUsedForInference: false,
       locationNamesIncluded: false,
+      rawDocumentIdsIncluded: false,
       approvalForMigration: false,
-      note: "Paginated scan is not an atomic snapshot. Review exceptions and rerun before any separately approved migration.",
+      note: "Paginated scan is not an atomic snapshot. Report records omit document IDs and are not directly traceable to individual documents. Review exceptions separately and rerun before any separately approved migration.",
     },
   };
   const json = JSON.stringify(report, null, 2) + "\n";
