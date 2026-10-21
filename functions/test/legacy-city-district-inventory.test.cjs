@@ -96,3 +96,11 @@ test("invalid candidate IDs cannot become proposals", () => {
   assert.equal(rows[0].status, "no_candidate");
   assert.deepEqual(rows[0].candidateDistrictIds, []);
 });
+
+test("malformed non-empty districtId is invalid rather than treated as missing", () => {
+  const rows = run([
+    { id: "c1", name: "City", countryId: "india", stateId: "up", districtId: "bad id" },
+  ]);
+  assert.equal(rows[0].status, "invalid_record");
+  assert.equal(rows[0].currentDistrictId, null);
+});
