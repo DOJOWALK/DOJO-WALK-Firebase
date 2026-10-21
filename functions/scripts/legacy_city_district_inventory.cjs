@@ -21,6 +21,11 @@ const db = getFirestore();
 
 async function readDoc(collection, id) {
   if (typeof id !== "string" || !id.trim()) return null;
+  // Validate document IDs before calling Firestore: slash-containing IDs are
+  // malformed data, not a network/permission read failure.
+  if (id !== id.trim() || id.includes("/")) {
+    throw new Error("DOCUMENT_ID_INVALID");
+  }
   const snap = await db.collection(collection).doc(id).get();
   return snap.exists ? { ...snap.data(), id: snap.id } : null;
 }
