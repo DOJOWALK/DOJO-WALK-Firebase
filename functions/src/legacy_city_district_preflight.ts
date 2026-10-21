@@ -51,6 +51,10 @@ export function classifyLegacyCityDistrictMapping(input: {
   });
   const validId = (value: unknown): value is string =>
     typeof value === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(value) && value === value.trim();
+  const validTimestamp = (value: unknown): value is string =>
+    typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(value) &&
+    Number.isFinite(Date.parse(value));
 
   if (!input || typeof input !== "object" ||
       !validId(input.cityId) || !validId(input.countryId) ||
@@ -137,7 +141,7 @@ export function classifyLegacyCityDistrictMapping(input: {
       !mapping.evidenceReference.trim() ||
       mapping.evidenceReference !== candidate.evidenceReference ||
       typeof mapping.reviewer !== "string" || !mapping.reviewer.trim() ||
-      typeof mapping.reviewedAt !== "string" || !mapping.reviewedAt.trim()) {
+      !validTimestamp(mapping.reviewedAt)) {
     return {
       status: "MANIFEST_MISMATCH",
       safeToApply: false,
