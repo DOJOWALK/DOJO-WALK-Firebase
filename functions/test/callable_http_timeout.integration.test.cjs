@@ -83,7 +83,9 @@ test("real callable HTTP timeout after committed begin is recovered read-only wi
       // but deliberately omit the body, then destroy the underlying connection.
       // This makes fetch() receive a response whose body stream terminates early,
       // so consuming arrayBuffer() deterministically observes a transport failure.
-      res.writeHead(200, { "content-type": "application/json" });
+      // Declare a body length, then close before sending any body bytes. Without
+      // Content-Length, an empty close can be interpreted as a valid empty 200.
+      res.writeHead(200, { "content-type": "application/json", "content-length": "100" });
       res.flushHeaders();
       res.socket?.destroy();
     } catch (error) {
