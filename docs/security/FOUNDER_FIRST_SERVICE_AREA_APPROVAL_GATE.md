@@ -72,7 +72,9 @@ Run against Firebase Auth + Firestore Emulator and the callable Functions, with 
 - Source inspection confirms `activateServiceLocation` currently checks active `super_admin`, hierarchy, verified boundary and polygon containment, and creates a server-side activation audit event.
 - Source inspection did not establish a separate Founder/CEO approval record enforced during activation.
 - Area Manager assigned-Area authorization was not established by this review.
-- Geometry unit tests exist; this is not proof of Auth + Firestore Emulator integration coverage.
+- Existing `functions/test/activate_service_location.integration.test.cjs` is a callable integration suite that refuses to run without `FIRESTORE_EMULATOR_HOST` and exercises the callable's `.run()` handler against Firestore Emulator data. Its helper supplies a synthetic `request.auth` context; it does **not** establish end-to-end Firebase Auth Emulator sign-in/token validation. It also does not test the unimplemented Founder/CEO approval gate or Area Manager scope.
+- The CSV import integration suite similarly invokes callable `.run()` with a constructed auth context. Do not describe these as end-to-end Firebase Auth integration.
+- Geometry unit tests and callable/Firestore Emulator tests are useful existing coverage, but they do not prove the new approval matrix passes.
 - Production deployment parity is not verified.
 
 **Release status: NO-GO.** This design note is not implementation, test PASS, approval, or deployment evidence. Do not merge/deploy or change launch status on the strength of this document.
