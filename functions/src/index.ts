@@ -728,9 +728,49 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
         }
       }
       if (locationType === "district") {
-        const cities = await tx.get(db.collection("service_cities").where("districtId", "==", locationId).where("isServiceActive", "==", true).limit(1));
-        const areas = await tx.get(db.collection("service_areas").where("districtId", "==", locationId).where("isServiceActive", "==", true).limit(1));
-        if (!cities.empty || !areas.empty) throw new HttpsError("failed-precondition", "Deactivate active District descendants first.");
+        // Area documents do not persist districtId. Resolve the canonical
+        // District → City → Area → Locality chain instead of querying an
+        // unsupported Area field. Bound the scan and fail closed if it is
+        // too large to verify safely in one transaction.
+        const districtCities = await tx.get(
+          db.collection("service_cities").where("districtId", "==", locationId).limit(301),
+        );
+        if (districtCities.size > 300) {
+          throw new HttpsError("failed-precondition", "District has too many Cities for a safe status change; manual descendant review is required.");
+        }
+        if (districtCities.docs.some((doc) => doc.get("isServiceActive") === true)) {
+          throw new HttpsError("failed-precondition", "Deactivate active District descendants first.");
+        }
+
+        const cityIds = districtCities.docs.map((doc) => doc.id);
+        const descendantAreas: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+        for (let offset = 0; offset < cityIds.length; offset += 30) {
+          const cityIdChunk = cityIds.slice(offset, offset + 30);
+          const areas = await tx.get(
+            db.collection("service_areas").where("cityId", "in", cityIdChunk).limit(301),
+          );
+          if (areas.size > 300 || descendantAreas.length + areas.size > 300) {
+            throw new HttpsError("failed-precondition", "District has too many Areas for a safe status change; manual descendant review is required.");
+          }
+          descendantAreas.push(...areas.docs);
+        }
+        if (descendantAreas.some((doc) => doc.get("isServiceActive") === true)) {
+          throw new HttpsError("failed-precondition", "Deactivate active District descendants first.");
+        }
+
+        const areaIds = descendantAreas.map((doc) => doc.id);
+        for (let offset = 0; offset < areaIds.length; offset += 30) {
+          const areaIdChunk = areaIds.slice(offset, offset + 30);
+          const localities = await tx.get(
+            db.collection("service_localities")
+              .where("areaId", "in", areaIdChunk)
+              .where("isServiceActive", "==", true)
+              .limit(1),
+          );
+          if (!localities.empty) {
+            throw new HttpsError("failed-precondition", "Deactivate active District descendants first.");
+          }
+        }
       } else if (locationType === "country") {
         const cities = await tx.get(db.collection("service_cities").where("countryId", "==", locationId).where("isServiceActive", "==", true).limit(1));
         const areas = await tx.get(db.collection("service_areas").where("countryId", "==", locationId).where("isServiceActive", "==", true).limit(1));
