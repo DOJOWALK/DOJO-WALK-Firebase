@@ -87,7 +87,34 @@ test("Add Location callable: authenticated save, Firestore read-back, and duplic
   uid = user.localId;
   // This seed uses the Admin SDK against the Firestore Emulator only. The
   // callable still receives and verifies a real Auth Emulator ID token.
-  await db.doc(`admin_users/${uid}`).set({ role: "super_admin", isActive: true });
+  const adminRef = db.doc(`admin_users/${uid}`);
+  await adminRef.set({ role: "super_admin", isActive: true });
+
+  // Explicit negative authorization cases: inactive admins and active
+  // non-admin roles must not be able to create service locations.
+  await adminRef.set({ role: "super_admin", isActive: false });
+  const inactiveAdminResponse = await callSave(user.idToken, {
+    locationType: "country",
+    locationId: countryId,
+    payload: { name: countryName, code: "IT" },
+  });
+  const inactiveAdminBody = await inactiveAdminResponse.json();
+  assert.equal(inactiveAdminBody.error?.status, "PERMISSION_DENIED", JSON.stringify(inactiveAdminBody));
+  assert.equal((await db.doc(`service_countries/${countryId}`).get()).exists, false,
+    "Inactive admin must not create a Country");
+
+  await adminRef.set({ role: "customer", isActive: true });
+  const wrongRoleResponse = await callSave(user.idToken, {
+    locationType: "country",
+    locationId: countryId,
+    payload: { name: countryName, code: "IT" },
+  });
+  const wrongRoleBody = await wrongRoleResponse.json();
+  assert.equal(wrongRoleBody.error?.status, "PERMISSION_DENIED", JSON.stringify(wrongRoleBody));
+  assert.equal((await db.doc(`service_countries/${countryId}`).get()).exists, false,
+    "An active non-admin role must not create a Country");
+
+  await adminRef.set({ role: "super_admin", isActive: true });
 
   const countryResponse = await callSave(user.idToken, {
     locationType: "country",
