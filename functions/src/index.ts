@@ -442,9 +442,42 @@ export const activateServiceLocation = onCall({ region: "asia-south1" }, async (
     }
   }
 
+  // The singleton control document serializes all Area activations around the
+  // one-time initial launch gate. A missing/unreconciled control record fails
+  // closed; it must not be interpreted as approval.
+  const firstAreaControlRef = locationType === "area"
+    ? db.doc("company_launch_control/initial_service_area")
+    : undefined;
+
   // Re-read all relevant documents transactionally to reject stale ancestry,
-  // status, boundary references, and geometry before activation.
+  // status, boundary references, geometry and approval scope before activation.
   await db.runTransaction(async (tx) => {
+    const firstAreaControlSnap = firstAreaControlRef ? await tx.get(firstAreaControlRef) : undefined;
+    let firstAreaApprovalRef: FirebaseFirestore.DocumentReference | undefined;
+    let firstAreaApprovalSnap: FirebaseFirestore.DocumentSnapshot | undefined;
+    const firstAreaApprovalIsPending = locationType === "area" &&
+      firstAreaControlSnap?.exists && firstAreaControlSnap.get("status") === "approved";
+    if (locationType === "area") {
+      if (!firstAreaControlSnap?.exists) {
+        throw new HttpsError("failed-precondition", "Founder/CEO first-area GO must be recorded before Area activation.");
+      }
+      const controlStatus = firstAreaControlSnap.get("status");
+      if (controlStatus === "approved") {
+        if (firstAreaControlSnap.get("areaId") !== locationId ||
+            typeof firstAreaControlSnap.get("approvalId") !== "string") {
+          throw new HttpsError("failed-precondition", "The pending Founder/CEO GO is bound to a different Area.");
+        }
+        firstAreaApprovalRef = db.doc(`service_area_launch_approvals/${firstAreaControlSnap.get("approvalId")}`);
+        firstAreaApprovalSnap = await tx.get(firstAreaApprovalRef);
+        if (!firstAreaApprovalSnap.exists || firstAreaApprovalSnap.get("status") !== "approved" ||
+            firstAreaApprovalSnap.get("areaId") !== locationId ||
+            firstAreaApprovalSnap.get("consumedAt") != null) {
+          throw new HttpsError("failed-precondition", "A valid, unused Founder/CEO GO record is required.");
+        }
+      } else if (controlStatus !== "consumed") {
+        throw new HttpsError("failed-precondition", "Founder/CEO GO is missing or revoked; Area activation is blocked.");
+      }
+    }
     const refs = [
       actorRef, locationRef, boundaryRef, countryRef, stateRef,
       ...(parentRef ? [parentRef] : []),
@@ -506,6 +539,27 @@ export const activateServiceLocation = onCall({ region: "asia-south1" }, async (
       } catch {
         throw new HttpsError("failed-precondition", "Area is not fully within the current parent City boundary.");
       }
+    }
+
+    if (firstAreaApprovalIsPending) {
+      const approval = firstAreaApprovalSnap!;
+      const currentParent = snaps[5];
+      const currentParentBoundary = snaps[6];
+      if (approval.get("countryId") !== countryId ||
+          approval.get("stateId") !== stateId ||
+          approval.get("cityId") !== currentLocation.get("cityId") ||
+          approval.get("areaBoundaryId") !== boundaryId ||
+          approval.get("cityBoundaryId") !== currentParentBoundary?.id ||
+          approval.get("cityDistrictId") !== (currentParent?.get("districtId") ?? null)) {
+        throw new HttpsError("failed-precondition", "Area ancestry or boundary changed after Founder/CEO GO; a fresh approval is required.");
+      }
+      const now = FieldValue.serverTimestamp();
+      tx.update(firstAreaApprovalRef!, { status: "consumed", consumedAt: now });
+      tx.update(firstAreaControlRef!, { status: "consumed", consumedAt: now, updatedAt: now });
+      tx.create(db.collection("company_launch_approval_audit").doc(), {
+        actorUid: uid, action: "GO_CONSUMED", areaId: locationId,
+        approvalId: firstAreaApprovalRef!.id, createdAt: now,
+      });
     }
 
     // Touch every ancestor in this transaction so a concurrent ancestor
