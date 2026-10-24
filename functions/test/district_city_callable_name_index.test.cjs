@@ -48,10 +48,18 @@ async function setup(t) {
     db.doc(`service_districts/${districtBId}`),
   ];
   await docRefs[0].set({ role: "admin", isActive: true });
-  await save(uid, "country", { name: `Index Country ${suffix}`, code: `C${suffix.slice(0, 6)}` }, countryId);
-  await save(uid, "state", { countryId, name: `Index State ${suffix}` }, stateId);
-  await save(uid, "district", { countryId, stateId, name: `Index District A ${suffix}` }, districtAId);
-  await save(uid, "district", { countryId, stateId, name: `Index District B ${suffix}` }, districtBId);
+  const countryName = `Index Country ${suffix}`;
+  const stateName = `Index State ${suffix}`;
+  const districtAName = `Index District A ${suffix}`;
+  const districtBName = `Index District B ${suffix}`;
+  indexIds.add(indexRef("service_countries", [], countryName).id);
+  indexIds.add(indexRef("service_states", [countryId], stateName).id);
+  indexIds.add(indexRef("service_districts", [countryId, stateId], districtAName).id);
+  indexIds.add(indexRef("service_districts", [countryId, stateId], districtBName).id);
+  await save(uid, "country", { name: countryName, code: `C${suffix.slice(0, 6)}` }, countryId);
+  await save(uid, "state", { countryId, name: stateName }, stateId);
+  await save(uid, "district", { countryId, stateId, name: districtAName }, districtAId);
+  await save(uid, "district", { countryId, stateId, name: districtBName }, districtBId);
 
   t.after(async () => {
     await Promise.all([
