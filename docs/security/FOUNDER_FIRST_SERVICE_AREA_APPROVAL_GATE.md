@@ -10,6 +10,15 @@ The company operating policy requires written Founder/CEO GO before the first Se
 
 This document intentionally does not change production behavior. The technical identity mapping for Founder/CEO and Central Admin must be resolved against the existing account/role model before implementation.
 
+## Existing identity model — source inspection (24 Oct 2026)
+
+- Firebase `firestore.rules` uses `admin_users/{request.auth.uid}`; the active privileged helper accepts only `role == super_admin`.
+- The Rules allowlist for an `admin_users` role update is `super_admin`, `admin`, or `support`. It does not currently include explicit `founder_ceo`, `central_admin`, or `area_manager` role values.
+- Reviewed trusted location callables independently check the same active `super_admin` role. They do not resolve a separate Founder/CEO identity or approval record.
+- Admin PR #37's fresh UI model also treats `role` as a string and allows entry only when `isActive == true && role == 'super_admin'`. This is a UI gate; Rules and callables remain authoritative.
+- Therefore, the reviewed source does **not** establish a canonical Founder/CEO, Central Admin, or Area Manager role-and-scope model. Do not silently map Founder/CEO to `super_admin`: that would collapse business approval and operational admin permissions into one role and fail to prove a separate approval.
+- Decision required before implementation: either (A) define and migrate a canonical role model with backward-compatible Rules/Functions changes, or (B) define a separate server-controlled approver identity/approval record with explicit binding to Firebase Auth UID. The chosen model must be documented in Company Master / Owner Control Center before code is written.
+
 ## Security invariants required before implementation
 
 1. **Deny by default:** City/Area activation must not proceed if the policy-required first-area approval cannot be resolved and validated.
@@ -25,7 +34,7 @@ This document intentionally does not change production behavior. The technical i
 
 ## Data-model questions that must be answered before code
 
-- What canonical document/field represents Founder/CEO identity and role today?
+- Which identity design is chosen: explicit canonical roles, or a separate server-controlled Founder/CEO approver identity record?
 - Is there one Founder/CEO account or a controlled set of authorized approvers?
 - Who can revoke or supersede an approval, and what reason/evidence is mandatory?
 - Does the first approval bind to a single Area, or to an Area launch package including City, capacity/readiness checklist, and pilot date?
@@ -72,7 +81,7 @@ Run against Firebase Auth + Firestore Emulator and the callable Functions, with 
 - Source inspection confirms `activateServiceLocation` currently checks active `super_admin`, hierarchy, verified boundary and polygon containment, and creates a server-side activation audit event.
 - Source inspection did not establish a separate Founder/CEO approval record enforced during activation.
 - Area Manager assigned-Area authorization was not established by this review.
-- Existing `functions/test/activate_service_location.integration.test.cjs` is a callable integration suite that refuses to run without `FIRESTORE_EMULATOR_HOST` and exercises the callable's `.run()` handler against Firestore Emulator data. Its helper supplies a synthetic `request.auth` context; it does **not** establish end-to-end Firebase Auth Emulator sign-in/token validation. It also does not test the unimplemented Founder/CEO approval gate or Area Manager scope.
+- Existing `functions/test/activate_service_location.integration.test.cjs` requires `FIRESTORE_EMULATOR_HOST` and exercises the callable's `.run()` handler against Firestore Emulator data. Its helper supplies a synthetic `request.auth` context; it does **not** establish end-to-end Firebase Auth Emulator sign-in/token validation. It also does not test the unimplemented Founder/CEO approval gate or Area Manager scope.
 - The CSV import integration suite similarly invokes callable `.run()` with a constructed auth context. Do not describe these as end-to-end Firebase Auth integration.
 - Geometry unit tests and callable/Firestore Emulator tests are useful existing coverage, but they do not prove the new approval matrix passes.
 - Production deployment parity is not verified.
