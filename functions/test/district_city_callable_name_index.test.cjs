@@ -147,3 +147,53 @@ test("renaming a District-linked City atomically replaces its District-scoped in
   assert.equal(cityStored.get("name"), newName);
   assert.equal(cityStored.get("districtId"), ctx.districtAId);
 });
+
+
+test("District-linked City same-ID save is idempotent and preserves its index", async (t) => {
+  const ctx = await setup(t);
+  const name = `Idempotent District City ${randomUUID()}`;
+  const created = await ctx.saveCity(ctx.districtAId, name);
+  const index = ctx.trackIndex([ctx.countryId, ctx.stateId, ctx.districtAId], name);
+
+  const repeated = await ctx.saveCity(ctx.districtAId, `  ${name.toUpperCase()}  `, created.locationId);
+  const [city, storedIndex] = await Promise.all([
+    db.doc(`service_cities/${created.locationId}`).get(),
+    index.ref.get(),
+  ]);
+
+  assert.equal(repeated.locationId, created.locationId);
+  assert.equal(city.get("name"), name.toUpperCase());
+  assert.equal(city.get("districtId"), ctx.districtAId);
+  assert.equal(storedIndex.exists, true);
+  assert.equal(storedIndex.get("documentId"), created.locationId);
+  assert.deepEqual(storedIndex.get("parentIds"), [ctx.countryId, ctx.stateId, ctx.districtAId]);
+});
+
+test("renaming a District-linked City to a sibling name preserves both records and indexes", async (t) => {
+  const ctx = await setup(t);
+  const firstName = `Rename Collision First ${randomUUID()}`;
+  const secondName = `Rename Collision Second ${randomUUID()}`;
+  const first = await ctx.saveCity(ctx.districtAId, firstName);
+  const second = await ctx.saveCity(ctx.districtAId, secondName);
+  const firstIndex = ctx.trackIndex([ctx.countryId, ctx.stateId, ctx.districtAId], firstName);
+  const secondIndex = ctx.trackIndex([ctx.countryId, ctx.stateId, ctx.districtAId], secondName);
+
+  await assert.rejects(
+    () => ctx.saveCity(ctx.districtAId, secondName, first.locationId),
+    error => error && error.code === "already-exists",
+  );
+
+  const [firstCity, secondCity, firstStoredIndex, secondStoredIndex] = await Promise.all([
+    db.doc(`service_cities/${first.locationId}`).get(),
+    db.doc(`service_cities/${second.locationId}`).get(),
+    firstIndex.ref.get(),
+    secondIndex.ref.get(),
+  ]);
+
+  assert.equal(firstCity.get("name"), firstName);
+  assert.equal(secondCity.get("name"), secondName);
+  assert.equal(firstStoredIndex.exists, true);
+  assert.equal(firstStoredIndex.get("documentId"), first.locationId);
+  assert.equal(secondStoredIndex.exists, true);
+  assert.equal(secondStoredIndex.get("documentId"), second.locationId);
+});
