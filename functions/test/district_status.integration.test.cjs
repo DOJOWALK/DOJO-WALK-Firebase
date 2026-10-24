@@ -137,6 +137,31 @@ test("District save and status callable enforce trusted ancestry and child guard
     assert.ok((await db.doc(`service_states/${ids.state}`).get()).get("activationGuardAt"));
   });
 
+  await t.test("State deactivation is blocked by an active District even before any active City or Area exists", async () => {
+    await expectCode(setServiceLocationStatus.run(request(ids.admin, {
+      locationType: "state", locationId: ids.state, isActive: false,
+    })), "failed-precondition");
+    assert.equal((await db.doc(`service_states/${ids.state}`).get()).get("isActive"), true);
+    assert.equal((await db.doc(`service_districts/${ids.district}`).get()).get("isServiceActive"), true);
+  });
+
+  await t.test("State deactivation is blocked by an active legacy City directly under State", async () => {
+    // Isolate the legacy City guard: deactivate the District first and omit districtId.
+    const districtResult = await status(ids.admin, ids.district, false);
+    assert.equal(districtResult.isActive, false);
+    const legacyCityId = `district-legacy-city-${suffix}`;
+    paths.push(`service_cities/${legacyCityId}`);
+    await db.doc(`service_cities/${legacyCityId}`).set({
+      countryId: ids.country,
+      stateId: ids.state,
+      isServiceActive: true,
+    });
+    await expectCode(setServiceLocationStatus.run(request(ids.admin, {
+      locationType: "state", locationId: ids.state, isActive: false,
+    })), "failed-precondition");
+    assert.equal((await db.doc(`service_states/${ids.state}`).get()).get("isActive"), true);
+  });
+
   await t.test("District-aware City save preserves District ancestry and blocks implicit migration", async () => {
     const name = `District Scoped City ${suffix}`;
     const cityIndexId = serviceLocationNameIndexId(
