@@ -25,18 +25,18 @@ Date: 2026-10-24
 
 ## Emulator tests
 
-The updated callable integration test covers: activation without GO denied; operational admin cannot issue GO; configured Founder/CEO can approve; pending GO can be revoked; revoked GO blocks activation; a fresh GO can be consumed by the exact Area; control and approval end in `consumed`; audit events are written.
+The updated callable integration test covers: activation without GO denied; operational admin cannot issue GO; configured Founder/CEO can approve; pending GO can be revoked; revoked GO blocks activation; ancestry drift invalidates a pending GO; a fresh GO can be consumed by the exact Area; control and approval end in `consumed`; audit events are written.
 
 Run from `functions/` with the Firestore Emulator configured:
 `npm test`
 
-The existing integration harness uses callable requests with synthetic `request.auth` UIDs against Firestore Emulator. This is **not** yet an end-to-end Firebase Auth Emulator sign-in/token test. A dedicated Auth Emulator integration test remains required before calling the full authentication test gate complete.
+A separate Auth Emulator integration test creates a disposable emulator user, obtains a real emulator ID token, and verifies that the Functions Emulator distinguishes unauthenticated requests from authenticated requests that reach callable argument validation. The Founder authority-binding and approval lifecycle tests still use synthetic callable auth UIDs against Firestore Emulator; an integrated test that provisions a disposable authority and exercises the complete approval-to-activation path with a real Auth Emulator token remains a stronger follow-up.
 
 ## Provisioning / deployment checklist
 
 - Confirm the actual Founder/CEO Firebase Auth UID with the owner; never guess it.
 - Provision the singleton authority record through a controlled Admin SDK procedure and record who performed it.
-- Run Functions build and all tests, including Firestore Rules tests and an Auth Emulator sign-in flow.
+- Run Functions build and all tests, including Firestore Rules tests and the Auth Emulator token-to-callable test.
 - Review the exact PR head and CI results.
 - Deploy only with explicit release authorization, then verify the deployed Functions/Rules revision independently.
 - Do not set launch GO in production merely because the callable is merged.
