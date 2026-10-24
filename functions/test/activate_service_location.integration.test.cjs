@@ -171,6 +171,13 @@ test("callable integration: auth, boundary validation, City and Area activation"
     db.doc(`service_location_boundaries/${ids.areaBoundary}`).set(
       boundary(ids.area, "area", polygonPoints(2, 2, 4, 4)),
     ),
+    db.doc(`service_areas/${ids.otherArea}`).set({
+      isServiceActive: false, countryId: ids.country, stateId: ids.state, cityId: ids.city,
+      verifiedBoundaryId: ids.otherAreaBoundary,
+    }),
+    db.doc(`service_location_boundaries/${ids.otherAreaBoundary}`).set(
+      boundary(ids.otherArea, "area", polygonPoints(5, 5, 6, 6)),
+    ),
     db.doc(`service_cities/${ids.invalidCity}`).set({
       isServiceActive: false, countryId: ids.country, stateId: ids.state, verifiedBoundaryId: ids.invalidBoundary,
     }),
