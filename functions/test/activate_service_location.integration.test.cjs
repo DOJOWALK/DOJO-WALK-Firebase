@@ -30,6 +30,8 @@ const ids = {
   invalidCity: `it-invalid-city-${suffix}`,
   cityBoundary: `it-city-boundary-${suffix}`,
   areaBoundary: `it-area-boundary-${suffix}`,
+  otherArea: `it-other-area-${suffix}`,
+  otherAreaBoundary: `it-other-area-boundary-${suffix}`,
   invalidBoundary: `it-invalid-boundary-${suffix}`,
   invalidTimestampCity: `it-invalid-timestamp-city-${suffix}`,
   invalidTimestampBoundary: `it-invalid-timestamp-boundary-${suffix}`,
@@ -103,6 +105,8 @@ test("callable integration: auth, boundary validation, City and Area activation"
     `service_cities/${ids.districtCity}`,
     `service_location_boundaries/${ids.districtCityBoundary}`,
     `service_areas/${ids.area}`,
+    `service_areas/${ids.otherArea}`,
+    `service_location_boundaries/${ids.otherAreaBoundary}`,
     `service_cities/${ids.invalidCity}`,
     `service_location_boundaries/${ids.cityBoundary}`,
     `service_location_boundaries/${ids.areaBoundary}`,
@@ -340,6 +344,10 @@ test("callable integration: auth, boundary validation, City and Area activation"
       auth: { uid: ids.founder, token: { uid: ids.founder } },
       data: { areaId: ids.area, reason: "Founder GO after final readiness review." },
     });
+    // The GO is exact-target bound; another valid Area cannot consume it.
+    await expectCallableCode(invoke(ids.admin, "area", ids.otherArea), "failed-precondition");
+    assert.equal((await db.doc(`service_areas/${ids.otherArea}`).get()).get("isServiceActive"), false);
+
     // A changed ancestry value after GO must invalidate the pending approval.
     await db.doc(`service_cities/${ids.city}`).update({ districtId: "changed-after-approval" });
     await expectCallableCode(invoke(ids.admin, "area", ids.area), "failed-precondition");
