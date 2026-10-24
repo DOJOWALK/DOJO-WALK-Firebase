@@ -411,6 +411,92 @@ test("Area and Locality saves reject mismatched hierarchy ancestry without writi
   assert.equal(orphanLocalities.empty, true);
 });
 
+
+test("Area save with same name and parent is idempotent", async () => {
+  const uid = await createAdmin();
+  const country = await save(uid, "country", { name: `Area-Idempotent-Country-${randomUUID()}`, code: "AI" });
+  const state = await save(uid, "state", { countryId: country.locationId, name: `Area-Idempotent-State-${randomUUID()}` });
+  const city = await save(uid, "city", {
+    countryId: country.locationId, stateId: state.locationId, name: `Area-Idempotent-City-${randomUUID()}`,
+  });
+  const name = `Area-Idempotent-${randomUUID()}`;
+  const parents = [country.locationId, state.locationId, city.locationId];
+  const first = await save(uid, "area", {
+    countryId: parents[0], stateId: parents[1], cityId: parents[2], name,
+  });
+  const repeated = await save(uid, "area", {
+    countryId: parents[0], stateId: parents[1], cityId: parents[2], name: `  ${name.toUpperCase()}  `,
+  }, first.locationId);
+
+  const stored = await db.doc(`service_areas/${first.locationId}`).get();
+  const index = await db.doc(`service_location_name_indexes/${indexId("service_areas", parents, name)}`).get();
+  assert.equal(repeated.locationId, first.locationId);
+  assert.equal(stored.get("name"), name.toUpperCase());
+  assert.equal(stored.get("isServiceActive"), false);
+  assert.equal(index.exists, true);
+  assert.equal(index.get("documentId"), first.locationId);
+  assert.deepEqual(index.get("parentIds"), parents);
+});
+
+test("renaming an Area replaces its name index atomically", async () => {
+  const uid = await createAdmin();
+  const country = await save(uid, "country", { name: `Area-Rename-Country-${randomUUID()}`, code: "AR" });
+  const state = await save(uid, "state", { countryId: country.locationId, name: `Area-Rename-State-${randomUUID()}` });
+  const city = await save(uid, "city", {
+    countryId: country.locationId, stateId: state.locationId, name: `Area-Rename-City-${randomUUID()}`,
+  });
+  const oldName = `Old-Area-${randomUUID()}`;
+  const newName = `New-Area-${randomUUID()}`;
+  const parents = [country.locationId, state.locationId, city.locationId];
+  const area = await save(uid, "area", {
+    countryId: parents[0], stateId: parents[1], cityId: parents[2], name: oldName,
+  });
+  const updated = await save(uid, "area", {
+    countryId: parents[0], stateId: parents[1], cityId: parents[2], name: newName,
+  }, area.locationId);
+
+  const [stored, oldIndex, newIndex] = await Promise.all([
+    db.doc(`service_areas/${area.locationId}`).get(),
+    db.doc(`service_location_name_indexes/${indexId("service_areas", parents, oldName)}`).get(),
+    db.doc(`service_location_name_indexes/${indexId("service_areas", parents, newName)}`).get(),
+  ]);
+  assert.equal(updated.locationId, area.locationId);
+  assert.equal(stored.get("name"), newName);
+  assert.equal(oldIndex.exists, false);
+  assert.equal(newIndex.exists, true);
+  assert.equal(newIndex.get("documentId"), area.locationId);
+  assert.deepEqual(newIndex.get("parentIds"), parents);
+});
+
+test("Locality save with same name and parent is idempotent", async () => {
+  const uid = await createAdmin();
+  const country = await save(uid, "country", { name: `Locality-Idempotent-Country-${randomUUID()}`, code: "LI" });
+  const state = await save(uid, "state", { countryId: country.locationId, name: `Locality-Idempotent-State-${randomUUID()}` });
+  const city = await save(uid, "city", {
+    countryId: country.locationId, stateId: state.locationId, name: `Locality-Idempotent-City-${randomUUID()}`,
+  });
+  const area = await save(uid, "area", {
+    countryId: country.locationId, stateId: state.locationId, cityId: city.locationId,
+    name: `Locality-Idempotent-Area-${randomUUID()}`,
+  });
+  const name = `Locality-Idempotent-${randomUUID()}`;
+  const parents = [country.locationId, state.locationId, city.locationId, area.locationId];
+  const first = await save(uid, "locality", {
+    countryId: parents[0], stateId: parents[1], cityId: parents[2], areaId: parents[3], name,
+  });
+  const repeated = await save(uid, "locality", {
+    countryId: parents[0], stateId: parents[1], cityId: parents[2], areaId: parents[3], name: `  ${name.toUpperCase()}  `,
+  }, first.locationId);
+
+  const stored = await db.doc(`service_localities/${first.locationId}`).get();
+  const index = await db.doc(`service_location_name_indexes/${indexId("service_localities", parents, name)}`).get();
+  assert.equal(repeated.locationId, first.locationId);
+  assert.equal(stored.get("name"), name.toUpperCase());
+  assert.equal(index.exists, true);
+  assert.equal(index.get("documentId"), first.locationId);
+  assert.deepEqual(index.get("parentIds"), parents);
+});
+
 test.after(async () => {
   const deletes = [];
   for (const uid of admins) deletes.push(db.doc(`admin_users/${uid}`).delete());
