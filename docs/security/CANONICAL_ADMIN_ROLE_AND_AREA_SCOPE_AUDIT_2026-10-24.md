@@ -112,3 +112,32 @@ Verified against `firestore.rules` on `main` (blob `104467bab5dcc66c01a1f0f70df3
 
 **Implementation consequence:** treat trusted booking creation / legacy booking compatibility as a separate migration workstream with emulator coverage. Do not change booking create Rules to require a field until the customer app and trusted backend are coordinated, otherwise valid bookings could fail or malicious clients could still forge the field.
 
+## Customer repository compatibility audit — direct booking write confirmed (2026-10-24)
+
+Customer source checked:
+- Repository: `dojoplatform2026/DOJO-WALK-Customer`
+- File: `lib/features/booking/screens/booking_confirmation_screen.dart`
+- Reviewed commit: `c99fcad14822cbf53b439abc4857fbdb7464a664`
+- File blob returned by source fetch: `94d45b12c7873fc2d289e164df965c735c0c63cb`
+
+Verified behavior in that file:
+- It creates a Firestore document reference directly with `firestore.collection('bookings').doc()` (line 882).
+- It constructs booking data including `pickupAddressId` and a client-side `pickupAddress` map (lines 927–928).
+- It writes the booking directly with `await bookingRef.set(bookingData)` (line 987).
+- The pickup address data includes human-readable fields such as area, city and pincode; this client payload is not itself proof of a verified service Locality/Area relationship.
+
+**Compatibility/security decision:** do not immediately change Rules to deny all direct client booking writes or require a trusted Area field; that would break the current booking flow unless the Customer app is migrated in a coordinated release. Conversely, do not authorize Area Managers from client-supplied address text or a client-supplied Area ID.
+
+### Proposed migration phases (no runtime code changed)
+
+1. **Freeze current contract in tests:** add emulator tests that document current allowed booking creation and explicitly show that an Area Manager cannot yet be enabled safely under the legacy broad-admin model. Tests should fail if a proposed scope rollout accidentally grants cross-Area access.
+2. **Define trusted address resolution:** establish whether customer address records have a canonical verified Locality ID and inspect the actual saved address schema. If they do not, introduce an explicit user-selected verified service Locality/coverage check before booking; derive Area server-side from that trusted reference.
+3. **Introduce callable booking creation:** a callable must validate authenticated customer, owned dog/address, booking plan/price constraints, service availability, active Locality → Area → City ancestry, and derive the canonical Area ID server-side. Do not trust client-sent price, status, walker assignment, payment state, or Area ID.
+4. **Coordinate Customer migration:** switch the Customer app to the callable, add retry/idempotency behavior, and preserve customer-facing booking IDs/status semantics. Keep direct-write Rules only during a tightly bounded compatibility period with explicit safeguards; do not leave two unrestricted creation paths after cutover.
+5. **Trusted walker assignment + migration:** add an admin-controlled canonical Area assignment workflow, inventory existing walker records, and reconcile ambiguous legacy text locations manually or through verifiable source IDs.
+6. **Backfill and cutover gates:** run dry-run counts first; test legacy and new booking flows, duplicate/retry cases, inactive locations, missing address, forged Area, and cross-Area reads/writes in emulators. Only then remove the legacy direct-create path in a coordinated release.
+
+### Important schema question still unresolved
+
+The reviewed Customer booking screen submits `pickupAddressId` and a display/address map, but this audit has not yet established whether the corresponding saved customer address document contains a canonical `localityId` or another trusted location reference. That address schema must be inspected before choosing the exact resolver contract; no assumption is made here.
+
