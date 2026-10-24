@@ -47,3 +47,56 @@ Do not guess these fields or infer assignment from a client-supplied Area ID. A 
 - No canonical role migration or Founder UID was guessed.
 - PR #34 remains draft and unmerged; the Founder first-Area GO gate is not equivalent to the full role/scope authorization system.
 - This document is a blocker record, not a claim that authorization is complete.
+
+## Proposed implementation contract — NOT YET IMPLEMENTED
+
+This section is a design proposal based on the source audit above. These collection and field names are proposed, not claims about existing production data.
+
+### A. Canonical membership record
+
+Proposed server-owned document: `admin_memberships/{uid}`
+
+Required fields:
+- `role`: exactly `founder_ceo`, `central_admin`, or `area_manager`;
+- `isActive`: boolean; revoked users are inactive rather than silently deleted;
+- `assignedAreaIds`: array of canonical `service_areas/{areaId}` document IDs; required and non-empty for Area Managers, empty for Founder/CEO and Central Admin;
+- `grantedByUid`, `grantedAt`, `updatedByUid`, `updatedAt`;
+- optional `revokedAt`, `revokedByUid`, `revocationReason` for lifecycle/audit clarity.
+
+Only a controlled trusted backend/Admin-SDK provisioning path may create or change membership, role, active state, or assignments. Client Firestore Rules must deny client create/update/delete for this collection. The backend must reject self-grant/self-elevation and require the granting actor's permission. Keep immutable audit events for grants, changes, and revocations. Do not treat `admin_users/{uid}` or a user-editable profile field as authority after a controlled migration is approved.
+
+Founder first-Area GO remains an additional launch approval gate; membership as Founder alone must not implicitly skip the existing target-bound approval/audit flow.
+
+### B. Resource-to-Area contract
+
+- **Booking:** propose a trusted `serviceAreaId` field (or one consistently chosen canonical field name) written only by a trusted booking/assignment backend after resolving the selected pickup address to a verified service Locality and then validating Locality → Area → City ancestry and active coverage. Never accept the submitted Area ID as proof. If pickup cannot be resolved unambiguously, mark the booking for reconciliation and do not grant Area Manager access to it.
+- **Walker:** propose server-managed `assignedAreaIds` using canonical Area document IDs, with verification/audit metadata. A walker's free-text `area`, `zoneName`, `zoneNames`, or `zones` may remain display-only but must never authorize access. Define whether multiple Area assignments are allowed and have the trusted onboarding/assignment workflow validate each ID.
+- **Locality and location records:** validate the authoritative parent references from Firestore documents at the backend boundary; do not infer parentage from labels, PIN codes, geocoding text, or client-provided IDs alone.
+- **Existing records:** create a dry-run inventory first. Auto-link only records with an unambiguous, verifiable canonical relationship from trusted data. Put ambiguous/missing cases into a review queue; do not bulk-guess, delete, or silently expose them. Record counts, reasons, and before/after identifiers for every migration batch.
+
+### C. Query and enforcement contract
+
+Firestore Rules do not filter unauthorized documents out of broad queries. Area Manager clients must issue queries constrained by the assigned canonical Area IDs and resource Area field; rules must independently validate every returned document's Area scope. If the query shape or Firestore Rules limitations cannot safely express the intended scope, use a trusted callable/query endpoint or a server-maintained per-Area index with explicit access checks—never fall back to a broad collection query.
+
+Every privileged callable Function must use the same canonical authorization helper and enforce the same role/scope rules itself, because Admin SDK access bypasses Firestore Rules. Validate the actor again inside transactions when a permission-sensitive operation relies on mutable authorization state. Define Founder-only actions explicitly; Central Admin must not be able to alter Founder authority, approve their own elevation, or bypass the first-Area GO gate.
+
+### D. Safe rollout sequence
+
+1. **Inventory only:** count current admin, booking, walker, and location records; identify actual booking creation/update paths and all privileged callables; no writes.
+2. **Schema + migration dry run:** add proposed validators and a report-only reconciliation script; report eligible, ambiguous, and invalid records without changing production.
+3. **Emulator-first implementation:** add canonical authorization helpers and tests for every role, revoked membership, self-elevation, unauthorized grants, assigned Area, sibling/unassigned Area, descendants, booking/walker query boundaries, and Founder GO bypass attempts.
+4. **Compatibility bridge:** decide and test a time-bounded legacy migration/rollback plan. Do not simply switch all callers from `admin_users` to the new collection while existing admins could be locked out or privileged users over-authorized.
+5. **Reviewed data migration:** only after dry-run counts and record-level reconciliation are reviewed; preserve an audit trail and a tested rollback/export plan.
+6. **Staged deploy and verification:** deploy Rules and Functions in a coordinated sequence, verify the exact deployed revisions and smoke tests, then enable new Admin UI flows. Keep PRs unmerged/un-deployed until CI, review, and migration readiness are established.
+
+### E. Acceptance gates (all required)
+
+- No client can create/change its own role, active status, Founder authority, or Area assignment.
+- A revoked/inactive membership immediately fails Rules and callable checks.
+- Area Manager can access assigned Area and approved descendants only; sibling/unassigned Area bookings, walkers, and operations are denied on both reads and writes.
+- Central Admin cannot perform Founder-only actions; Founder launch approval is target-bound, auditable, revocable, and consumed as designed.
+- Existing records that cannot be mapped unambiguously remain inaccessible to Area Manager scope until reconciled.
+- Rules + Functions emulator tests pass on the exact candidate commit, and production deployment parity is verified separately.
+
+**Status of this proposal:** documentation only. No schema, Rules, Functions, production data, PR merge, or deployment changed by adding this contract.
+
