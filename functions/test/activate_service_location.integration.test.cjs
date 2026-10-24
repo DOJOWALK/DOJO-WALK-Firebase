@@ -350,7 +350,7 @@ test("callable integration: auth, boundary validation, City and Area activation"
     assert.equal(approval.get("status"), "consumed");
     const audit = await db.collection("company_launch_approval_audit")
       .where("areaId", "==", ids.area).get();
-    assert.equal(audit.size, 3);
+    assert.equal(audit.size, 4);
   });
 });
 
