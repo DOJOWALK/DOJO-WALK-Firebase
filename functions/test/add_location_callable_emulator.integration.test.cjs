@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { randomUUID } = require("node:crypto");
+const { initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
 const { serviceLocationNameIndexId } = require("../lib/location_name_index");
 
@@ -14,6 +15,7 @@ const projectId = process.env.GCLOUD_PROJECT || "demo-dojo-rules-tests";
 const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST || "127.0.0.1:9099";
 const functionsHost = process.env.FUNCTIONS_EMULATOR_HOST || "127.0.0.1:5001";
 const callableUrl = `http://${functionsHost}/${projectId}/asia-south1/saveServiceLocationWithNameIndex`;
+initializeApp({ projectId });
 const db = getFirestore();
 
 async function callSave(idToken, data) {
