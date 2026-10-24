@@ -100,3 +100,15 @@ Every privileged callable Function must use the same canonical authorization hel
 
 **Status of this proposal:** documentation only. No schema, Rules, Functions, production data, PR merge, or deployment changed by adding this contract.
 
+## Additional source audit — booking write path and callable inventory (2026-10-24)
+
+Verified against `firestore.rules` on `main` (blob `104467bab5dcc66c01a1f0f70df321ac0b193249`) and the Functions source on the review branch:
+
+- The current `match /bookings/{bookingId}` Rules permit a signed-in client to create a booking when `validBookingBase(bookingId)` and one of the booking-plan validators pass. The reviewed booking creation rule does not require a trusted server-derived canonical Area link.
+- The reviewed Functions entry point exports callable operations for Service Location boundary review, initial-area Founder approval/revocation, Service Location activation/status, location save/name-index, and location import-run management. It does not currently export a booking-creation callable.
+- This means the trusted booking-to-Area link cannot safely be solved by adding a field to the client payload alone. Before enforcing Area Manager booking scope, the design must either introduce a trusted booking creation/validation backend and safely migrate clients, or demonstrate another existing trusted booking-write path. Do not accept a client-supplied `serviceAreaId` as authority.
+- Current Rules allow broad legacy-admin reads of bookings and walkers through `isAdmin()`; the helper is based on active `admin_users/{uid}` with role `super_admin`. Area Manager scope is not currently expressed by those rules.
+- Walker creation is owner-written under the current Rules and accepts several free-text location fields. Any canonical walker Area assignment must be written by a trusted administrative/backend workflow, not by the walker's own profile submission.
+
+**Implementation consequence:** treat trusted booking creation / legacy booking compatibility as a separate migration workstream with emulator coverage. Do not change booking create Rules to require a field until the customer app and trusted backend are coordinated, otherwise valid bookings could fail or malicious clients could still forge the field.
+
