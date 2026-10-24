@@ -179,18 +179,29 @@ test("District save and status callable enforce trusted ancestry and child guard
     assert.equal((await db.doc(`service_cities/${ids.savedCity}`).get()).get("districtId"), ids.district);
   });
 
-  await t.test("District deactivation is blocked by active City or Area descendants", async () => {
+  await t.test("District deactivation is blocked by active City, Area and Locality descendants using canonical parent links", async () => {
     await db.doc(`service_cities/${ids.childCity}`).set({
       districtId: ids.district, countryId: ids.country, stateId: ids.state, isServiceActive: true,
     });
     await expectCode(status(ids.admin, ids.district, false), "failed-precondition");
+
+    // An active Area may not carry districtId; District ancestry is derived
+    // through its City. Keep the City inactive to exercise the descendant scan.
     await db.doc(`service_cities/${ids.childCity}`).update({ isServiceActive: false });
     await db.doc(`service_areas/${ids.childArea}`).set({
-      districtId: ids.district, countryId: ids.country, stateId: ids.state,
-      cityId: ids.childCity, isServiceActive: true,
+      countryId: ids.country, stateId: ids.state, cityId: ids.childCity, isServiceActive: true,
     });
     await expectCode(status(ids.admin, ids.district, false), "failed-precondition");
+
     await db.doc(`service_areas/${ids.childArea}`).update({ isServiceActive: false });
+    await db.doc(`service_localities/district-child-locality-${suffix}`).set({
+      countryId: ids.country, stateId: ids.state, cityId: ids.childCity,
+      areaId: ids.childArea, isServiceActive: true,
+    });
+    paths.push(`service_localities/district-child-locality-${suffix}`);
+    await expectCode(status(ids.admin, ids.district, false), "failed-precondition");
+
+    await db.doc(`service_localities/district-child-locality-${suffix}`).update({ isServiceActive: false });
     const result = await status(ids.admin, ids.district, false);
     assert.equal(result.isActive, false);
     assert.equal((await db.doc(`service_districts/${ids.district}`).get()).get("isServiceActive"), false);
