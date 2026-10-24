@@ -531,3 +531,94 @@ test("District-aware Area index ownership conflict rejects save without partial 
   const preservedConflict = await conflictingIndexRef.get();
   assert.equal(preservedConflict.get("documentId"), foreignDocumentId);
 });
+
+
+test("District-linked Area rename replaces legacy and District-aware indexes atomically", async () => {
+  const uid = await createAdmin();
+  const country = await save(uid, "country", { name: `District-Area-Rename-Country-${randomUUID()}`, code: "DA" });
+  const state = await save(uid, "state", { countryId: country.locationId, name: `District-Area-Rename-State-${randomUUID()}` });
+  const district = await save(uid, "district", {
+    countryId: country.locationId, stateId: state.locationId, name: `District-Area-Rename-District-${randomUUID()}`,
+  });
+  const city = await save(uid, "city", {
+    countryId: country.locationId, stateId: state.locationId, districtId: district.locationId,
+    name: `District-Area-Rename-City-${randomUUID()}`,
+  });
+  const oldName = `Old-District-Area-${randomUUID()}`;
+  const newName = `New-District-Area-${randomUUID()}`;
+  const area = await save(uid, "area", {
+    countryId: country.locationId, stateId: state.locationId, cityId: city.locationId, name: oldName,
+  });
+  const legacyParents = [country.locationId, state.locationId, city.locationId];
+  const districtParents = [country.locationId, state.locationId, district.locationId, city.locationId];
+  const oldLegacyId = indexId("service_areas", legacyParents, oldName);
+  const newLegacyId = indexId("service_areas", legacyParents, newName);
+  const oldDistrictId = indexId("service_areas", districtParents, oldName);
+  const newDistrictId = indexId("service_areas", districtParents, newName);
+
+  await save(uid, "area", {
+    countryId: country.locationId, stateId: state.locationId, cityId: city.locationId, name: newName,
+  }, area.locationId);
+
+  const [oldLegacy, newLegacy, oldDistrict, newDistrict, storedArea] = await Promise.all([
+    db.doc(`service_location_name_indexes/${oldLegacyId}`).get(),
+    db.doc(`service_location_name_indexes/${newLegacyId}`).get(),
+    db.doc(`service_location_name_indexes/${oldDistrictId}`).get(),
+    db.doc(`service_location_name_indexes/${newDistrictId}`).get(),
+    db.doc(`service_areas/${area.locationId}`).get(),
+  ]);
+  assert.equal(oldLegacy.exists, false);
+  assert.equal(oldDistrict.exists, false);
+  assert.equal(newLegacy.get("documentId"), area.locationId);
+  assert.equal(newDistrict.get("documentId"), area.locationId);
+  assert.deepEqual(newDistrict.get("parentIds"), districtParents);
+  assert.equal(storedArea.get("name"), newName);
+});
+
+test("District-linked Locality rename replaces legacy and District-aware indexes atomically", async () => {
+  const uid = await createAdmin();
+  const country = await save(uid, "country", { name: `District-Locality-Rename-Country-${randomUUID()}`, code: "DL" });
+  const state = await save(uid, "state", { countryId: country.locationId, name: `District-Locality-Rename-State-${randomUUID()}` });
+  const district = await save(uid, "district", {
+    countryId: country.locationId, stateId: state.locationId, name: `District-Locality-Rename-District-${randomUUID()}`,
+  });
+  const city = await save(uid, "city", {
+    countryId: country.locationId, stateId: state.locationId, districtId: district.locationId,
+    name: `District-Locality-Rename-City-${randomUUID()}`,
+  });
+  const area = await save(uid, "area", {
+    countryId: country.locationId, stateId: state.locationId, cityId: city.locationId,
+    name: `District-Locality-Rename-Area-${randomUUID()}`,
+  });
+  const oldName = `Old-District-Locality-${randomUUID()}`;
+  const newName = `New-District-Locality-${randomUUID()}`;
+  const locality = await save(uid, "locality", {
+    countryId: country.locationId, stateId: state.locationId, cityId: city.locationId,
+    areaId: area.locationId, name: oldName,
+  });
+  const legacyParents = [country.locationId, state.locationId, city.locationId, area.locationId];
+  const districtParents = [country.locationId, state.locationId, district.locationId, city.locationId, area.locationId];
+  const oldLegacyId = indexId("service_localities", legacyParents, oldName);
+  const newLegacyId = indexId("service_localities", legacyParents, newName);
+  const oldDistrictId = indexId("service_localities", districtParents, oldName);
+  const newDistrictId = indexId("service_localities", districtParents, newName);
+
+  await save(uid, "locality", {
+    countryId: country.locationId, stateId: state.locationId, cityId: city.locationId,
+    areaId: area.locationId, name: newName,
+  }, locality.locationId);
+
+  const [oldLegacy, newLegacy, oldDistrict, newDistrict, storedLocality] = await Promise.all([
+    db.doc(`service_location_name_indexes/${oldLegacyId}`).get(),
+    db.doc(`service_location_name_indexes/${newLegacyId}`).get(),
+    db.doc(`service_location_name_indexes/${oldDistrictId}`).get(),
+    db.doc(`service_location_name_indexes/${newDistrictId}`).get(),
+    db.doc(`service_localities/${locality.locationId}`).get(),
+  ]);
+  assert.equal(oldLegacy.exists, false);
+  assert.equal(oldDistrict.exists, false);
+  assert.equal(newLegacy.get("documentId"), locality.locationId);
+  assert.equal(newDistrict.get("documentId"), locality.locationId);
+  assert.deepEqual(newDistrict.get("parentIds"), districtParents);
+  assert.equal(storedLocality.get("name"), newName);
+});
