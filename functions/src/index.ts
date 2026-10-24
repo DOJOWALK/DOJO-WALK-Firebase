@@ -231,6 +231,9 @@ export const approveInitialServiceAreaLaunch = onCall({ region: "asia-south1" },
     if (control.exists && control.get("status") === "approved") {
       throw new HttpsError("already-exists", "An initial Service Area approval is already pending activation.");
     }
+    if (control.exists && control.get("status") !== "revoked") {
+      throw new HttpsError("failed-precondition", "Initial launch control has an unknown or unsupported state; reconcile it before issuing another GO.");
+    }
     if (!area.exists) throw new HttpsError("not-found", "Service Area was not found.");
     if (area.get("isServiceActive") === true) {
       throw new HttpsError("failed-precondition", "An active Area cannot receive the initial launch approval.");
