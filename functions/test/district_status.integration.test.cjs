@@ -205,6 +205,10 @@ test("District save and status callable enforce trusted ancestry and child guard
   });
 
   await t.test("District deactivation is blocked by active City, Area and Locality descendants using canonical parent links", async () => {
+    // The preceding legacy-State test deactivated this District; restore its
+    // active state before testing its own descendant guard.
+    const activated = await status(ids.admin, ids.district, true);
+    assert.equal(activated.isActive, true);
     await db.doc(`service_cities/${ids.childCity}`).set({
       districtId: ids.district, countryId: ids.country, stateId: ids.state, isServiceActive: true,
     });
