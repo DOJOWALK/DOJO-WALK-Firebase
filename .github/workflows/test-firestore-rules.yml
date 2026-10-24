@@ -7,6 +7,7 @@ on:
       - "firebase.json"
       - "package.json"
       - "test/**"
+      - "functions/**"
       - ".github/workflows/**"
   push:
     branches:
@@ -16,6 +17,7 @@ on:
       - "firebase.json"
       - "package.json"
       - "test/**"
+      - "functions/**"
       - ".github/workflows/**"
   workflow_dispatch:
 
@@ -48,5 +50,5 @@ jobs:
           node-version: "22"
       - name: Install test dependencies
         run: npm install --no-audit --no-fund
-      - name: Run Firestore Emulator tests
+      - name: Run Firestore Rules Emulator tests
         run: npx firebase emulators:exec --only firestore --project demo-dojo-rules-tests "npm test"

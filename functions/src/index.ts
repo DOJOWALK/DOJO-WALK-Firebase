@@ -193,6 +193,171 @@ export const reviewServiceLocationBoundary = onCall({ region: "asia-south1" }, a
   });
 });
 
+/**
+ * Founder/CEO records the one-time GO for the company's first Service Area.
+ *
+ * Bootstrap prerequisite: a trusted operator must seed
+ * company_authorities/founder_ceo via Admin SDK with { uid, isActive: true }.
+ * Clients cannot create or edit that authority record. Never infer the Founder
+ * from admin_users.role or from an email string.
+ */
+export const approveInitialServiceAreaLaunch = onCall({ region: "asia-south1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in is required.");
+  const uid = request.auth.uid;
+  const areaId = request.data?.areaId;
+  const reason = request.data?.reason;
+  if (typeof areaId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(areaId)) {
+    throw new HttpsError("invalid-argument", "A valid areaId is required.");
+  }
+  if (typeof reason !== "string" || reason.trim().length < 10 || reason.trim().length > 1000) {
+    throw new HttpsError("invalid-argument", "A written GO reason of 10–1000 characters is required.");
+  }
+
+  const authorityRef = db.doc("company_authorities/founder_ceo");
+  const controlRef = db.doc("company_launch_control/initial_service_area");
+  const areaRef = db.doc(`service_areas/${areaId}`);
+  const approvalRef = db.collection("service_area_launch_approvals").doc();
+
+  return db.runTransaction(async (tx) => {
+    const [authority, control, area] = await Promise.all([
+      tx.get(authorityRef), tx.get(controlRef), tx.get(areaRef),
+    ]);
+    if (!authority.exists || authority.get("isActive") !== true || authority.get("uid") !== uid) {
+      throw new HttpsError("permission-denied", "Only the configured active Founder/CEO may record the first-area GO.");
+    }
+    if (control.exists && control.get("status") === "consumed") {
+      throw new HttpsError("failed-precondition", "The first Service Area approval has already been consumed.");
+    }
+    if (control.exists && control.get("status") === "approved") {
+      throw new HttpsError("already-exists", "An initial Service Area approval is already pending activation.");
+    }
+    if (control.exists && control.get("status") !== "revoked") {
+      throw new HttpsError("failed-precondition", "Initial launch control has an unknown or unsupported state; reconcile it before issuing another GO.");
+    }
+    if (!area.exists) throw new HttpsError("not-found", "Service Area was not found.");
+    if (area.get("isServiceActive") === true) {
+      throw new HttpsError("failed-precondition", "An active Area cannot receive the initial launch approval.");
+    }
+
+    const cityId = area.get("cityId");
+    const countryId = area.get("countryId");
+    const stateId = area.get("stateId");
+    const areaBoundaryId = area.get("verifiedBoundaryId");
+    if ([cityId, countryId, stateId, areaBoundaryId].some((v) =>
+      typeof v !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(v))) {
+      throw new HttpsError("failed-precondition", "Area ancestry and verified boundary references must be complete.");
+    }
+    const cityRef = db.doc(`service_cities/${cityId}`);
+    const countryRef = db.doc(`service_countries/${countryId}`);
+    const stateRef = db.doc(`service_states/${stateId}`);
+    const areaBoundaryRef = db.doc(`service_location_boundaries/${areaBoundaryId}`);
+    const [city, country, state, areaBoundary] = await Promise.all([
+      tx.get(cityRef), tx.get(countryRef), tx.get(stateRef), tx.get(areaBoundaryRef),
+    ]);
+    if (!city.exists || city.get("isServiceActive") !== true ||
+        city.get("countryId") !== countryId || city.get("stateId") !== stateId) {
+      throw new HttpsError("failed-precondition", "Area must belong to an active City with matching ancestry.");
+    }
+    if (!country.exists || country.get("isActive") !== true ||
+        !state.exists || state.get("isActive") !== true || state.get("countryId") !== countryId) {
+      throw new HttpsError("failed-precondition", "Area Country and State must exist, be active and match.");
+    }
+    const cityBoundaryId = city.get("verifiedBoundaryId");
+    if (typeof cityBoundaryId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(cityBoundaryId)) {
+      throw new HttpsError("failed-precondition", "Parent City must have a verified boundary.");
+    }
+    const cityBoundaryRef = db.doc(`service_location_boundaries/${cityBoundaryId}`);
+    const cityBoundary = await tx.get(cityBoundaryRef);
+    const areaBoundaryData = requireVerifiedBoundary(areaBoundary.data(), areaBoundaryId, areaId, "area");
+    const cityBoundaryData = requireVerifiedBoundary(cityBoundary.data(), cityBoundaryId, cityId, "city");
+    try {
+      assertAreaCoveredByCity(areaBoundaryData, cityBoundaryData);
+    } catch {
+      throw new HttpsError("failed-precondition", "Area boundary must fit inside the current City boundary.");
+    }
+
+    // Refuse to retrofit a "first launch" GO if an Area was already active.
+    // That situation requires an explicit migration/reconciliation, not guessing.
+    const activeAreas = await tx.get(db.collection("service_areas")
+      .where("isServiceActive", "==", true).limit(1));
+    if (!activeAreas.empty) {
+      throw new HttpsError("failed-precondition", "An Area is already active; reconcile the existing launch state before approving a first Area.");
+    }
+
+    const now = FieldValue.serverTimestamp();
+    tx.create(approvalRef, {
+      status: "approved",
+      decision: "GO",
+      policyVersion: 1,
+      areaId, countryId, stateId, cityId,
+      areaBoundaryId, cityBoundaryId,
+      cityDistrictId: city.get("districtId") ?? null,
+      approvedBy: uid,
+      reason: reason.trim(),
+      approvedAt: now,
+      consumedAt: null,
+      createdAt: now,
+    });
+    tx.set(controlRef, {
+      status: "approved",
+      areaId,
+      approvalId: approvalRef.id,
+      approvedBy: uid,
+      approvedAt: now,
+      consumedAt: null,
+      updatedAt: now,
+      policyVersion: 1,
+    });
+    tx.create(db.collection("company_launch_approval_audit").doc(), {
+      actorUid: uid, action: "GO_RECORDED", areaId, approvalId: approvalRef.id,
+      reason: reason.trim(), createdAt: now,
+    });
+    return { ok: true, status: "approved", areaId, approvalId: approvalRef.id };
+  });
+});
+
+/** Revoke a pending first-area GO. A consumed approval is an immutable launch event. */
+export const revokeInitialServiceAreaApproval = onCall({ region: "asia-south1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in is required.");
+  const uid = request.auth.uid;
+  const reason = request.data?.reason;
+  if (typeof reason !== "string" || reason.trim().length < 10 || reason.trim().length > 1000) {
+    throw new HttpsError("invalid-argument", "A written revocation reason of 10–1000 characters is required.");
+  }
+  const authorityRef = db.doc("company_authorities/founder_ceo");
+  const controlRef = db.doc("company_launch_control/initial_service_area");
+  const authority = await authorityRef.get();
+  if (!authority.exists || authority.get("isActive") !== true || authority.get("uid") !== uid) {
+    throw new HttpsError("permission-denied", "Only the configured active Founder/CEO may revoke the pending GO.");
+  }
+  return db.runTransaction(async (tx) => {
+    const [currentAuthority, control] = await Promise.all([tx.get(authorityRef), tx.get(controlRef)]);
+    if (!currentAuthority.exists || currentAuthority.get("isActive") !== true || currentAuthority.get("uid") !== uid) {
+      throw new HttpsError("permission-denied", "Founder/CEO authority changed during revocation.");
+    }
+    if (!control.exists || control.get("status") !== "approved" ||
+        typeof control.get("approvalId") !== "string" || typeof control.get("areaId") !== "string") {
+      throw new HttpsError("failed-precondition", "There is no pending initial-area GO to revoke.");
+    }
+    if (control.get("consumedAt") != null) {
+      throw new HttpsError("failed-precondition", "A consumed launch approval cannot be rewritten as revoked.");
+    }
+    const approvalRef = db.doc(`service_area_launch_approvals/${control.get("approvalId")}`);
+    const approval = await tx.get(approvalRef);
+    if (!approval.exists || approval.get("status") !== "approved" || approval.get("areaId") !== control.get("areaId")) {
+      throw new HttpsError("failed-precondition", "The pending approval record is inconsistent.");
+    }
+    const now = FieldValue.serverTimestamp();
+    tx.update(approvalRef, { status: "revoked", revokedBy: uid, revocationReason: reason.trim(), revokedAt: now });
+    tx.update(controlRef, { status: "revoked", revokedBy: uid, revocationReason: reason.trim(), revokedAt: now, updatedAt: now });
+    tx.create(db.collection("company_launch_approval_audit").doc(), {
+      actorUid: uid, action: "GO_REVOKED", areaId: control.get("areaId"),
+      approvalId: approvalRef.id, reason: reason.trim(), createdAt: now,
+    });
+    return { ok: true, status: "revoked", areaId: control.get("areaId") };
+  });
+});
+
 export const activateServiceLocation = onCall({ region: "asia-south1" }, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in is required.");
   const uid = request.auth.uid;
@@ -280,9 +445,42 @@ export const activateServiceLocation = onCall({ region: "asia-south1" }, async (
     }
   }
 
+  // The singleton control document serializes all Area activations around the
+  // one-time initial launch gate. A missing/unreconciled control record fails
+  // closed; it must not be interpreted as approval.
+  const firstAreaControlRef = locationType === "area"
+    ? db.doc("company_launch_control/initial_service_area")
+    : undefined;
+
   // Re-read all relevant documents transactionally to reject stale ancestry,
-  // status, boundary references, and geometry before activation.
+  // status, boundary references, geometry and approval scope before activation.
   await db.runTransaction(async (tx) => {
+    const firstAreaControlSnap = firstAreaControlRef ? await tx.get(firstAreaControlRef) : undefined;
+    let firstAreaApprovalRef: FirebaseFirestore.DocumentReference | undefined;
+    let firstAreaApprovalSnap: FirebaseFirestore.DocumentSnapshot | undefined;
+    const firstAreaApprovalIsPending = locationType === "area" &&
+      firstAreaControlSnap?.exists && firstAreaControlSnap.get("status") === "approved";
+    if (locationType === "area") {
+      if (!firstAreaControlSnap?.exists) {
+        throw new HttpsError("failed-precondition", "Founder/CEO first-area GO must be recorded before Area activation.");
+      }
+      const controlStatus = firstAreaControlSnap.get("status");
+      if (controlStatus === "approved") {
+        if (firstAreaControlSnap.get("areaId") !== locationId ||
+            typeof firstAreaControlSnap.get("approvalId") !== "string") {
+          throw new HttpsError("failed-precondition", "The pending Founder/CEO GO is bound to a different Area.");
+        }
+        firstAreaApprovalRef = db.doc(`service_area_launch_approvals/${firstAreaControlSnap.get("approvalId")}`);
+        firstAreaApprovalSnap = await tx.get(firstAreaApprovalRef);
+        if (!firstAreaApprovalSnap.exists || firstAreaApprovalSnap.get("status") !== "approved" ||
+            firstAreaApprovalSnap.get("areaId") !== locationId ||
+            firstAreaApprovalSnap.get("consumedAt") != null) {
+          throw new HttpsError("failed-precondition", "A valid, unused Founder/CEO GO record is required.");
+        }
+      } else if (controlStatus !== "consumed") {
+        throw new HttpsError("failed-precondition", "Founder/CEO GO is missing or revoked; Area activation is blocked.");
+      }
+    }
     const refs = [
       actorRef, locationRef, boundaryRef, countryRef, stateRef,
       ...(parentRef ? [parentRef] : []),
@@ -344,6 +542,27 @@ export const activateServiceLocation = onCall({ region: "asia-south1" }, async (
       } catch {
         throw new HttpsError("failed-precondition", "Area is not fully within the current parent City boundary.");
       }
+    }
+
+    if (firstAreaApprovalIsPending) {
+      const approval = firstAreaApprovalSnap!;
+      const currentParent = snaps[5];
+      const currentParentBoundary = snaps[6];
+      if (approval.get("countryId") !== countryId ||
+          approval.get("stateId") !== stateId ||
+          approval.get("cityId") !== currentLocation.get("cityId") ||
+          approval.get("areaBoundaryId") !== boundaryId ||
+          approval.get("cityBoundaryId") !== currentParentBoundary?.id ||
+          approval.get("cityDistrictId") !== (currentParent?.get("districtId") ?? null)) {
+        throw new HttpsError("failed-precondition", "Area ancestry or boundary changed after Founder/CEO GO; a fresh approval is required.");
+      }
+      const now = FieldValue.serverTimestamp();
+      tx.update(firstAreaApprovalRef!, { status: "consumed", consumedAt: now });
+      tx.update(firstAreaControlRef!, { status: "consumed", consumedAt: now, updatedAt: now });
+      tx.create(db.collection("company_launch_approval_audit").doc(), {
+        actorUid: uid, action: "GO_CONSUMED", areaId: locationId,
+        approvalId: firstAreaApprovalRef!.id, createdAt: now,
+      });
     }
 
     // Touch every ancestor in this transaction so a concurrent ancestor
@@ -509,9 +728,49 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
         }
       }
       if (locationType === "district") {
-        const cities = await tx.get(db.collection("service_cities").where("districtId", "==", locationId).where("isServiceActive", "==", true).limit(1));
-        const areas = await tx.get(db.collection("service_areas").where("districtId", "==", locationId).where("isServiceActive", "==", true).limit(1));
-        if (!cities.empty || !areas.empty) throw new HttpsError("failed-precondition", "Deactivate active District descendants first.");
+        // Area documents do not persist districtId. Resolve the canonical
+        // District → City → Area → Locality chain instead of querying an
+        // unsupported Area field. Bound the scan and fail closed if it is
+        // too large to verify safely in one transaction.
+        const districtCities = await tx.get(
+          db.collection("service_cities").where("districtId", "==", locationId).limit(301),
+        );
+        if (districtCities.size > 300) {
+          throw new HttpsError("failed-precondition", "District has too many Cities for a safe status change; manual descendant review is required.");
+        }
+        if (districtCities.docs.some((doc) => doc.get("isServiceActive") === true)) {
+          throw new HttpsError("failed-precondition", "Deactivate active District descendants first.");
+        }
+
+        const cityIds = districtCities.docs.map((doc) => doc.id);
+        const descendantAreas: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+        for (let offset = 0; offset < cityIds.length; offset += 30) {
+          const cityIdChunk = cityIds.slice(offset, offset + 30);
+          const areas = await tx.get(
+            db.collection("service_areas").where("cityId", "in", cityIdChunk).limit(301),
+          );
+          if (areas.size > 300 || descendantAreas.length + areas.size > 300) {
+            throw new HttpsError("failed-precondition", "District has too many Areas for a safe status change; manual descendant review is required.");
+          }
+          descendantAreas.push(...areas.docs);
+        }
+        if (descendantAreas.some((doc) => doc.get("isServiceActive") === true)) {
+          throw new HttpsError("failed-precondition", "Deactivate active District descendants first.");
+        }
+
+        const areaIds = descendantAreas.map((doc) => doc.id);
+        for (let offset = 0; offset < areaIds.length; offset += 30) {
+          const areaIdChunk = areaIds.slice(offset, offset + 30);
+          const localities = await tx.get(
+            db.collection("service_localities")
+              .where("areaId", "in", areaIdChunk)
+              .where("isServiceActive", "==", true)
+              .limit(1),
+          );
+          if (!localities.empty) {
+            throw new HttpsError("failed-precondition", "Deactivate active District descendants first.");
+          }
+        }
       } else if (locationType === "country") {
         const cities = await tx.get(db.collection("service_cities").where("countryId", "==", locationId).where("isServiceActive", "==", true).limit(1));
         const areas = await tx.get(db.collection("service_areas").where("countryId", "==", locationId).where("isServiceActive", "==", true).limit(1));

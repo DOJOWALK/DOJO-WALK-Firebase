@@ -8,7 +8,7 @@ if (!process.env.FIRESTORE_EMULATOR_HOST) {
 }
 
 const { GeoPoint, getFirestore } = require("firebase-admin/firestore");
-const { activateServiceLocation, setServiceLocationStatus } = require("../lib/index");
+const { activateServiceLocation, setServiceLocationStatus, approveInitialServiceAreaLaunch, revokeInitialServiceAreaApproval } = require("../lib/index");
 
 const db = getFirestore();
 const suffix = randomUUID().replace(/-/g, "").slice(0, 12);
@@ -16,6 +16,7 @@ const ids = {
   ordinary: `it-ordinary-${suffix}`,
   inactive: `it-inactive-${suffix}`,
   admin: `it-admin-${suffix}`,
+  founder: `it-founder-${suffix}`,
   country: `it-country-${suffix}`,
   state: `it-state-${suffix}`,
   otherCountry: `it-other-country-${suffix}`,
@@ -29,6 +30,8 @@ const ids = {
   invalidCity: `it-invalid-city-${suffix}`,
   cityBoundary: `it-city-boundary-${suffix}`,
   areaBoundary: `it-area-boundary-${suffix}`,
+  otherArea: `it-other-area-${suffix}`,
+  otherAreaBoundary: `it-other-area-boundary-${suffix}`,
   invalidBoundary: `it-invalid-boundary-${suffix}`,
   invalidTimestampCity: `it-invalid-timestamp-city-${suffix}`,
   invalidTimestampBoundary: `it-invalid-timestamp-boundary-${suffix}`,
@@ -90,6 +93,8 @@ test("callable integration: auth, boundary validation, City and Area activation"
     `admin_users/${ids.ordinary}`,
     `admin_users/${ids.inactive}`,
     `admin_users/${ids.admin}`,
+    "company_authorities/founder_ceo",
+    "company_launch_control/initial_service_area",
     `service_countries/${ids.country}`,
     `service_states/${ids.state}`,
     `service_countries/${ids.otherCountry}`,
@@ -100,6 +105,8 @@ test("callable integration: auth, boundary validation, City and Area activation"
     `service_cities/${ids.districtCity}`,
     `service_location_boundaries/${ids.districtCityBoundary}`,
     `service_areas/${ids.area}`,
+    `service_areas/${ids.otherArea}`,
+    `service_location_boundaries/${ids.otherAreaBoundary}`,
     `service_cities/${ids.invalidCity}`,
     `service_location_boundaries/${ids.cityBoundary}`,
     `service_location_boundaries/${ids.areaBoundary}`,
@@ -124,6 +131,10 @@ test("callable integration: auth, boundary validation, City and Area activation"
   ];
   t.after(async () => {
     await Promise.all(docPaths.map((path) => db.doc(path).delete().catch(() => undefined)));
+    const approvals = await db.collection("service_area_launch_approvals").where("areaId", "==", ids.area).get();
+    await Promise.all(approvals.docs.map((doc) => doc.ref.delete()));
+    const launchAudits = await db.collection("company_launch_approval_audit").where("areaId", "==", ids.area).get();
+    await Promise.all(launchAudits.docs.map((doc) => doc.ref.delete()));
     const audits = await db.collection("service_location_activation_audit")
       .where("actorUid", "==", ids.admin).get();
     await Promise.all(audits.docs.map((doc) => doc.ref.delete()));
@@ -132,6 +143,7 @@ test("callable integration: auth, boundary validation, City and Area activation"
   await Promise.all([
     db.doc(`admin_users/${ids.inactive}`).set({ isActive: false, role: "super_admin" }),
     db.doc(`admin_users/${ids.admin}`).set({ isActive: true, role: "super_admin" }),
+    db.doc("company_authorities/founder_ceo").set({ uid: ids.founder, isActive: true }),
     db.doc(`service_countries/${ids.country}`).set({ isActive: true }),
     db.doc(`service_states/${ids.state}`).set({ countryId: ids.country, isActive: true }),
     db.doc(`service_countries/${ids.otherCountry}`).set({ isActive: true }),
@@ -158,6 +170,13 @@ test("callable integration: auth, boundary validation, City and Area activation"
     }),
     db.doc(`service_location_boundaries/${ids.areaBoundary}`).set(
       boundary(ids.area, "area", polygonPoints(2, 2, 4, 4)),
+    ),
+    db.doc(`service_areas/${ids.otherArea}`).set({
+      isServiceActive: false, countryId: ids.country, stateId: ids.state, cityId: ids.city,
+      verifiedBoundaryId: ids.otherAreaBoundary,
+    }),
+    db.doc(`service_location_boundaries/${ids.otherAreaBoundary}`).set(
+      boundary(ids.otherArea, "area", polygonPoints(5, 5, 6, 6)),
     ),
     db.doc(`service_cities/${ids.invalidCity}`).set({
       isServiceActive: false, countryId: ids.country, stateId: ids.state, verifiedBoundaryId: ids.invalidBoundary,
@@ -307,10 +326,52 @@ test("callable integration: auth, boundary validation, City and Area activation"
     assert.equal((await db.doc(`service_cities/${ids.districtCity}`).get()).get("isServiceActive"), false);
   });
 
-  await t.test("active super_admin can activate an Area contained by its active City", async () => {
+  await t.test("first Area requires exact Founder/CEO GO, revocation blocks it, and activation consumes GO", async () => {
+    await expectCallableCode(invoke(ids.admin, "area", ids.area), "failed-precondition");
+    await expectCallableCode(approveInitialServiceAreaLaunch.run({
+      auth: { uid: ids.admin, token: { uid: ids.admin } },
+      data: { areaId: ids.area, reason: "Launch approved after readiness review." },
+    }), "permission-denied");
+
+    const firstApproval = await approveInitialServiceAreaLaunch.run({
+      auth: { uid: ids.founder, token: { uid: ids.founder } },
+      data: { areaId: ids.area, reason: "Founder GO after readiness review." },
+    });
+    assert.equal(firstApproval.status, "approved");
+    assert.equal(firstApproval.areaId, ids.area);
+
+    const revoked = await revokeInitialServiceAreaApproval.run({
+      auth: { uid: ids.founder, token: { uid: ids.founder } },
+      data: { reason: "Readiness evidence needs one more review." },
+    });
+    assert.equal(revoked.status, "revoked");
+    await expectCallableCode(invoke(ids.admin, "area", ids.area), "failed-precondition");
+
+    const secondApproval = await approveInitialServiceAreaLaunch.run({
+      auth: { uid: ids.founder, token: { uid: ids.founder } },
+      data: { areaId: ids.area, reason: "Founder GO after final readiness review." },
+    });
+    // The GO is exact-target bound; another valid Area cannot consume it.
+    await expectCallableCode(invoke(ids.admin, "area", ids.otherArea), "failed-precondition");
+    assert.equal((await db.doc(`service_areas/${ids.otherArea}`).get()).get("isServiceActive"), false);
+
+    // A changed ancestry value after GO must invalidate the pending approval.
+    await db.doc(`service_cities/${ids.city}`).update({ districtId: "changed-after-approval" });
+    await expectCallableCode(invoke(ids.admin, "area", ids.area), "failed-precondition");
+    assert.equal((await db.doc("company_launch_control/initial_service_area").get()).get("status"), "approved");
+    await db.doc(`service_cities/${ids.city}`).update({ districtId: null });
+
     const result = await invoke(ids.admin, "area", ids.area);
     assert.deepEqual(result, { ok: true, locationId: ids.area, locationType: "area" });
     assert.equal((await db.doc(`service_areas/${ids.area}`).get()).get("isServiceActive"), true);
+    const control = await db.doc("company_launch_control/initial_service_area").get();
+    assert.equal(control.get("status"), "consumed");
+    assert.equal(control.get("areaId"), ids.area);
+    const approval = await db.doc(`service_area_launch_approvals/${secondApproval.approvalId}`).get();
+    assert.equal(approval.get("status"), "consumed");
+    const audit = await db.collection("company_launch_approval_audit")
+      .where("areaId", "==", ids.area).get();
+    assert.equal(audit.size, 4);
   });
 });
 
