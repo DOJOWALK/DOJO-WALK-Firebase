@@ -340,6 +340,12 @@ test("callable integration: auth, boundary validation, City and Area activation"
       auth: { uid: ids.founder, token: { uid: ids.founder } },
       data: { areaId: ids.area, reason: "Founder GO after final readiness review." },
     });
+    // A changed ancestry value after GO must invalidate the pending approval.
+    await db.doc(`service_cities/${ids.city}`).update({ districtId: "changed-after-approval" });
+    await expectCallableCode(invoke(ids.admin, "area", ids.area), "failed-precondition");
+    assert.equal((await db.doc("company_launch_control/initial_service_area").get()).get("status"), "approved");
+    await db.doc(`service_cities/${ids.city}`).update({ districtId: null });
+
     const result = await invoke(ids.admin, "area", ids.area);
     assert.deepEqual(result, { ok: true, locationId: ids.area, locationType: "area" });
     assert.equal((await db.doc(`service_areas/${ids.area}`).get()).get("isServiceActive"), true);
