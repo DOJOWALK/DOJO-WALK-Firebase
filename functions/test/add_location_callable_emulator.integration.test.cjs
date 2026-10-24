@@ -116,6 +116,17 @@ test("Add Location callable: authenticated save, Firestore read-back, and duplic
 
   await adminRef.set({ role: "super_admin", isActive: true });
 
+  // A valid admin still cannot create a child whose parent does not exist.
+  const missingParentResponse = await callSave(user.idToken, {
+    locationType: "state",
+    locationId: stateId,
+    payload: { countryId: `missing-country-${suffix}`, name: stateName },
+  });
+  const missingParentBody = await missingParentResponse.json();
+  assert.equal(missingParentBody.error?.status, "FAILED_PRECONDITION", JSON.stringify(missingParentBody));
+  assert.equal((await db.doc(`service_states/${stateId}`).get()).exists, false,
+    "A State with a missing Country parent must not be created");
+
   const countryResponse = await callSave(user.idToken, {
     locationType: "country",
     locationId: countryId,
