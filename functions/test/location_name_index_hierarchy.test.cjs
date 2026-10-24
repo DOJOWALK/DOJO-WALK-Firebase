@@ -489,3 +489,45 @@ test("saving an existing Locality with the same name and ancestry is idempotent"
     country.locationId, state.locationId, city.locationId, area.locationId,
   ]);
 });
+
+
+test("District-aware Area index ownership conflict rejects save without partial writes", async () => {
+  const uid = await createAdmin();
+  const country = await save(uid, "country", { name: `Area-Index-Conflict-Country-${randomUUID()}`, code: "AC" });
+  const state = await save(uid, "state", { countryId: country.locationId, name: `Area-Index-Conflict-State-${randomUUID()}` });
+  const district = await save(uid, "district", {
+    countryId: country.locationId, stateId: state.locationId, name: `Area-Index-Conflict-District-${randomUUID()}`,
+  });
+  const city = await save(uid, "city", {
+    countryId: country.locationId, stateId: state.locationId, districtId: district.locationId,
+    name: `Area-Index-Conflict-City-${randomUUID()}`,
+  });
+  const areaName = `Area-Index-Conflict-${randomUUID()}`;
+  const legacyParents = [country.locationId, state.locationId, city.locationId];
+  const districtParents = [country.locationId, state.locationId, district.locationId, city.locationId];
+  const legacyId = indexId("service_areas", legacyParents, areaName);
+  const districtIndexId = indexId("service_areas", districtParents, areaName);
+  const conflictingIndexRef = db.doc(`service_location_name_indexes/${districtIndexId}`);
+  const legacyIndexRef = db.doc(`service_location_name_indexes/${legacyId}`);
+  const foreignDocumentId = `foreign-area-owner-${randomUUID()}`;
+
+  await conflictingIndexRef.set({
+    collectionPath: "service_areas",
+    documentId: foreignDocumentId,
+    name: areaName.trim().toLowerCase(),
+    parentIds: districtParents,
+  });
+
+  await assert.rejects(
+    () => save(uid, "area", {
+      countryId: country.locationId, stateId: state.locationId, cityId: city.locationId, name: areaName,
+    }),
+    (error) => error && error.code === "failed-precondition",
+  );
+
+  const areaMatches = await db.collection("service_areas").where("name", "==", areaName).get();
+  assert.equal(areaMatches.empty, true);
+  assert.equal((await legacyIndexRef.get()).exists, false);
+  const preservedConflict = await conflictingIndexRef.get();
+  assert.equal(preservedConflict.get("documentId"), foreignDocumentId);
+});
