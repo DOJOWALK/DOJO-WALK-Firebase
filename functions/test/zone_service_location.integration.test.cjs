@@ -203,10 +203,14 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     await expectCode(status(ids.admin, "city", ids.city, false), "failed-precondition");
     assert.equal((await db.doc(`service_cities/${ids.city}`).get()).get("isServiceActive"), true);
 
-    // Isolate the State/District Zone guards from their ordinary active-City
-    // child guard: simulate stale legacy data where the City is already off
+    // Isolate ancestor guards from ordinary active-child checks. Simulate
+    // stale legacy data where City and then State are already marked inactive
     // but the canonical Zone remains active.
     await db.doc(`service_cities/${ids.city}`).update({ isServiceActive: false });
+    await db.doc(`service_states/${ids.state}`).update({ isActive: false });
+    await expectCode(status(ids.admin, "country", ids.country, false), "failed-precondition");
+    assert.equal((await db.doc(`service_countries/${ids.country}`).get()).get("isActive"), true);
+    await db.doc(`service_states/${ids.state}`).update({ isActive: true });
     await expectCode(status(ids.admin, "district", ids.district, false), "failed-precondition");
     await expectCode(status(ids.admin, "state", ids.state, false), "failed-precondition");
     assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), true);
