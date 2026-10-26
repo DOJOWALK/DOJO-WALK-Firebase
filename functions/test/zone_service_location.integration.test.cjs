@@ -136,6 +136,23 @@ test("Zone activation requires privileged auth, verified contained boundary and 
       stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Saved Zone",
     }), "failed-precondition");
     await db.doc(`service_cities/${ids.city}`).update({ districtId: ids.district });
+
+    // Reject inconsistent Country ancestry during Zone save, not only later
+    // during activation.
+    const districtRef = db.doc(`service_districts/${ids.district}`);
+    await districtRef.update({ countryId: `wrong-country-${suffix}` });
+    await expectCode(save(ids.admin, {
+      stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Saved Zone",
+    }), "failed-precondition");
+    await districtRef.update({ countryId: ids.country });
+
+    const cityRef = db.doc(`service_cities/${ids.city}`);
+    await cityRef.update({ countryId: `wrong-country-${suffix}` });
+    await expectCode(save(ids.admin, {
+      stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Saved Zone",
+    }), "failed-precondition");
+    await cityRef.update({ countryId: ids.country });
+
     const result = await save(ids.admin, {
       stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Saved Zone",
     });
