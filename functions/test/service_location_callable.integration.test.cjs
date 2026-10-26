@@ -86,8 +86,9 @@ test("saveServiceLocationWithNameIndex enforces admin auth, persists inactive st
 
   const saved = await callSave(admin.token, payload);
   assert.equal(saved.response.ok, true, JSON.stringify(saved.body));
-  assert.equal(saved.body.data?.ok, true);
-  const locationId = saved.body.data.locationId;
+  const result = saved.body.data ?? saved.body.result;
+  assert.equal(result?.ok, true);
+  const locationId = result.locationId;
   assert.ok(locationId, "callable should return the persisted location ID");
   createdLocationIds.push(locationId);
 
