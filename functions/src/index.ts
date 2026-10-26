@@ -96,8 +96,8 @@ export const reviewServiceLocationBoundary = onCall({ region: "asia-south1" }, a
   const actorRef = db.doc(`admin_users/${uid}`);
   const boundaryRef = db.doc(`service_location_boundaries/${boundaryId}`);
   const actor = await actorRef.get();
-  if (!actor.exists || actor.get("isActive") !== true || actor.get("role") !== "super_admin") {
-    throw new HttpsError("permission-denied", "An active super_admin account is required.");
+  if (!actor.exists || actor.get("isActive") !== true || actor.get("role") !== "central_admin") {
+    throw new HttpsError("permission-denied", "An active Central Admin account is required to review boundaries.");
   }
 
   // Read the boundary once to identify its owning document. All values that
@@ -122,8 +122,8 @@ export const reviewServiceLocationBoundary = onCall({ region: "asia-south1" }, a
       tx.get(actorRef), tx.get(boundaryRef), tx.get(locationRef),
     ]);
     if (!currentActor.exists || currentActor.get("isActive") !== true ||
-        currentActor.get("role") !== "super_admin") {
-      throw new HttpsError("permission-denied", "Admin access changed during review.");
+        currentActor.get("role") !== "central_admin") {
+      throw new HttpsError("permission-denied", "Central Admin access changed during boundary review.");
     }
     if (!currentBoundary.exists || !currentLocation.exists) {
       throw new HttpsError("not-found", "Boundary or owning location was not found.");
