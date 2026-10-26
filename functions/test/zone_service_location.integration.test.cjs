@@ -126,6 +126,9 @@ test("Zone activation requires privileged auth, verified contained boundary and 
   });
 
   await t.test("rejects inactive privileged account and mismatched City ancestry", async () => {
+    // The preceding happy-path test activated this Zone; reset it so this test
+    // proves the failed ancestry check cannot activate an inactive Zone.
+    await status(ids.admin, "zone", ids.zone, false);
     await db.doc(`admin_users/${ids.admin}`).update({ isActive: false });
     await expectCode(activate(ids.admin), "permission-denied");
     await db.doc(`admin_users/${ids.admin}`).update({ isActive: true });
