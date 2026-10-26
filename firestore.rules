@@ -37,6 +37,16 @@ service cloud.firestore {
         ];
     }
 
+    function isZoneOperator() {
+      return signedIn()
+        && exists(adminPath())
+        && get(adminPath()).data.get('isActive', false) == true
+        && get(adminPath()).data.get('role', '') in [
+          'super_admin',
+          'central_admin'
+        ];
+    }
+
     function validTimestamp(value) {
       return value is timestamp;
     }
@@ -1121,7 +1131,7 @@ service cloud.firestore {
     function validBoundaryCreate() {
       let d = request.resource.data;
 
-      return isAdmin()
+      return isZoneOperator()
         && d.keys().hasAll([
           'locationId',
           'locationType',
@@ -1161,7 +1171,7 @@ service cloud.firestore {
     function validBoundaryDraftUpdate() {
       let d = request.resource.data;
 
-      return isAdmin()
+      return isZoneOperator()
         && resource.data.verificationStatus in [
           'pending',
           'rejected'
@@ -1247,7 +1257,7 @@ service cloud.firestore {
     }
 
     match /service_location_boundaries/{boundaryId} {
-      allow get, list: if isAdmin();
+      allow get, list: if isZoneWorkflowUser();
 
       allow create: if validBoundaryCreate();
 
