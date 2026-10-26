@@ -231,9 +231,26 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     }), "permission-denied");
     await expectCode(activate(ids.central, ids.zone), "failed-precondition");
     assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), false);
+    await db.doc(`admin_users/${ids.founder}`).update({ isActive: false });
+    await expectCode(decideServiceZoneFounderApproval.run({
+      auth: { uid: ids.founder, token: { uid: ids.founder } },
+      data: { zoneId: ids.zone, decision: "approve", notes: "Inactive Founder must be denied" },
+    }), "permission-denied");
+    await db.doc(`admin_users/${ids.founder}`).update({ isActive: true });
   });
 
-  await t.test("activates a verified Zone inside active City and writes activation audit", async () => {
+  await t.test("stale boundary hash invalidates Founder approval", async () => {
+    await approveZone(ids.reviewZone);
+    const boundaryRef = db.doc(`service_location_boundaries/${ids.reviewBoundary}`);
+    const boundary = await boundaryRef.get();
+    const originalPoints = boundary.get("points");
+    await boundaryRef.update({ points: points(28.521, 77.321, 28.541, 77.341) });
+    await expectCode(activate(ids.central, ids.reviewZone), "failed-precondition");
+    assert.equal((await db.doc(`service_zones/${ids.reviewZone}`).get()).get("isServiceActive"), false);
+    await boundaryRef.update({ points: originalPoints });
+  });
+
+  await t.test("activates a verified Zone inside its City and writes activation audit", async () => {
     await approveZone(ids.zone);
     const result = await activate(ids.central);
     assert.equal(result.ok, true);
