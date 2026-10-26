@@ -756,6 +756,60 @@ test('service District reads are super_admin-only and direct client writes are d
 });
 
 
+
+test('service Zones are readable by active super_admin only and never directly writable by clients', async () => {
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'service_zones/zone-1'), {
+      stateId: 'up',
+      districtId: 'gbn',
+      cityId: 'city-parent',
+      name: 'Gaur City 2 Zone',
+      isServiceActive: false,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+  });
+
+  const superDb = env.authenticatedContext('super-active').firestore();
+  const inactiveDb = env.authenticatedContext('super-inactive').firestore();
+  const supportDb = env.authenticatedContext('support-active').firestore();
+  const adminDb = env.authenticatedContext('location-active').firestore();
+  const unauthenticatedDb = env.unauthenticatedContext().firestore();
+
+  await assertSucceeds(getDoc(doc(superDb, 'service_zones/zone-1')));
+  await assertSucceeds(getDocs(collection(superDb, 'service_zones')));
+  await assertFails(getDoc(doc(inactiveDb, 'service_zones/zone-1')));
+  await assertFails(getDocs(collection(inactiveDb, 'service_zones')));
+  await assertFails(getDoc(doc(supportDb, 'service_zones/zone-1')));
+  await assertFails(getDocs(collection(supportDb, 'service_zones')));
+  await assertFails(getDoc(doc(adminDb, 'service_zones/zone-1')));
+  await assertFails(getDoc(doc(unauthenticatedDb, 'service_zones/zone-1')));
+
+  const zoneRef = doc(superDb, 'service_zones/zone-1');
+  await assertFails(setDoc(doc(superDb, 'service_zones/client-created-zone'), {
+    stateId: 'up', districtId: 'gbn', cityId: 'city-parent',
+    name: 'Client Created Zone', isServiceActive: false,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(zoneRef, {
+    name: 'Tampered Zone', updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(zoneRef, {
+    isServiceActive: true, updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(zoneRef, {
+    verifiedBoundaryId: 'forged-boundary', updatedAt: serverTimestamp(),
+  }));
+  await assertFails(deleteDoc(zoneRef));
+
+  const supportZoneRef = doc(supportDb, 'service_zones/support-created-zone');
+  await assertFails(setDoc(supportZoneRef, {
+    stateId: 'up', districtId: 'gbn', cityId: 'city-parent',
+    name: 'Support Created Zone', isServiceActive: false,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  }));
+});
+
 test('trusted service location import run state is inaccessible to direct client reads and writes', async () => {
   const db = env.authenticatedContext('super-active').firestore();
   const runRef = doc(db, 'service_location_import_runs/direct-client-run');
