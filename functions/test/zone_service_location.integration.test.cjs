@@ -317,6 +317,14 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     // The preceding happy-path test activated this Zone; reset it so this test
     // proves the failed ancestry check cannot activate an inactive Zone.
     await requestServiceZoneDeactivation.run({ auth: { uid: ids.central, token: { uid: ids.central } }, data: { zoneId: ids.zone, notes: "Test deactivation request" } });
+    const deactivationChanges = await decideServiceZoneFounderApproval.run({
+      auth: { uid: ids.founder, token: { uid: ids.founder } },
+      data: { zoneId: ids.zone, decision: "changes_required", notes: "Please clarify the service continuity plan." },
+    });
+    assert.equal(deactivationChanges.workflowStatus, "active");
+    assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), true);
+    assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("approvedRevision"), 1);
+    await requestServiceZoneDeactivation.run({ auth: { uid: ids.central, token: { uid: ids.central } }, data: { zoneId: ids.zone, notes: "Updated deactivation request after clarification" } });
     await decideServiceZoneFounderApproval.run({ auth: { uid: ids.founder, token: { uid: ids.founder } }, data: { zoneId: ids.zone, decision: "deactivate", notes: "Founder approved deactivation for test" } });
     await status(ids.central, "zone", ids.zone, false);
     await db.doc(`admin_users/${ids.central}`).update({ isActive: false });
