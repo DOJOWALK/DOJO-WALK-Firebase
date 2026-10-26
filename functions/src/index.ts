@@ -663,10 +663,25 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
         const areas = await tx.get(db.collection("service_areas").where("districtId", "==", locationId).where("isServiceActive", "==", true).limit(1));
         if (!cities.empty || !areas.empty) throw new HttpsError("failed-precondition", "Deactivate active District descendants first.");
       } else if (locationType === "country") {
-        const states = await tx.get(db.collection("service_states").where("countryId", "==", locationId).where("isActive", "==", true).limit(1));
+        // Check every State referencing this Country, not only active States:
+        // stale/legacy data must not allow Country deactivation while a Zone
+        // remains active beneath a State that was incorrectly marked inactive.
+        const states = await tx.get(db.collection("service_states").where("countryId", "==", locationId));
         const cities = await tx.get(db.collection("service_cities").where("countryId", "==", locationId).where("isServiceActive", "==", true).limit(1));
         const areas = await tx.get(db.collection("service_areas").where("countryId", "==", locationId).where("isServiceActive", "==", true).limit(1));
-        if (!states.empty || !cities.empty || !areas.empty) {
+        let activeZoneFound = false;
+        for (const stateDoc of states.docs) {
+          const zones = await tx.get(db.collection("service_zones")
+            .where("stateId", "==", stateDoc.id)
+            .where("isServiceActive", "==", true)
+            .limit(1));
+          if (!zones.empty) {
+            activeZoneFound = true;
+            break;
+          }
+        }
+        if (!states.empty && states.docs.some((doc) => doc.get("isActive") === true) ||
+            !cities.empty || !areas.empty || activeZoneFound) {
           throw new HttpsError("failed-precondition", "Deactivate active descendant locations first.");
         }
       } else if (locationType === "state") {
