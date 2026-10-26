@@ -39,7 +39,8 @@ async function save(uid, payload, locationId = ids.createdZone) {
     ...(uid ? { auth: { uid, token: { uid } } } : {}),
     data: { locationType: "zone", locationId, payload },
   });
-}\nasync function activate(uid, zoneId = ids.zone) {
+}
+async function activate(uid, zoneId = ids.zone) {
   return activateServiceZone.run({
     ...(uid ? { auth: { uid, token: { uid } } } : {}),
     data: { zoneId },
