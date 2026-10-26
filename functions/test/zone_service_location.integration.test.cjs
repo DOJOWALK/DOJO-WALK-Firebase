@@ -190,6 +190,10 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     assert.equal(result.ok, true);
     assert.equal(result.locationType, "zone");
     assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), true);
+    assert.ok((await db.doc(`service_countries/${ids.country}`).get()).get("activationGuardAt"));
+    assert.ok((await db.doc(`service_states/${ids.state}`).get()).get("activationGuardAt"));
+    assert.ok((await db.doc(`service_districts/${ids.district}`).get()).get("activationGuardAt"));
+    assert.ok((await db.doc(`service_cities/${ids.city}`).get()).get("activationGuardAt"));
     // A City cannot be deactivated while an active Zone still depends on it.
     // The City has no legacy active Area in this fixture, so this specifically
     // exercises the canonical Zone-descendant guard.
