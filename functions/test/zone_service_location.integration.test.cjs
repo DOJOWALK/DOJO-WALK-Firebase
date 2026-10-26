@@ -11,7 +11,7 @@ const { activateServiceZone, reviewServiceLocationBoundary, saveServiceLocationW
 const db = getFirestore();
 const suffix = randomUUID().replace(/-/g, "").slice(0, 12);
 const ids = Object.fromEntries([
-  "admin", "support", "country", "state", "district", "city", "zone",
+  "admin", "support", "basicAdmin", "inactiveAdmin", "unknownRole", "country", "state", "district", "city", "zone",
   "cityBoundary", "zoneBoundary", "outsideZone", "outsideBoundary", "createdZone", "reviewZone", "reviewBoundary", "reviewOutsideBoundary",
 ].map((key) => [key, `zone-it-${key}-${suffix}`]));
 
@@ -67,7 +67,7 @@ async function expectCode(promise, code) {
 
 test("Zone activation requires privileged auth, verified contained boundary and active ancestry; deactivation is audited", async (t) => {
   const paths = [
-    `admin_users/${ids.admin}`, `admin_users/${ids.support}`,
+    `admin_users/${ids.admin}`, `admin_users/${ids.support}`, `admin_users/${ids.basicAdmin}`, `admin_users/${ids.inactiveAdmin}`, `admin_users/${ids.unknownRole}`,
     `service_countries/${ids.country}`, `service_states/${ids.state}`,
     `service_districts/${ids.district}`, `service_cities/${ids.city}`,
     `service_zones/${ids.zone}`, `service_zones/${ids.outsideZone}`, `service_zones/${ids.createdZone}`, `service_zones/${ids.reviewZone}`,
@@ -86,6 +86,9 @@ test("Zone activation requires privileged auth, verified contained boundary and 
   await Promise.all([
     db.doc(`admin_users/${ids.admin}`).set({ role: "super_admin", isActive: true }),
     db.doc(`admin_users/${ids.support}`).set({ role: "support", isActive: true }),
+    db.doc(`admin_users/${ids.basicAdmin}`).set({ role: "admin", isActive: true }),
+    db.doc(`admin_users/${ids.inactiveAdmin}`).set({ role: "super_admin", isActive: false }),
+    db.doc(`admin_users/${ids.unknownRole}`).set({ role: "mystery_role", isActive: true }),
     db.doc(`service_countries/${ids.country}`).set({ isActive: true }),
     db.doc(`service_states/${ids.state}`).set({ countryId: ids.country, isActive: true }),
     db.doc(`service_districts/${ids.district}`).set({ stateId: ids.state, countryId: ids.country, isServiceActive: true }),
@@ -178,6 +181,18 @@ test("Zone activation requires privileged auth, verified contained boundary and 
   await t.test("rejects unauthenticated and non-super-admin callers", async () => {
     await expectCode(activate(undefined), "unauthenticated");
     await expectCode(activate(ids.support), "permission-denied");
+  });
+
+  await t.test("Zone save fails closed for missing, inactive, ordinary-admin and unknown-role actors", async () => {
+    const payload = {
+      stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Authorization Test Zone",
+    };
+    await expectCode(save(undefined, payload), "unauthenticated");
+    await expectCode(save(`missing-admin-${suffix}`, payload), "permission-denied");
+    await expectCode(save(ids.inactiveAdmin, payload), "permission-denied");
+    await expectCode(save(ids.basicAdmin, payload), "permission-denied");
+    await expectCode(save(ids.unknownRole, payload), "permission-denied");
+    assert.equal((await db.doc(`service_zones/${ids.createdZone}`).get()).exists, false);
   });
 
   await t.test("rejects Zone activation through generic status callable", async () => {
