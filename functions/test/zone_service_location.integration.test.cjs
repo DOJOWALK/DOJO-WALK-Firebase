@@ -7,7 +7,7 @@ if (!process.env.FIRESTORE_EMULATOR_HOST) {
 }
 
 const { GeoPoint, getFirestore } = require("firebase-admin/firestore");
-const { activateServiceZone, reviewServiceLocationBoundary, saveServiceLocationWithNameIndex, setServiceLocationStatus, submitServiceZoneForFounderReview, decideServiceZoneFounderApproval, requestServiceZoneDeactivation, suspendServiceZoneForEmergency } = require("../lib/index");
+const { activateServiceZone, reviewServiceLocationBoundary, saveServiceLocationWithNameIndex, setServiceLocationStatus, submitServiceZoneForFounderReview, decideServiceZoneFounderApproval, requestServiceZoneDeactivation, suspendServiceZoneForEmergency, requestServiceZoneReactivation } = require("../lib/index");
 const db = getFirestore();
 const suffix = randomUUID().replace(/-/g, "").slice(0, 12);
 const ids = Object.fromEntries([
@@ -352,5 +352,22 @@ test("Zone activation requires privileged auth, verified contained boundary and 
       auth: { uid: ids.admin, token: { uid: ids.admin } },
       data: { zoneId: ids.zone, reason: "Unauthorized attempt" },
     }), "permission-denied");
+
+    await expectCode(activate(ids.central, ids.zone), "failed-precondition");
+    const reactivation = await requestServiceZoneReactivation.run({
+      auth: { uid: ids.central, token: { uid: ids.central } },
+      data: { zoneId: ids.zone, reason: "Safety review completed; requesting fresh approval." },
+    });
+    assert.equal(reactivation.workflowStatus, "reactivation_submitted");
+    assert.equal(reactivation.revision, 8);
+    await expectCode(activate(ids.central, ids.zone), "failed-precondition");
+    const founderDecision = await decideServiceZoneFounderApproval.run({
+      auth: { uid: ids.founder, token: { uid: ids.founder } },
+      data: { zoneId: ids.zone, decision: "reactivate", notes: "Reviewed safety evidence; reactivation approved." },
+    });
+    assert.equal(founderDecision.workflowStatus, "approved");
+    const reactivated = await activate(ids.central, ids.zone);
+    assert.equal(reactivated.ok, true);
+    assert.equal((await zoneRef.get()).get("isServiceActive"), true);
   });
 });
