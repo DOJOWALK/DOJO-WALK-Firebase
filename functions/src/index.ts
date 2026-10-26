@@ -604,10 +604,32 @@ export const decideServiceZoneFounderApproval = onCall({ region: "asia-south1" }
     const d=z.data()!;
     const isDeactivation=decision==="deactivate";
     const isReactivation=decision==="reactivate";
-    const expectedStatus=isDeactivation?"deactivation_submitted":isReactivation?"reactivation_submitted":"submitted";
-    const expectedRevision=isDeactivation?d.deactivationRequestedRevision:isReactivation?d.reactivationRequestedRevision:d.submittedRevision;
-    const expectedHash=isDeactivation?d.deactivationRequestedBoundaryHash:isReactivation?d.reactivationRequestedBoundaryHash:d.submittedBoundaryHash;
-    if(d.workflowStatus!==expectedStatus || !Number.isInteger(expectedRevision) || typeof expectedHash!=="string") throw new HttpsError("failed-precondition",isDeactivation?"Only a submitted deactivation request can be approved.":"Only a submitted Zone revision can receive a decision.");
+    const requestStatus = d.workflowStatus;
+    const isStandardSubmission = requestStatus === "submitted";
+    const isDeactivationSubmission = requestStatus === "deactivation_submitted";
+    const isReactivationSubmission = requestStatus === "reactivation_submitted";
+    const decisionMatchesSubmission =
+      (decision === "approve" && isStandardSubmission) ||
+      (decision === "deactivate" && isDeactivationSubmission) ||
+      (decision === "reactivate" && isReactivationSubmission) ||
+      (["reject", "changes_required"].includes(decision) &&
+        (isStandardSubmission || isDeactivationSubmission || isReactivationSubmission));
+    if (!decisionMatchesSubmission) {
+      throw new HttpsError("failed-precondition", "This decision is not valid for the Zone's current submitted workflow state.");
+    }
+    const expectedRevision = isDeactivationSubmission
+      ? d.deactivationRequestedRevision
+      : isReactivationSubmission
+        ? d.reactivationRequestedRevision
+        : d.submittedRevision;
+    const expectedHash = isDeactivationSubmission
+      ? d.deactivationRequestedBoundaryHash
+      : isReactivationSubmission
+        ? d.reactivationRequestedBoundaryHash
+        : d.submittedBoundaryHash;
+    if (!Number.isInteger(expectedRevision) || typeof expectedHash !== "string") {
+      throw new HttpsError("failed-precondition", "The submitted Zone revision or boundary hash is missing.");
+    }
     if(Number(d.revision??1)!==expectedRevision) throw new HttpsError("failed-precondition","Zone revision changed; submit the current revision again.");
     const boundaryId=d.verifiedBoundaryId;
     if(typeof boundaryId!=="string") throw new HttpsError("failed-precondition","Verified boundary reference is missing.");
