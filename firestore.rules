@@ -37,14 +37,13 @@ service cloud.firestore {
         ];
     }
 
+    // Zone setup and boundary draft edits belong to Central Admin only.
+    // Super Admin retains technical/read access but cannot operate Zone setup.
     function isZoneOperator() {
       return signedIn()
         && exists(adminPath())
         && get(adminPath()).data.get('isActive', false) == true
-        && get(adminPath()).data.get('role', '') in [
-          'super_admin',
-          'central_admin'
-        ];
+        && get(adminPath()).data.get('role', '') == 'central_admin';
     }
 
     function validTimestamp(value) {
