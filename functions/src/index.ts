@@ -228,6 +228,9 @@ export const activateServiceLocation = onCall({ region: "asia-south1" }, async (
       typeof locationId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(locationId)) {
     throw new HttpsError("invalid-argument", "Provide a valid locationType and locationId.");
   }
+  if (locationType === "city") {
+    throw new HttpsError("failed-precondition", "City is a reference hierarchy record. Only Zone can be activated for customer service.");
+  }
 
   const actorRef = db.doc(`admin_users/${uid}`);
   const actorSnap = await actorRef.get();
@@ -629,6 +632,9 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
   }
   if (locationType === "zone" && isActive) {
     throw new HttpsError("failed-precondition", "Use activateServiceZone to activate a Zone after boundary verification.");
+  }
+  if (["state", "district", "city"].includes(locationType)) {
+    throw new HttpsError("failed-precondition", "State, District and City are reference hierarchy records; only Zone has service activation status.");
   }
 
   const collectionByType: Record<string, string> = {
