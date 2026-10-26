@@ -77,3 +77,31 @@ Recommended low-risk migration direction for the next design review:
 6. Add executable emulator tests only after these contracts and the exact test fixtures are aligned; run CI in the PR branch and review failures before any merge.
 
 These are recommendations, not applied runtime changes. No Firebase production data or deployment was touched.
+
+
+## Cross-repository scan: status and boundary call sites (2026-10-26)
+
+The Admin default branch scan confirms these legacy UI/API uses:
+
+- District list UI invokes `setDistrictStatus`; this is incompatible with the approved rule that District is metadata only.
+- Area list UI invokes `setAreaServiceStatus` and opens boundary management with `locationType: 'area'`.
+- City list UI still has service status controls and boundary management with `locationType: 'city'`.
+- Admin boundary model and service explicitly accept only `city` and `area`.
+- Admin service calls the three trusted callables by name, but uses existing legacy payload types.
+
+This means the migration is not a safe one-file backend edit. Admin UI, service methods, boundary model/service, backend callable allowlists, Firestore rules, and tests need a coordinated change.
+
+## Release safety finding
+
+The Admin's historical `LOCATION_MASTER_STATUS.md` documents an automatic Firestore Rules deployment workflow on pushes to `main` when rules/config files change, without a required production-environment approval/confirmation gate. This historical finding needs a fresh workflow inspection before release; until then, avoid merging changes to `firestore.rules`, `firebase.json`, or the deployment workflow. This PR currently changes documentation only.
+
+## Updated next action
+
+Create a dedicated contract proposal and test mapping before runtime edits. The proposal must:
+1. Settle whether Zone is an API alias for legacy Area documents or a new collection.
+2. Specify whether city boundary is only parent containment evidence or remains independently activatable (the approved requirement says only Zone is activated).
+3. Define a safe transition for existing City/Area active flags and boundaries, with no bulk destructive rewrite.
+4. Define the exact Firestore booking/live-operation queries before any Zone deactivation guard is implemented.
+5. Include a CI/release gate review that prevents accidental Rules deployment.
+
+No runtime code, rules, workflows, production data, or deployments were changed by this scan.
