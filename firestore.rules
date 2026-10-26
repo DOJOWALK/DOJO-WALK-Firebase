@@ -26,6 +26,17 @@ service cloud.firestore {
         && get(adminPath()).data.get('role', '') == 'super_admin';
     }
 
+    function isZoneWorkflowUser() {
+      return signedIn()
+        && exists(adminPath())
+        && get(adminPath()).data.get('isActive', false) == true
+        && get(adminPath()).data.get('role', '') in [
+          'super_admin',
+          'central_admin',
+          'founder'
+        ];
+    }
+
     function validTimestamp(value) {
       return value is timestamp;
     }
@@ -204,6 +215,8 @@ service cloud.firestore {
           ])
         && request.resource.data.get('role', '') in [
           'super_admin',
+          'central_admin',
+          'founder',
           'admin',
           'support'
         ]
@@ -1351,7 +1364,7 @@ service cloud.firestore {
     // Zone records are read-only to clients; creation, boundary verification,
     // activation and audit changes must use trusted server callables.
     match /service_zones/{zoneId} {
-      allow get, list: if isAdmin();
+      allow get, list: if isZoneWorkflowUser();
 
       allow create: if false;
 
