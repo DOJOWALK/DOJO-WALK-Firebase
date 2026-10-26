@@ -402,8 +402,11 @@ export const activateServiceZone = onCall({ region: "asia-south1" }, async (requ
   const districtRef = db.doc(`service_districts/${districtId}`);
   const cityRef = db.doc(`service_cities/${cityId}`);
   const stateSnapshot = await stateRef.get();
+  if (!stateSnapshot.exists) {
+    throw new HttpsError("failed-precondition", "Parent State was not found.");
+  }
   const countryId = stateSnapshot.get("countryId");
-  if (!stateSnapshot.exists || typeof countryId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(countryId)) {
+  if (typeof countryId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(countryId)) {
     throw new HttpsError("failed-precondition", "Parent State must reference a valid Country.");
   }
   const countryRef = db.doc(`service_countries/${countryId}`);
