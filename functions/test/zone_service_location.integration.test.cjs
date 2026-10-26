@@ -214,6 +214,20 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), false);
   });
 
+  await t.test("Founder approval cannot be bypassed by Central Admin or technical Super Admin", async () => {
+    await expectCode(submitZone(ids.admin, ids.zone), "permission-denied");
+    await expectCode(decideServiceZoneFounderApproval.run({
+      auth: { uid: ids.admin, token: { uid: ids.admin } },
+      data: { zoneId: ids.zone, decision: "approve", notes: "Must be denied" },
+    }), "permission-denied");
+    await expectCode(decideServiceZoneFounderApproval.run({
+      auth: { uid: ids.central, token: { uid: ids.central } },
+      data: { zoneId: ids.zone, decision: "approve", notes: "Self approval must be denied" },
+    }), "permission-denied");
+    await expectCode(activate(ids.central, ids.zone), "failed-precondition");
+    assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), false);
+  });
+
   await t.test("activates a verified Zone inside active City and writes activation audit", async () => {
     await approveZone(ids.zone);
     const result = await activate(ids.central);
