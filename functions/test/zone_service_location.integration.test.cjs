@@ -173,6 +173,11 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     assert.equal(result.ok, true);
     assert.equal(result.locationType, "zone");
     assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), true);
+    // A City cannot be deactivated while an active Zone still depends on it.
+    // The City has no legacy active Area in this fixture, so this specifically
+    // exercises the canonical Zone-descendant guard.
+    await expectCode(status(ids.admin, "city", ids.city, false), "failed-precondition");
+    assert.equal((await db.doc(`service_cities/${ids.city}`).get()).get("isServiceActive"), true);
     const audit = await db.collection("service_location_activation_audit")
       .where("locationId", "==", ids.zone).get();
     assert.ok(audit.docs.some((doc) => doc.get("result") === "activated" && doc.get("locationType") === "zone"));
