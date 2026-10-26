@@ -452,13 +452,13 @@ export const activateServiceZone = onCall({ region: "asia-south1" }, async (requ
       throw new HttpsError("failed-precondition", "Parent State must be active and belong to its Country.");
     }
     if (!currentDistrict.exists || currentDistrict.get("stateId") !== stateId ||
-        currentDistrict.get("isServiceActive") !== true) {
-      throw new HttpsError("failed-precondition", "Parent District must be active and belong to the selected State.");
+        currentDistrict.get("countryId") !== countryId || currentDistrict.get("isServiceActive") !== true) {
+      throw new HttpsError("failed-precondition", "Parent District must be active and belong to the selected Country/State.");
     }
-    if (!currentCity.exists || currentCity.get("stateId") !== stateId ||
-        currentCity.get("districtId") !== districtId || currentCity.get("isServiceActive") !== true ||
-        currentCity.get("verifiedBoundaryId") !== cityBoundaryId) {
-      throw new HttpsError("failed-precondition", "Parent City must be active, match the selected hierarchy and keep its verified boundary.");
+    if (!currentCity.exists || currentCity.get("countryId") !== countryId ||
+        currentCity.get("stateId") !== stateId || currentCity.get("districtId") !== districtId ||
+        currentCity.get("isServiceActive") !== true || currentCity.get("verifiedBoundaryId") !== cityBoundaryId) {
+      throw new HttpsError("failed-precondition", "Parent City must be active, match the selected Country/State/District hierarchy and keep its verified boundary.");
     }
     const currentZoneBoundaryData = requireVerifiedBoundary(currentZoneBoundary.data(), zoneBoundaryId, zoneId, "zone");
     const currentCityBoundaryData = requireVerifiedBoundary(currentCityBoundary.data(), cityBoundaryId, cityId, "city");
