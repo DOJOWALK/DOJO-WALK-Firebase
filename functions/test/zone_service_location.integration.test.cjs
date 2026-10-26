@@ -7,12 +7,12 @@ if (!process.env.FIRESTORE_EMULATOR_HOST) {
 }
 
 const { GeoPoint, getFirestore } = require("firebase-admin/firestore");
-const { activateServiceZone, saveServiceLocationWithNameIndex, setServiceLocationStatus } = require("../lib/index");
+const { activateServiceZone, reviewServiceLocationBoundary, saveServiceLocationWithNameIndex, setServiceLocationStatus } = require("../lib/index");
 const db = getFirestore();
 const suffix = randomUUID().replace(/-/g, "").slice(0, 12);
 const ids = Object.fromEntries([
   "admin", "support", "country", "state", "district", "city", "zone",
-  "cityBoundary", "zoneBoundary", "outsideZone", "outsideBoundary", "createdZone",
+  "cityBoundary", "zoneBoundary", "outsideZone", "outsideBoundary", "createdZone", "reviewZone", "reviewBoundary", "reviewOutsideBoundary",
 ].map((key) => [key, `zone-it-${key}-${suffix}`]));
 
 const points = (south, west, north, east) => [
@@ -40,6 +40,12 @@ async function save(uid, payload, locationId = ids.createdZone) {
     data: { locationType: "zone", locationId, payload },
   });
 }
+async function reviewBoundary(uid, boundaryId, decision = "verified") {
+  return reviewServiceLocationBoundary.run({
+    ...(uid ? { auth: { uid, token: { uid } } } : {}),
+    data: { boundaryId, decision, notes: "Integration test review" },
+  });
+}
 async function activate(uid, zoneId = ids.zone) {
   return activateServiceZone.run({
     ...(uid ? { auth: { uid, token: { uid } } } : {}),
@@ -64,14 +70,14 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     `admin_users/${ids.admin}`, `admin_users/${ids.support}`,
     `service_countries/${ids.country}`, `service_states/${ids.state}`,
     `service_districts/${ids.district}`, `service_cities/${ids.city}`,
-    `service_zones/${ids.zone}`, `service_zones/${ids.outsideZone}`, `service_zones/${ids.createdZone}`,
+    `service_zones/${ids.zone}`, `service_zones/${ids.outsideZone}`, `service_zones/${ids.createdZone}`, `service_zones/${ids.reviewZone}`,
     `service_location_boundaries/${ids.cityBoundary}`,
     `service_location_boundaries/${ids.zoneBoundary}`,
-    `service_location_boundaries/${ids.outsideBoundary}`,
+    `service_location_boundaries/${ids.outsideBoundary}`, `service_location_boundaries/${ids.reviewBoundary}`, `service_location_boundaries/${ids.reviewOutsideBoundary}`,
   ];
   t.after(async () => {
     await Promise.all(paths.map((path) => db.doc(path).delete().catch(() => undefined)));
-    for (const collection of ["service_location_activation_audit", "service_location_status_audit"]) {
+    for (const collection of ["service_location_activation_audit", "service_location_status_audit", "service_location_boundary_review_audit"]) {
       const snap = await db.collection(collection).where("locationId", "in", [ids.zone, ids.outsideZone]).get().catch(() => ({ docs: [] }));
       await Promise.all(snap.docs.map((doc) => doc.ref.delete().catch(() => undefined)));
     }
@@ -97,6 +103,17 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     db.doc(`service_location_boundaries/${ids.zoneBoundary}`).set(
       verifiedBoundary(ids.zone, "zone", points(28.52, 77.32, 28.54, 77.34)),
     ),
+    db.doc(`service_zones/${ids.reviewZone}`).set({
+      stateId: ids.state, districtId: ids.district, cityId: ids.city, isServiceActive: false,
+    }),
+    db.doc(`service_location_boundaries/${ids.reviewBoundary}`).set({
+      ...verifiedBoundary(ids.reviewZone, "zone", points(28.52, 77.32, 28.54, 77.34)),
+      verificationStatus: "pending",
+    }),
+    db.doc(`service_location_boundaries/${ids.reviewOutsideBoundary}`).set({
+      ...verifiedBoundary(ids.reviewZone, "zone", points(28.55, 77.35, 28.62, 77.38)),
+      verificationStatus: "pending",
+    }),
     db.doc(`service_zones/${ids.outsideZone}`).set({
       stateId: ids.state, districtId: ids.district, cityId: ids.city,
       isServiceActive: false, verifiedBoundaryId: ids.outsideBoundary,
@@ -127,6 +144,18 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     assert.equal(created.exists, true);
     assert.equal(created.get("isServiceActive"), false);
     assert.equal(created.get("verifiedBoundaryId"), undefined);
+  });
+
+  await t.test("Zone boundary review verifies contained geometry and rejects outside geometry", async () => {
+    const result = await reviewBoundary(ids.admin, ids.reviewBoundary);
+    assert.equal(result.ok, true);
+    assert.equal(result.decision, "verified");
+    const reviewed = await db.doc(`service_location_boundaries/${ids.reviewBoundary}`).get();
+    assert.equal(reviewed.get("verificationStatus"), "verified");
+    assert.equal((await db.doc(`service_zones/${ids.reviewZone}`).get()).get("verifiedBoundaryId"), ids.reviewBoundary);
+
+    await expectCode(reviewBoundary(ids.admin, ids.reviewOutsideBoundary), "failed-precondition");
+    assert.equal((await db.doc(`service_location_boundaries/${ids.reviewOutsideBoundary}`).get()).get("verificationStatus"), "pending");
   });
 
   await t.test("rejects unauthenticated and non-super-admin callers", async () => {
