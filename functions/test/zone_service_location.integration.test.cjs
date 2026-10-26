@@ -261,6 +261,20 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     await boundaryRef.update({ points: originalPoints });
   });
 
+  await t.test("Zone revision changes invalidate an otherwise valid Founder approval", async () => {
+    const zoneRef = db.doc(`service_zones/${ids.reviewZone}`);
+    const before = await zoneRef.get();
+    const currentRevision = before.get("revision");
+    assert.equal(before.get("workflowStatus"), "approved");
+    assert.equal(before.get("approvedRevision"), currentRevision);
+    await zoneRef.update({ revision: currentRevision + 1 });
+    await expectCode(activate(ids.central, ids.reviewZone), "failed-precondition");
+    const after = await zoneRef.get();
+    assert.equal(after.get("isServiceActive"), false);
+    assert.equal(after.get("approvedRevision"), currentRevision);
+    assert.notEqual(after.get("approvedRevision"), after.get("revision"));
+  });
+
   await t.test("activates a verified Zone without parent service-active flags and writes activation audit", async () => {
     await Promise.all([
       db.doc(`service_states/${ids.state}`).update({ isActive: false }),
