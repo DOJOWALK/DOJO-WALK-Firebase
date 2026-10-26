@@ -97,12 +97,14 @@ export const reviewServiceLocationBoundary = onCall({ region: "asia-south1" }, a
   const initial = initialBoundary.data()!;
   const locationType = initial.locationType;
   const locationId = initial.locationId;
-  if ((locationType !== "city" && locationType !== "area") ||
+  if ((locationType !== "city" && locationType !== "area" && locationType !== "zone") ||
       typeof locationId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(locationId)) {
-    throw new HttpsError("failed-precondition", "Only City and Area boundaries with valid owner IDs can be reviewed.");
+    throw new HttpsError("failed-precondition", "Only City, Area and Zone boundaries with valid owner IDs can be reviewed.");
   }
 
-  const locationRef = db.doc(`${locationType === "city" ? "service_cities" : "service_areas"}/${locationId}`);
+  const ownerCollection = locationType === "city" ? "service_cities"
+    : locationType === "area" ? "service_areas" : "service_zones";
+  const locationRef = db.doc(`${ownerCollection}/${locationId}`);
   const auditRef = db.collection("service_location_boundary_review_audit").doc();
 
   return db.runTransaction(async (tx) => {
@@ -133,15 +135,15 @@ export const reviewServiceLocationBoundary = onCall({ region: "asia-south1" }, a
           throw new Error("Boundary source name and reference are required.");
         }
         polygonFromBoundary(boundary);
-        if (locationType === "area") {
+        if (locationType === "area" || locationType === "zone") {
           const cityId = currentLocation.get("cityId");
           if (typeof cityId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(cityId)) {
-            throw new Error("Area must reference a valid parent City.");
+            throw new Error("Area or Zone must reference a valid parent City.");
           }
           const cityRef = db.doc(`service_cities/${cityId}`);
           const citySnapshot = await tx.get(cityRef);
           if (!citySnapshot.exists || citySnapshot.get("isServiceActive") !== true) {
-            throw new Error("Parent City must exist and be active before Area verification.");
+            throw new Error("Parent City must exist and be active before Area/Zone verification.");
           }
           const cityBoundaryId = citySnapshot.get("verifiedBoundaryId");
           if (typeof cityBoundaryId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(cityBoundaryId)) {
