@@ -89,7 +89,7 @@ test("Zone activation requires privileged auth, verified contained boundary and 
   ];
   t.after(async () => {
     await Promise.all(paths.map((path) => db.doc(path).delete().catch(() => undefined)));
-    for (const collection of ["service_location_activation_audit", "service_location_status_audit", "service_location_boundary_review_audit"]) {
+    for (const collection of ["service_location_activation_audit", "service_location_status_audit", "service_location_boundary_review_audit", "service_zone_approval_audit"]) {
       const snap = await db.collection(collection).where("locationId", "in", [ids.zone, ids.outsideZone, ids.reviewZone, ids.city]).get().catch(() => ({ docs: [] }));
       await Promise.all(snap.docs.map((doc) => doc.ref.delete().catch(() => undefined)));
     }
@@ -140,7 +140,7 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     ),
   ]);
 
-  await t.test("Zone save requires Super Admin and validates State → District → City ancestry", async () => {
+  await t.test("Central Admin can create a draft Zone and ancestry is validated", async () => {
     await expectCode(save(ids.support, {
       stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Saved Zone",
     }), "permission-denied");
@@ -178,6 +178,11 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     assert.equal(created.exists, true);
     assert.equal(created.get("isServiceActive"), false);
     assert.equal(created.get("verifiedBoundaryId"), undefined);
+    assert.equal(created.get("workflowStatus"), "draft");
+    assert.equal(created.get("revision"), 1);
+    await expectCode(save(ids.admin, {
+      stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Super Admin draft",
+    }), "permission-denied");
   });
 
   await t.test("Zone boundary review verifies contained geometry and rejects outside geometry", async () => {
