@@ -125,6 +125,19 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     assert.equal((await db.doc(`service_zones/${ids.outsideZone}`).get()).get("isServiceActive"), false);
   });
 
+  await t.test("rejects inactive privileged account and mismatched City ancestry", async () => {
+    await db.doc(`admin_users/${ids.admin}`).update({ isActive: false });
+    await expectCode(activate(ids.admin), "permission-denied");
+    await db.doc(`admin_users/${ids.admin}`).update({ isActive: true });
+
+    const cityRef = db.doc(`service_cities/${ids.city}`);
+    await cityRef.update({ districtId: `wrong-district-${suffix}` });
+    await expectCode(activate(ids.admin), "failed-precondition");
+    await cityRef.update({ districtId: ids.district });
+    assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), false);
+  });
+
+
   await t.test("deactivates Zone through audited status callable", async () => {
     const result = await status(ids.admin, "zone", ids.zone, false);
     assert.equal(result.ok, true);
