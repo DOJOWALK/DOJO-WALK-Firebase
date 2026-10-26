@@ -6,6 +6,7 @@ Status: implementation in progress on PR #39. This document is a contract; CI on
 - Central Admin (admin_users/{uid}.role == central_admin, active) owns Zone draft creation/editing, boundary preparation, submission, and operational follow-up.
 - Founder/CEO (role == founder, active) is the sole business approver for approve, reject, or request-changes decisions.
 - Technical super_admin does not implicitly receive Founder approval authority.
+- Technical super_admin also cannot create/edit Zone boundary drafts or perform boundary review; those Zone operations belong to Central Admin. Super Admin may retain technical/read access.
 - Recheck actor role and active status inside every Firestore transaction.
 
 ## Zone workflow fields
