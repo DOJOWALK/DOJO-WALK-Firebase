@@ -7,12 +7,12 @@ if (!process.env.FIRESTORE_EMULATOR_HOST) {
 }
 
 const { GeoPoint, getFirestore } = require("firebase-admin/firestore");
-const { activateServiceZone, setServiceLocationStatus } = require("../lib/index");
+const { activateServiceZone, saveServiceLocationWithNameIndex, setServiceLocationStatus } = require("../lib/index");
 const db = getFirestore();
 const suffix = randomUUID().replace(/-/g, "").slice(0, 12);
 const ids = Object.fromEntries([
   "admin", "support", "country", "state", "district", "city", "zone",
-  "cityBoundary", "zoneBoundary", "outsideZone", "outsideBoundary",
+  "cityBoundary", "zoneBoundary", "outsideZone", "outsideBoundary", "createdZone",
 ].map((key) => [key, `zone-it-${key}-${suffix}`]));
 
 const points = (south, west, north, east) => [
@@ -34,7 +34,7 @@ function verifiedBoundary(locationId, locationType, polygonPoints) {
   };
 }
 
-async function activate(uid, zoneId = ids.zone) {
+async function save(uid, payload, locationId = ids.createdZone) {\n  return saveServiceLocationWithNameIndex.run({\n    ...(uid ? { auth: { uid, token: { uid } } } : {}),\n    data: { locationType: "zone", locationId, payload },\n  });\n}\nasync function activate(uid, zoneId = ids.zone) {
   return activateServiceZone.run({
     ...(uid ? { auth: { uid, token: { uid } } } : {}),
     data: { zoneId },
@@ -58,7 +58,7 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     `admin_users/${ids.admin}`, `admin_users/${ids.support}`,
     `service_countries/${ids.country}`, `service_states/${ids.state}`,
     `service_districts/${ids.district}`, `service_cities/${ids.city}`,
-    `service_zones/${ids.zone}`, `service_zones/${ids.outsideZone}`,
+    `service_zones/${ids.zone}`, `service_zones/${ids.outsideZone}`, `service_zones/${ids.createdZone}`,
     `service_location_boundaries/${ids.cityBoundary}`,
     `service_location_boundaries/${ids.zoneBoundary}`,
     `service_location_boundaries/${ids.outsideBoundary}`,
@@ -99,6 +99,29 @@ test("Zone activation requires privileged auth, verified contained boundary and 
       verifiedBoundary(ids.outsideZone, "zone", points(28.55, 77.35, 28.62, 77.38)),
     ),
   ]);
+
+  await t.test("Zone save requires Super Admin and validates State → District → City ancestry", async () => {
+    await expectCode(save(ids.support, {
+      stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Saved Zone",
+    }), "permission-denied");
+    await expectCode(save(ids.admin, {
+      stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Saved Zone",
+      isServiceActive: true,
+    }), "invalid-argument");
+    await db.doc(`service_cities/${ids.city}`).update({ districtId: `wrong-district-${suffix}` });
+    await expectCode(save(ids.admin, {
+      stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Saved Zone",
+    }), "failed-precondition");
+    await db.doc(`service_cities/${ids.city}`).update({ districtId: ids.district });
+    const result = await save(ids.admin, {
+      stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Saved Zone",
+    });
+    assert.equal(result.ok, true);
+    const created = await db.doc(`service_zones/${ids.createdZone}`).get();
+    assert.equal(created.exists, true);
+    assert.equal(created.get("isServiceActive"), false);
+    assert.equal(created.get("verifiedBoundaryId"), undefined);
+  });
 
   await t.test("rejects unauthenticated and non-super-admin callers", async () => {
     await expectCode(activate(undefined), "unauthenticated");
