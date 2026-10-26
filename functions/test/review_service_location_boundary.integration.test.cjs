@@ -83,7 +83,7 @@ test("trusted boundary review enforces auth, role, geometry and Area containment
   });
 
   await Promise.all([
-    db.doc(`admin_users/${ids.admin}`).set({ role: "super_admin", isActive: true }),
+    db.doc(`admin_users/${ids.admin}`).set({ role: "central_admin", isActive: true }),
     db.doc(`admin_users/${ids.support}`).set({ role: "support", isActive: true }),
     db.doc(`service_cities/${ids.city}`).set({
       countryId: "test-country", stateId: "test-state", isServiceActive: true,
