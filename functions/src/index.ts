@@ -624,6 +624,26 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
       if (!children.empty) {
         throw new HttpsError("failed-precondition", "Deactivate active child locations first.");
       }
+      // Zones are canonical descendants of State → District → City. They are
+      // stored separately from legacy Areas, so explicitly block deactivation
+      // of any ancestor while an active Zone still references it.
+      const zoneParentFieldByType: Record<string, string> = {
+        state: "stateId",
+        district: "districtId",
+        city: "cityId",
+      };
+      const zoneParentField = zoneParentFieldByType[locationType];
+      if (zoneParentField) {
+        const activeZones = await tx.get(
+          db.collection("service_zones")
+            .where(zoneParentField, "==", locationId)
+            .where("isServiceActive", "==", true)
+            .limit(1),
+        );
+        if (!activeZones.empty) {
+          throw new HttpsError("failed-precondition", "Deactivate active descendant Zones first.");
+        }
+      }
       // District is a direct child of State in the canonical hierarchy.
       // The client-side Admin guard is only UX; enforce this invariant here
       // so direct callable requests cannot deactivate a State with active Districts.
