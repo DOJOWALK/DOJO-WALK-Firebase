@@ -31,6 +31,9 @@ beforeEach(async () => {
     await setDoc(doc(db, 'admin_users/super-active'), {
       role: 'super_admin', isActive: true,
     });
+    await setDoc(doc(db, 'admin_users/central-active'), {
+      role: 'central_admin', isActive: true,
+    });
     await setDoc(doc(db, 'admin_users/super-inactive'), {
       role: 'super_admin', isActive: false,
     });
@@ -264,6 +267,32 @@ test('active City boundary reference cannot be rebound by a client transaction',
   }));
 });
 
+
+test('Zone boundary draft writes belong to Central Admin, not technical Super Admin', async () => {
+  const boundaryData = {
+    locationId: 'zone-draft-1',
+    locationType: 'zone',
+    points: [
+      { lat: 28.5, lng: 77.3 },
+      { lat: 28.6, lng: 77.3 },
+      { lat: 28.6, lng: 77.4 },
+    ],
+    sourceType: 'governmentGis',
+    sourceName: 'Test official source',
+    sourceReference: 'TEST-ZONE-REF',
+    verificationStatus: 'pending',
+    verifiedBy: null,
+    verifiedAt: null,
+    verificationNotes: null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+  const superDb = env.authenticatedContext('super-active').firestore();
+  await assertFails(setDoc(doc(superDb, 'service_location_boundaries/super-zone-draft'), boundaryData));
+
+  const centralDb = env.authenticatedContext('central-active').firestore();
+  await assertSucceeds(setDoc(doc(centralDb, 'service_location_boundaries/central-zone-draft'), boundaryData));
+});
 
 test('clients cannot directly verify or reject a pending boundary', async () => {
   await env.withSecurityRulesDisabled(async (context) => {
