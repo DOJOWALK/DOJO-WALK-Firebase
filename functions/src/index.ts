@@ -663,9 +663,12 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
         const areas = await tx.get(db.collection("service_areas").where("districtId", "==", locationId).where("isServiceActive", "==", true).limit(1));
         if (!cities.empty || !areas.empty) throw new HttpsError("failed-precondition", "Deactivate active District descendants first.");
       } else if (locationType === "country") {
+        const states = await tx.get(db.collection("service_states").where("countryId", "==", locationId).where("isActive", "==", true).limit(1));
         const cities = await tx.get(db.collection("service_cities").where("countryId", "==", locationId).where("isServiceActive", "==", true).limit(1));
         const areas = await tx.get(db.collection("service_areas").where("countryId", "==", locationId).where("isServiceActive", "==", true).limit(1));
-        if (!cities.empty || !areas.empty) throw new HttpsError("failed-precondition", "Deactivate active descendant locations first.");
+        if (!states.empty || !cities.empty || !areas.empty) {
+          throw new HttpsError("failed-precondition", "Deactivate active descendant locations first.");
+        }
       } else if (locationType === "state") {
         const areas = await tx.get(db.collection("service_areas").where("stateId", "==", locationId).where("isServiceActive", "==", true).limit(1));
         if (!areas.empty) throw new HttpsError("failed-precondition", "Deactivate active descendant locations first.");
