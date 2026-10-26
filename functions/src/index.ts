@@ -46,7 +46,7 @@ function requireVerifiedBoundary(
   boundaryData: FirebaseFirestore.DocumentData | undefined,
   boundaryId: string,
   locationId: string,
-  locationType: "city" | "area",
+  locationType: "city" | "area" | "zone",
 ): BoundaryDoc {
   const boundary = asBoundary(boundaryData);
   if (boundary.locationId !== locationId || boundary.locationType !== locationType ||
@@ -350,7 +350,6 @@ export const activateServiceLocation = onCall({ region: "asia-south1" }, async (
 
     // Touch every ancestor in this transaction so a concurrent ancestor
     // deactivation conflicts and retries against the newly active descendant.
-    tx.update(countryRef, { activationGuardAt: FieldValue.serverTimestamp() });
     tx.update(countryRef, { activationGuardAt: FieldValue.serverTimestamp() });
     tx.update(stateRef, { activationGuardAt: FieldValue.serverTimestamp() });
     if (districtRef) tx.update(districtRef, { activationGuardAt: FieldValue.serverTimestamp() });
