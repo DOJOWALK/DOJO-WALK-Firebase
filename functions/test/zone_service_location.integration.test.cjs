@@ -197,6 +197,15 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     await db.doc(`admin_users/${ids.admin}`).update({ isActive: true });
 
     const cityRef = db.doc(`service_cities/${ids.city}`);
+    // Country ancestry must match at both District and City levels.
+    await cityRef.update({ countryId: `wrong-country-${suffix}` });
+    await expectCode(activate(ids.admin), "failed-precondition");
+    await cityRef.update({ countryId: ids.country });
+
+    await db.doc(`service_districts/${ids.district}`).update({ countryId: `wrong-country-${suffix}` });
+    await expectCode(activate(ids.admin), "failed-precondition");
+    await db.doc(`service_districts/${ids.district}`).update({ countryId: ids.country });
+
     await cityRef.update({ districtId: `wrong-district-${suffix}` });
     await expectCode(activate(ids.admin), "failed-precondition");
     await cityRef.update({ districtId: ids.district });
