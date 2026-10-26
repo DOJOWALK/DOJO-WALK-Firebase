@@ -7,11 +7,11 @@ if (!process.env.FIRESTORE_EMULATOR_HOST) {
 }
 
 const { GeoPoint, getFirestore } = require("firebase-admin/firestore");
-const { activateServiceZone, reviewServiceLocationBoundary, saveServiceLocationWithNameIndex, setServiceLocationStatus } = require("../lib/index");
+const { activateServiceZone, reviewServiceLocationBoundary, saveServiceLocationWithNameIndex, setServiceLocationStatus, submitServiceZoneForFounderReview, decideServiceZoneFounderApproval } = require("../lib/index");
 const db = getFirestore();
 const suffix = randomUUID().replace(/-/g, "").slice(0, 12);
 const ids = Object.fromEntries([
-  "admin", "support", "basicAdmin", "inactiveAdmin", "unknownRole", "authTestZone", "country", "state", "district", "city", "zone",
+  "admin", "central", "founder", "support", "basicAdmin", "inactiveAdmin", "unknownRole", "authTestZone", "country", "state", "district", "city", "zone",
   "cityBoundary", "zoneBoundary", "outsideZone", "outsideBoundary", "createdZone", "reviewZone", "reviewBoundary", "reviewOutsideBoundary",
 ].map((key) => [key, `zone-it-${key}-${suffix}`]));
 
@@ -52,6 +52,18 @@ async function activate(uid, zoneId = ids.zone) {
     data: { zoneId },
   });
 }
+async function submitZone(uid, zoneId = ids.zone) {
+  return submitServiceZoneForFounderReview.run({
+    ...(uid ? { auth: { uid, token: { uid } } } : {}), data: { zoneId },
+  });
+}
+async function approveZone(zoneId = ids.zone) {
+  const ref = db.doc(`service_zones/${zoneId}`);
+  const zone = await ref.get();
+  await ref.set({ revision: zone.get("revision") || 1, workflowStatus: "draft" }, { merge: true });
+  await submitZone(ids.central, zoneId);
+  return decideServiceZoneFounderApproval.run({ auth: { uid: ids.founder, token: { uid: ids.founder } }, data: { zoneId, decision: "approve", notes: "Approved after review" } });
+}
 async function status(uid, locationType, locationId, isActive) {
   return setServiceLocationStatus.run({
     ...(uid ? { auth: { uid, token: { uid } } } : {}),
@@ -67,7 +79,7 @@ async function expectCode(promise, code) {
 
 test("Zone activation requires privileged auth, verified contained boundary and active ancestry; deactivation is audited", async (t) => {
   const paths = [
-    `admin_users/${ids.admin}`, `admin_users/${ids.support}`, `admin_users/${ids.basicAdmin}`, `admin_users/${ids.inactiveAdmin}`, `admin_users/${ids.unknownRole}`,
+    `admin_users/${ids.admin}`, `admin_users/${ids.central}`, `admin_users/${ids.founder}`, `admin_users/${ids.support}`, `admin_users/${ids.basicAdmin}`, `admin_users/${ids.inactiveAdmin}`, `admin_users/${ids.unknownRole}`,
     `service_countries/${ids.country}`, `service_states/${ids.state}`,
     `service_districts/${ids.district}`, `service_cities/${ids.city}`,
     `service_zones/${ids.zone}`, `service_zones/${ids.outsideZone}`, `service_zones/${ids.createdZone}`, `service_zones/${ids.authTestZone}`, `service_zones/${ids.reviewZone}`,
@@ -85,6 +97,8 @@ test("Zone activation requires privileged auth, verified contained boundary and 
 
   await Promise.all([
     db.doc(`admin_users/${ids.admin}`).set({ role: "super_admin", isActive: true }),
+    db.doc(`admin_users/${ids.central}`).set({ role: "central_admin", isActive: true }),
+    db.doc(`admin_users/${ids.founder}`).set({ role: "founder", isActive: true }),
     db.doc(`admin_users/${ids.support}`).set({ role: "support", isActive: true }),
     db.doc(`admin_users/${ids.basicAdmin}`).set({ role: "admin", isActive: true }),
     db.doc(`admin_users/${ids.inactiveAdmin}`).set({ role: "super_admin", isActive: false }),
@@ -130,12 +144,12 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     await expectCode(save(ids.support, {
       stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Saved Zone",
     }), "permission-denied");
-    await expectCode(save(ids.admin, {
+    await expectCode(save(ids.central, {
       stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Saved Zone",
       isServiceActive: true,
     }), "invalid-argument");
     await db.doc(`service_cities/${ids.city}`).update({ districtId: `wrong-district-${suffix}` });
-    await expectCode(save(ids.admin, {
+    await expectCode(save(ids.central, {
       stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Saved Zone",
     }), "failed-precondition");
     await db.doc(`service_cities/${ids.city}`).update({ districtId: ids.district });
@@ -144,19 +158,19 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     // during activation.
     const districtRef = db.doc(`service_districts/${ids.district}`);
     await districtRef.update({ countryId: `wrong-country-${suffix}` });
-    await expectCode(save(ids.admin, {
+    await expectCode(save(ids.central, {
       stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Saved Zone",
     }), "failed-precondition");
     await districtRef.update({ countryId: ids.country });
 
     const cityRef = db.doc(`service_cities/${ids.city}`);
     await cityRef.update({ countryId: `wrong-country-${suffix}` });
-    await expectCode(save(ids.admin, {
+    await expectCode(save(ids.central, {
       stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Saved Zone",
     }), "failed-precondition");
     await cityRef.update({ countryId: ids.country });
 
-    const result = await save(ids.admin, {
+    const result = await save(ids.central, {
       stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Saved Zone",
     });
     assert.equal(result.ok, true);
@@ -167,14 +181,14 @@ test("Zone activation requires privileged auth, verified contained boundary and 
   });
 
   await t.test("Zone boundary review verifies contained geometry and rejects outside geometry", async () => {
-    const result = await reviewBoundary(ids.admin, ids.reviewBoundary);
+    const result = await reviewBoundary(ids.central, ids.reviewBoundary);
     assert.equal(result.ok, true);
     assert.equal(result.decision, "verified");
     const reviewed = await db.doc(`service_location_boundaries/${ids.reviewBoundary}`).get();
     assert.equal(reviewed.get("verificationStatus"), "verified");
     assert.equal((await db.doc(`service_zones/${ids.reviewZone}`).get()).get("verifiedBoundaryId"), ids.reviewBoundary);
 
-    await expectCode(reviewBoundary(ids.admin, ids.reviewOutsideBoundary), "failed-precondition");
+    await expectCode(reviewBoundary(ids.central, ids.reviewOutsideBoundary), "failed-precondition");
     assert.equal((await db.doc(`service_location_boundaries/${ids.reviewOutsideBoundary}`).get()).get("verificationStatus"), "pending");
   });
 
@@ -201,7 +215,8 @@ test("Zone activation requires privileged auth, verified contained boundary and 
   });
 
   await t.test("activates a verified Zone inside active City and writes activation audit", async () => {
-    const result = await activate(ids.admin);
+    await approveZone(ids.zone);
+    const result = await activate(ids.central);
     assert.equal(result.ok, true);
     assert.equal(result.locationType, "zone");
     assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), true);
@@ -237,7 +252,7 @@ test("Zone activation requires privileged auth, verified contained boundary and 
   });
 
   await t.test("rejects Zone polygon outside parent City", async () => {
-    await expectCode(activate(ids.admin, ids.outsideZone), "failed-precondition");
+    await expectCode(activate(ids.central, ids.outsideZone), "failed-precondition");
     assert.equal((await db.doc(`service_zones/${ids.outsideZone}`).get()).get("isServiceActive"), false);
   });
 
@@ -245,22 +260,22 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     // The preceding happy-path test activated this Zone; reset it so this test
     // proves the failed ancestry check cannot activate an inactive Zone.
     await status(ids.admin, "zone", ids.zone, false);
-    await db.doc(`admin_users/${ids.admin}`).update({ isActive: false });
-    await expectCode(activate(ids.admin), "permission-denied");
-    await db.doc(`admin_users/${ids.admin}`).update({ isActive: true });
+    await db.doc(`admin_users/${ids.central}`).update({ isActive: false });
+    await expectCode(activate(ids.central), "permission-denied");
+    await db.doc(`admin_users/${ids.central}`).update({ isActive: true });
 
     const cityRef = db.doc(`service_cities/${ids.city}`);
     // Country ancestry must match at both District and City levels.
     await cityRef.update({ countryId: `wrong-country-${suffix}` });
-    await expectCode(activate(ids.admin), "failed-precondition");
+    await expectCode(activate(ids.central), "failed-precondition");
     await cityRef.update({ countryId: ids.country });
 
     await db.doc(`service_districts/${ids.district}`).update({ countryId: `wrong-country-${suffix}` });
-    await expectCode(activate(ids.admin), "failed-precondition");
+    await expectCode(activate(ids.central), "failed-precondition");
     await db.doc(`service_districts/${ids.district}`).update({ countryId: ids.country });
 
     await cityRef.update({ districtId: `wrong-district-${suffix}` });
-    await expectCode(activate(ids.admin), "failed-precondition");
+    await expectCode(activate(ids.central), "failed-precondition");
     await cityRef.update({ districtId: ids.district });
     assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), false);
   });
