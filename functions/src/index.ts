@@ -152,8 +152,8 @@ export const reviewServiceLocationBoundary = onCall({ region: "asia-south1" }, a
           }
           const cityRef = db.doc(`service_cities/${cityId}`);
           const citySnapshot = await tx.get(cityRef);
-          if (!citySnapshot.exists || citySnapshot.get("isServiceActive") !== true) {
-            throw new Error("Parent City must exist and be active before Area/Zone verification.");
+          if (!citySnapshot.exists) {
+            throw new Error("Parent City must exist before Area/Zone verification.");
           }
           const cityBoundaryId = citySnapshot.get("verifiedBoundaryId");
           if (typeof cityBoundaryId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(cityBoundaryId)) {
