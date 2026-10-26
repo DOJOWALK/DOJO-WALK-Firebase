@@ -181,3 +181,31 @@ Before implementing the zone deactivation guard or any assignment behavior:
 - Authoritative assignment writer: **not found in inspected paths; owner/external workflow confirmation required**.
 - Canonical booking-zone reference: **not established**.
 - Runtime changes/tests: **not performed**.
+
+
+## Assignment lifecycle audit follow-up (2026-10-26)
+
+Read the Admin repository's existing Step 198/199/200 assignment audits. They are planning/audit documents, not proof of a deployed assignment implementation. Their findings align with the current read-only scan:
+
+- Customer booking creation initializes `status: pending` and `walkerId: null`.
+- Admin booking, dashboard, and live-operations paths reviewed are readers; the reviewed walker-management service changes walker profile state and audit logs, not booking assignment.
+- Partner booking queries consume pre-existing assignments. Partner walk-details/navigation code changes lifecycle status, while live-walk code creates/updates a separate walk record.
+- The reviewed Firebase Functions source did not reveal an assignment callable. Existing Firestore Rules allow certain Admin assignment-field updates, but permission to write is not evidence of a working assignment workflow.
+- The known lifecycle mentions include `pending`, `assigned`, `accepted`, and running states such as `in_progress`, `active_walk`, `walking`, and `walk_started`. This is a partial inventory, not a certified exhaustive status allowlist.
+
+### Critical implementation gate
+
+The authoritative booking-assignment writer and its deployment location are **not confirmed**. Before modifying booking rules or introducing an assignment callable, the owner/team must confirm whether assignment currently happens through another backend, manual Admin workflow, script, or is not yet implemented. A partial repository search cannot answer that conclusively.
+
+Do not narrow booking rules, add a new assignment endpoint, or change status transitions based only on this audit. That could break an external workflow or create two competing assignment paths. Likewise, do not implement Zone deactivation by querying only a guessed location field or the `walk_locations` GPS collection.
+
+### Next safe step
+
+Finish the read-only inventory of all booking status writers and Admin booking update permissions in the current branches; then record the external/manual assignment decision as an explicit contract gate. After that, coordinate an approved canonical booking-to-zone mapping and fail-closed deactivation behavior with executable Emulator tests.
+
+Gate status:
+- Assignment writer: **unconfirmed**
+- Status transition inventory: **partial**
+- Booking-to-zone reference: **not established in reviewed contract**
+- Runtime/rules changes and Emulator tests: **not done**
+- Production data/deployment/merge: **unchanged**
