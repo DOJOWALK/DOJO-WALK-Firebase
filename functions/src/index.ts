@@ -649,6 +649,7 @@ export const decideServiceZoneFounderApproval = onCall({ region: "asia-south1" }
     tx.update(zoneRef,{workflowStatus:status,founderDecision:decision,founderDecisionNotes:notes.trim(),founderDecisionBy:uid,founderDecisionAt:FieldValue.serverTimestamp(),
       ...((decision==="approve"||decision==="reactivate")?{approvalUid:uid,approvedRevision:expectedRevision,approvedBoundaryHash:expectedHash,approvedAt:FieldValue.serverTimestamp()}:
         decision==="deactivate"?{deactivationApprovedBy:uid,deactivationApprovedRevision:expectedRevision,deactivationApprovedBoundaryHash:expectedHash,deactivationApprovedAt:FieldValue.serverTimestamp()}:
+        (isDeactivationSubmission||isReactivationSubmission)?{}:
         {approvalUid:FieldValue.delete(),approvedRevision:FieldValue.delete(),approvedBoundaryHash:FieldValue.delete(),approvedAt:FieldValue.delete()}),
       updatedAt:FieldValue.serverTimestamp()});
     tx.create(db.collection("service_zone_approval_audit").doc(),{zoneId,revision:expectedRevision,boundaryHash:expectedHash,actorUid:uid,action:decision,notes:notes.trim(),createdAt:FieldValue.serverTimestamp()});
