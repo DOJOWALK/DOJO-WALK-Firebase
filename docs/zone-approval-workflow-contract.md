@@ -1,6 +1,6 @@
 # DOJO WALK Zone Approval Workflow — implementation contract
 
-Status: design contract for PR #39; this document is not evidence that the callable workflow is implemented.
+Status: implementation in progress on PR #39. This document is a contract; CI on the exact current head is still required before treating the workflow as verified.
 
 ## Authority
 - Central Admin (admin_users/{uid}.role == central_admin, active) owns Zone draft creation/editing, boundary preparation, submission, and operational follow-up.
@@ -9,7 +9,7 @@ Status: design contract for PR #39; this document is not evidence that the calla
 - Recheck actor role and active status inside every Firestore transaction.
 
 ## Zone workflow fields
-- workflowStatus: draft | submitted | changes_required | rejected | approved | active | suspended | deactivated
+- workflowStatus: draft | submitted | changes_required | rejected | approved | active | deactivation_submitted | deactivation_approved | suspended | deactivated
 - revision: monotonically increasing integer, incremented whenever approval-relevant Zone details or verified boundary changes.
 - boundaryHash: SHA-256 of canonical verified polygon coordinates and boundary identity; computed server-side.
 - submittedRevision, submittedBoundaryHash, submittedBy, submittedAt
@@ -23,8 +23,9 @@ Status: design contract for PR #39; this document is not evidence that the calla
 4. Any material Zone field or verified boundary change increments revision and invalidates prior submission/approval.
 5. Central Admin can request activation only after Founder approval matches current revision and hash; backend rechecks boundary and canonical ancestry transactionally.
 6. Parent State/District/City must exist and have canonical matching ancestry. Their legacy service-active flags must not be required for Zone activation.
-7. Central Admin may emergency-suspend an active Zone with a reason and audit record; notify Founder. Emergency suspension cannot activate/reactivate.
-8. Reactivation after suspension requires current valid Founder approval and all backend readiness checks.
+7. Central Admin requests Zone deactivation with a reason; Founder approval is required before Central Admin executes deactivation. The request and decision bind to the current revision and boundary hash.
+8. Central Admin may emergency-suspend an active Zone with a reason and audit record; notify Founder. Emergency suspension cannot activate/reactivate. Emergency suspension remains a separate implementation gate.
+9. Reactivation after suspension requires current valid Founder approval and all backend readiness checks.
 
 ## Mandatory negative tests
 - Unauthenticated and inactive actors are rejected.
@@ -44,3 +45,13 @@ Status: design contract for PR #39; this document is not evidence that the calla
 - Add emulator integration tests for each transition and negative case.
 - Run Functions build, Geometry/Callable tests, and Firestore Rules tests on the exact final head SHA.
 - Keep PR #39 Draft and unmerged until all gates pass. No production deployment is authorized by this spec.
+
+## Callable implementation map (PR #39)
+- `saveServiceLocationWithNameIndex`: Central Admin Zone draft create/edit; saves bump the revision and invalidate prior approval. Active Zones must be deactivated through the Founder-approved path before editing.
+- `reviewServiceLocationBoundary`: verifies the Zone polygon against the parent City polygon; a newly verified Zone boundary bumps revision and invalidates prior approval.
+- `submitServiceZoneForFounderReview`: Central Admin submission with server-computed SHA-256 boundary hash.
+- `decideServiceZoneFounderApproval`: Founder-only approve/reject/request-changes decisions; also approves a submitted deactivation request.
+- `activateServiceZone`: Central Admin activation only when the current revision and boundary hash have Founder approval.
+- `requestServiceZoneDeactivation` + `setServiceLocationStatus`: Central Admin requests deactivation; Founder approves; Central Admin executes only if approval and current boundary hash still match.
+
+Emergency suspension and explicit automated tests for every replay/stale-state branch are still outstanding. Keep the PR Draft and unmerged until the exact final head passes all CI gates.
