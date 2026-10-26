@@ -105,3 +105,20 @@ Create a dedicated contract proposal and test mapping before runtime edits. The 
 5. Include a CI/release gate review that prevents accidental Rules deployment.
 
 No runtime code, rules, workflows, production data, or deployments were changed by this scan.
+
+
+## Booking / live-operation dependency scan (2026-10-26)
+
+A cross-repository scan of the Admin source and its existing assignment investigation found:
+
+- Admin booking screens and dashboard read the `bookings` collection.
+- Admin live operations reads `walkers` and `walk_locations`; the latter is a GPS history collection and should not be mistaken for the authoritative booking state.
+- Admin's running-booking status set explicitly includes `in_progress`, `active_walk`, `walking`, and `walk_started`.
+- The existing Admin Step 199 investigation records that no authoritative booking-assignment writer was found in the inspected app paths; it explicitly says this is not proof that no external/manual writer exists.
+- Therefore, a Zone deactivation guard must not be implemented by querying only GPS records or by assuming that every assigned booking has a `walks` document. The booking schema and all deployment repos still need a complete authoritative-writer check.
+
+### Safe next implementation boundary
+
+Before coding a live-operation query into `setServiceLocationStatus`, establish which fields on `bookings` identify the service location (canonical zone / legacy area / city) and which statuses mean pending, assigned, confirmed, in-progress, completed, cancelled, or failed. Then add emulator fixtures matching those real fields. If location fields are missing or inconsistent on legacy bookings, the safe behavior is to block deactivation for manual review rather than silently allow it.
+
+This is a source-level finding only. No booking documents were read or modified, no runtime code changed, and no tests were run as part of this scan.
