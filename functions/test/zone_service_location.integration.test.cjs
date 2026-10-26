@@ -185,6 +185,11 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     }), "permission-denied");
   });
 
+  await t.test("Super Admin cannot review a Zone boundary; Central Admin owns boundary operations", async () => {
+    await expectCode(reviewBoundary(ids.admin, ids.reviewBoundary), "permission-denied");
+    assert.equal((await db.doc(`service_location_boundaries/${ids.reviewBoundary}`).get()).get("verificationStatus"), "pending");
+  });
+
   await t.test("Zone boundary review verifies containment without requiring an active City", async () => {
     const cityRef = db.doc(`service_cities/${ids.city}`);
     await cityRef.update({ isServiceActive: false });
