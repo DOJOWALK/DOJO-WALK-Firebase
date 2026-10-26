@@ -122,3 +122,34 @@ A cross-repository scan of the Admin source and its existing assignment investig
 Before coding a live-operation query into `setServiceLocationStatus`, establish which fields on `bookings` identify the service location (canonical zone / legacy area / city) and which statuses mean pending, assigned, confirmed, in-progress, completed, cancelled, or failed. Then add emulator fixtures matching those real fields. If location fields are missing or inconsistent on legacy bookings, the safe behavior is to block deactivation for manual review rather than silently allow it.
 
 This is a source-level finding only. No booking documents were read or modified, no runtime code changed, and no tests were run as part of this scan.
+
+
+## Booking-location schema audit follow-up (2026-10-26)
+
+Read-only cross-repository evidence from Admin's `docs/STEP_197_BOOKING_LOCATION_MIGRATION_CONTRACT.md` and Customer's `lib/features/booking/screens/booking_confirmation_screen.dart` confirms a critical blocker:
+
+- The current Admin booking allowlist does not include `serviceCityId`, `serviceAreaId`, or a canonical service-location reference.
+- Customer booking creation builds a booking document with `bookingId`, `customerId`, schedule fields, `status: pending`, and `walkerId: null`; the reviewed location contract says the booking location is presently represented through address-related fields, not a trusted zone ID.
+- Admin booking screens read bookings and show status/walker details; the reviewed screen is not the assignment writer. Assignment write ownership is still not proven across all repositories or external/manual paths.
+- Legacy walker profiles may carry `city`, `area`, `zoneName`, `zoneNames`, and `zones` IDs, but these fields do not establish a reliable booking-to-zone relationship.
+
+### Consequence for deactivation guard
+
+Do **not** implement a query that assumes a booking already has `serviceZoneId`, `serviceAreaId`, or `serviceCityId`. That would miss legacy bookings and could allow unsafe deactivation. Do not infer the booking's zone from free-text address, GPS history, walker profile, or an unreviewed legacy zone-name match.
+
+Before any runtime guard is coded, the coordinated contract must choose one of these safe approaches:
+
+1. **Canonical booking-zone reference:** add a trusted, server-validated optional `serviceZoneId` for new bookings and define a reviewed migration/reconciliation process for legacy bookings; unknown legacy records block deactivation or require manual review.
+2. **Fail-closed operational review:** while booking-to-zone mapping is unavailable, do not allow automated deactivation where live/assigned bookings could be affected; require an audited Central Admin review with a documented verification checklist.
+
+Any future deactivation transaction must check authoritative booking status and assignment/operation records, not only `walk_locations` GPS records. It must cover the known running statuses (`in_progress`, `active_walk`, `walking`, `walk_started`) and any additional canonical statuses discovered in the complete status-transition audit. This status list is not yet certified exhaustive.
+
+### Gate status
+
+- Booking schema evidence: **partial audit complete**.
+- Trusted booking-to-zone reference: **not present in reviewed contract**.
+- All booking status writers/transitions: **not yet exhaustively verified**.
+- Executable emulator tests: **not run**.
+- Runtime code, rules, live data, deployment, merge: **unchanged**.
+
+This finding is a blocker, not permission to guess a schema or ship a partial guard.
