@@ -7,7 +7,7 @@ if (!process.env.FIRESTORE_EMULATOR_HOST) {
 }
 
 const { GeoPoint, getFirestore } = require("firebase-admin/firestore");
-const { activateServiceZone, reviewServiceLocationBoundary, saveServiceLocationWithNameIndex, setServiceLocationStatus, submitServiceZoneForFounderReview, decideServiceZoneFounderApproval } = require("../lib/index");
+const { activateServiceZone, reviewServiceLocationBoundary, saveServiceLocationWithNameIndex, setServiceLocationStatus, submitServiceZoneForFounderReview, decideServiceZoneFounderApproval, requestServiceZoneDeactivation } = require("../lib/index");
 const db = getFirestore();
 const suffix = randomUUID().replace(/-/g, "").slice(0, 12);
 const ids = Object.fromEntries([
@@ -259,7 +259,9 @@ test("Zone activation requires privileged auth, verified contained boundary and 
   await t.test("rejects inactive privileged account and mismatched City ancestry", async () => {
     // The preceding happy-path test activated this Zone; reset it so this test
     // proves the failed ancestry check cannot activate an inactive Zone.
-    await status(ids.admin, "zone", ids.zone, false);
+    await requestServiceZoneDeactivation.run({ auth: { uid: ids.central, token: { uid: ids.central } }, data: { zoneId: ids.zone, notes: "Test deactivation request" } });
+    await decideServiceZoneFounderApproval.run({ auth: { uid: ids.founder, token: { uid: ids.founder } }, data: { zoneId: ids.zone, decision: "deactivate", notes: "Founder approved deactivation for test" } });
+    await status(ids.central, "zone", ids.zone, false);
     await db.doc(`admin_users/${ids.central}`).update({ isActive: false });
     await expectCode(activate(ids.central), "permission-denied");
     await db.doc(`admin_users/${ids.central}`).update({ isActive: true });
@@ -282,7 +284,7 @@ test("Zone activation requires privileged auth, verified contained boundary and 
 
 
   await t.test("deactivates Zone through audited status callable", async () => {
-    const result = await status(ids.admin, "zone", ids.zone, false);
+    const result = await status(ids.central, "zone", ids.zone, false);
     assert.equal(result.ok, true);
     assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), false);
     const audit = await db.collection("service_location_status_audit")
