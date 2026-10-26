@@ -474,6 +474,9 @@ export const activateServiceZone = onCall({ region: "asia-south1" }, async (requ
     if (currentZone.get("isServiceActive") === true) return;
     const auditRef = db.collection("service_location_activation_audit").doc();
     tx.update(zoneRef, { isServiceActive: true, updatedAt: FieldValue.serverTimestamp() });
+    // Guard-write every ancestor, including Country, so activation conflicts
+    // transactionally with concurrent deactivation at any level.
+    tx.update(countryRef, { activationGuardAt: FieldValue.serverTimestamp() });
     tx.update(stateRef, { activationGuardAt: FieldValue.serverTimestamp() });
     tx.update(districtRef, { activationGuardAt: FieldValue.serverTimestamp() });
     tx.update(cityRef, { activationGuardAt: FieldValue.serverTimestamp() });
