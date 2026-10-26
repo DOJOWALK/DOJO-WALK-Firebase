@@ -580,7 +580,7 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in is required.");
   const uid = request.auth.uid;
   const { locationType, locationId, payload } = request.data ?? {};
-  const validTypes: ServiceLocationType[] = ["country", "state", "district", "city", "area", "locality"];
+  const validTypes: ServiceLocationType[] = ["country", "state", "district", "city", "area", "locality", "zone"];
   if (!validTypes.includes(locationType)) {
     throw new HttpsError("invalid-argument", "A valid locationType is required.");
   }
@@ -648,9 +648,15 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     const [actorSnap, targetSnap, ...parentSnaps] = await Promise.all([
       tx.get(actorRef), tx.get(docRef), ...parentRefs.map((ref) => tx.get(ref)),
     ]);
+    const actorRole = actorSnap.get("role");
     if (!actorSnap.exists || actorSnap.get("isActive") !== true ||
-        !["super_admin", "admin"].includes(actorSnap.get("role"))) {
+        !["super_admin", "admin"].includes(actorRole)) {
       throw new HttpsError("permission-denied", "An active admin account is required.");
+    }
+    // Until the full POL-021 business-role matrix is implemented, only the
+    // technical Super Admin may create/update Zone records through this callable.
+    if (type === "zone" && actorRole !== "super_admin") {
+      throw new HttpsError("permission-denied", "Super Admin approval is required for Zone setup.");
     }
     // A supplied ID is also used by deterministic CSV imports for first-time
     // creates. Existing documents are updated only after the parent and name-index
@@ -673,6 +679,13 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
       if (!parentSnaps[i].exists) throw new HttpsError("failed-precondition", "A required parent location does not exist.");
     }
     const parentData = parentSnaps.map((snap) => snap.data() ?? {});
+    if (type === "zone" && (
+      parentData[1].stateId !== parentIds[0] ||
+      parentData[2].stateId !== parentIds[0] ||
+      parentData[2].districtId !== parentIds[1]
+    )) {
+      throw new HttpsError("failed-precondition", "Zone District and City must belong to the selected State and District.");
+    }
     if (type === "state" && parentData[0].name === undefined) {
       throw new HttpsError("failed-precondition", "Country parent is invalid.");
     }
