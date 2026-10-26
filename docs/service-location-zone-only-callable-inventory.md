@@ -33,3 +33,21 @@ Reviewed against `functions/src/index.ts` on 2026-10-26. This is an implementati
 - No production Firestore writes, production data migration, or deployment.
 - No deletion of legacy Area/Locality records.
 - No silent collection rename or parallel `service_zones` collection creation.
+
+
+## Follow-up source inspection (2026-10-26)
+
+- Confirmed callable exports in `functions/src/index.ts`: `activateServiceLocation`, `setServiceLocationStatus`, and `reviewServiceLocationBoundary`.
+- Confirmed status/boundary audit collections in this file: `service_location_activation_audit`, `service_location_status_audit`, and `service_location_boundary_review_audit`.
+- The source uses dynamic collection references (`child.collection`, `collection`, and `SERVICE_LOCATION_COLLECTIONS[parentType[i]]`), so a literal-only grep is not sufficient to determine every read/write.
+- No literal `bookings`, `walks`, `live_walks`, or `walker_assignments` collection reference was found in this source file. This is **not proof** that live operations are absent: booking guards may live in other functions, repositories, or use differently named collections.
+- Admin repository search surfaced existing location audit/inventory documents, including `STEP_177_SERVICE_LOCATION_UI_WORKFLOW_AUDIT.md`, `STEP_232_SERVICE_LOCATION_DIRECT_WRITE_AUDIT.md`, and `STEP_128_ADMIN_SERVICE_LOCATION_CODE_INVENTORY.md`. These must be read before changing callable payloads.
+- Customer repository search surfaced address-form and home-screen files, but search excerpts alone do not establish callable usage. Full client call-site inspection is still required.
+- No backend behavior has been changed in this step. The current branch remains a documentation-only migration plan; emulator tests have not been executed.
+
+## Required next inspection before code changes
+
+1. Read the Admin inventory and direct-write audit docs and inspect the current Admin call sites for all three callables.
+2. Search the full backend and all client repositories for callable names, boundary payload types, and legacy `areaId` usage.
+3. Confirm the actual booking/live-walk collection schema and the intended compatibility strategy: in-place legacy `service_areas` storage versus a new `service_zones` collection.
+4. Only then add executable emulator tests against the chosen contract, update callables and client callers as one coordinated PR, and run CI/emulator validation.
