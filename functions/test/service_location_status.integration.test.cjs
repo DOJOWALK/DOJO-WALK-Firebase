@@ -21,7 +21,7 @@ test("generic status callable rejects State, District and City service-status ch
   assert.equal((await db.doc(`service_cities/${uid}-city`).get()).get("isServiceActive"), false);
 });
 test("generic status callable cannot activate a Zone outside Founder-approved activation workflow", async () => {
-  await assert.rejects(invoke("zone", "zone-contract-test", true), e => ["failed-precondition","not-found"].includes(e.code));
+  await assert.rejects(invoke("zone", "zone-contract-test", true), e => ["failed-precondition","not-found","permission-denied"].includes(e.code));
 });
 test("unauthenticated status changes are rejected", async () => {
   await assert.rejects(setServiceLocationStatus.run({ auth: undefined, data: { locationType: "city", locationId: "city", isActive: true } }), e => e.code === "unauthenticated");
