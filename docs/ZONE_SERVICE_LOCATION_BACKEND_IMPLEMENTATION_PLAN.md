@@ -124,3 +124,40 @@ Do not merge or deploy until:
 ## 10. Current state
 
 This file is a planning artifact only. No application code, Firestore rules, deployed functions, or production data were changed by this document. Implementation and test status remain pending.
+
+## 11. Follow-up source audit — exact implementation touchpoints
+
+A second source pass identified the minimum coordinated code surface. This is important because adding only a `service_zones` collection would leave the callable contract inconsistent.
+
+### Callable functions in `functions/src/index.ts`
+
+- `saveServiceLocationWithNameIndex` currently whitelists `country/state/district/city/area/locality`, maps parents through the legacy country-first chain, and accepts active `admin` as well as `super_admin`. Zone needs a separate parent chain `stateId → districtId → cityId`; it must not inherit the generic country-first parent mapping by accident.
+- `reviewServiceLocationBoundary` currently accepts only City and Area boundary owners. Zone support needs an explicit `service_zones/{zoneId}` owner path and a containment check against the parent City boundary.
+- `activateServiceLocation` currently accepts only City and Area, and its checks assume Country/State ancestors. Zone activation needs explicit State/District/City ancestry checks, verified Zone-owned boundary, and transactionally re-read parent/boundary records.
+- `setServiceLocationStatus` currently includes Country/State/District/City/Area/Locality. Do not simply add `zone` to this generic status list: Zone activation must route through the geometry-verifying activation callable; deactivation should be a dedicated safe path or an explicit Zone branch with audit and child/parent guards.
+- `location_name_index.ts` defines the legacy parent count and allowed-field maps. Zone needs a canonical index tuple based on `[stateId, districtId, cityId]` and collection `service_zones`; do not reuse Area/Locality parent tuples.
+
+### Firestore Rules touchpoints in `firestore.rules`
+
+- `validBoundaryLocation` currently allows `city/area/locality`; it needs `zone` only as part of a coordinated owner/geometry rules update.
+- Existing service-location collections are read-only to Admin clients; add a read-only `service_zones` match and keep all mutations callable-only.
+- Existing boundary client draft rules allow eligible pending drafts. The Zone implementation must ensure clients cannot alter owner identity, verification fields, activation state, or review/activation audit records.
+- Add Zone fixtures and both allowed/denied direct-client write assertions to `test/firestore.rules.test.mjs`.
+
+### Existing automated test harnesses
+
+- Callable/helper tests live under `functions/test/*.test.cjs`; the current name-index test is `functions/test/location_name_index.test.cjs`.
+- Firestore Rules tests run from the repository root using `npm test`; callable helper/build tests run in `functions/` using `npm test`.
+- Tests must be added before treating the Zone work as implemented. No test command was executed during this source-audit pass.
+
+### Implementation sequencing decision
+
+1. Add Zone type/schema/index helper and focused unit tests.
+2. Add Zone-aware save ancestry checks and explicit role policy guard.
+3. Add Zone boundary review + activation/deactivation logic with transaction checks and audit records.
+4. Add Firestore Rules and rules tests.
+5. Run root rules tests and functions build/unit tests; fix all failures.
+6. Reconcile callable payloads with the Admin Flutter client and only then request human review.
+
+**Status remains design/audit only.** No runtime code, rules, production records, or deployed functions were changed by this follow-up audit.
+
