@@ -185,16 +185,22 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     }), "permission-denied");
   });
 
-  await t.test("Zone boundary review verifies contained geometry and rejects outside geometry", async () => {
-    const result = await reviewBoundary(ids.central, ids.reviewBoundary);
-    assert.equal(result.ok, true);
-    assert.equal(result.decision, "verified");
-    const reviewed = await db.doc(`service_location_boundaries/${ids.reviewBoundary}`).get();
-    assert.equal(reviewed.get("verificationStatus"), "verified");
-    assert.equal((await db.doc(`service_zones/${ids.reviewZone}`).get()).get("verifiedBoundaryId"), ids.reviewBoundary);
+  await t.test("Zone boundary review verifies containment without requiring an active City", async () => {
+    const cityRef = db.doc(`service_cities/${ids.city}`);
+    await cityRef.update({ isServiceActive: false });
+    try {
+      const result = await reviewBoundary(ids.central, ids.reviewBoundary);
+      assert.equal(result.ok, true);
+      assert.equal(result.decision, "verified");
+      const reviewed = await db.doc(`service_location_boundaries/${ids.reviewBoundary}`).get();
+      assert.equal(reviewed.get("verificationStatus"), "verified");
+      assert.equal((await db.doc(`service_zones/${ids.reviewZone}`).get()).get("verifiedBoundaryId"), ids.reviewBoundary);
 
-    await expectCode(reviewBoundary(ids.central, ids.reviewOutsideBoundary), "failed-precondition");
-    assert.equal((await db.doc(`service_location_boundaries/${ids.reviewOutsideBoundary}`).get()).get("verificationStatus"), "pending");
+      await expectCode(reviewBoundary(ids.central, ids.reviewOutsideBoundary), "failed-precondition");
+      assert.equal((await db.doc(`service_location_boundaries/${ids.reviewOutsideBoundary}`).get()).get("verificationStatus"), "pending");
+    } finally {
+      await cityRef.update({ isServiceActive: true });
+    }
   });
 
   await t.test("rejects unauthenticated and non-super-admin callers", async () => {
@@ -250,10 +256,20 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     await boundaryRef.update({ points: originalPoints });
   });
 
-  await t.test("activates a verified Zone inside its City and writes activation audit", async () => {
+  await t.test("activates a verified Zone without parent service-active flags and writes activation audit", async () => {
+    await Promise.all([
+      db.doc(`service_states/${ids.state}`).update({ isActive: false }),
+      db.doc(`service_districts/${ids.district}`).update({ isServiceActive: false }),
+      db.doc(`service_cities/${ids.city}`).update({ isServiceActive: false }),
+    ]);
     await approveZone(ids.zone);
     const result = await activate(ids.central);
     assert.equal(result.ok, true);
+    await Promise.all([
+      db.doc(`service_states/${ids.state}`).update({ isActive: true }),
+      db.doc(`service_districts/${ids.district}`).update({ isServiceActive: true }),
+      db.doc(`service_cities/${ids.city}`).update({ isServiceActive: true }),
+    ]);
     assert.equal(result.locationType, "zone");
     assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), true);
     assert.ok((await db.doc(`service_countries/${ids.country}`).get()).get("activationGuardAt"));
