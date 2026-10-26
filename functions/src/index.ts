@@ -187,6 +187,19 @@ export const reviewServiceLocationBoundary = onCall({ region: "asia-south1" }, a
       // Bind the reviewed polygon to its owning inactive location atomically.
       tx.update(locationRef, {
         verifiedBoundaryId: boundaryId,
+        ...(locationType === "zone" ? {
+          revision: Number(currentLocation.get("revision") ?? 0) + 1,
+          workflowStatus: "draft",
+          approvalUid: FieldValue.delete(),
+          approvedRevision: FieldValue.delete(),
+          approvedBoundaryHash: FieldValue.delete(),
+          submittedBoundaryHash: FieldValue.delete(),
+          approvedAt: FieldValue.delete(),
+          submittedAt: FieldValue.delete(),
+          deactivationApprovedRevision: FieldValue.delete(),
+          deactivationApprovedBoundaryHash: FieldValue.delete(),
+          deactivationApprovedAt: FieldValue.delete(),
+        } : {}),
         updatedAt: timestamp,
       });
     }
@@ -946,6 +959,9 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     // checks below; absent documents with a supplied ID are created inactive.
     if (targetSnap.exists) {
       const current = targetSnap.data() ?? {};
+      if (type === "zone" && current.isServiceActive === true) {
+        throw new HttpsError("failed-precondition", "An active Zone must complete Founder-approved deactivation before it can be edited.");
+      }
       if (type === "city" && (current.districtId !== undefined) !== (proposed.districtId !== undefined)) {
         throw new HttpsError("failed-precondition", "Adding or removing a City District requires a separate migration.");
       }
