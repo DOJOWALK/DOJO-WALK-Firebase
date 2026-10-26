@@ -34,7 +34,12 @@ function verifiedBoundary(locationId, locationType, polygonPoints) {
   };
 }
 
-async function save(uid, payload, locationId = ids.createdZone) {\n  return saveServiceLocationWithNameIndex.run({\n    ...(uid ? { auth: { uid, token: { uid } } } : {}),\n    data: { locationType: "zone", locationId, payload },\n  });\n}\nasync function activate(uid, zoneId = ids.zone) {
+async function save(uid, payload, locationId = ids.createdZone) {
+  return saveServiceLocationWithNameIndex.run({
+    ...(uid ? { auth: { uid, token: { uid } } } : {}),
+    data: { locationType: "zone", locationId, payload },
+  });
+}\nasync function activate(uid, zoneId = ids.zone) {
   return activateServiceZone.run({
     ...(uid ? { auth: { uid, token: { uid } } } : {}),
     data: { zoneId },
