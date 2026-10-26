@@ -51,3 +51,29 @@ Reviewed against `functions/src/index.ts` on 2026-10-26. This is an implementati
 2. Search the full backend and all client repositories for callable names, boundary payload types, and legacy `areaId` usage.
 3. Confirm the actual booking/live-walk collection schema and the intended compatibility strategy: in-place legacy `service_areas` storage versus a new `service_zones` collection.
 4. Only then add executable emulator tests against the chosen contract, update callables and client callers as one coordinated PR, and run CI/emulator validation.
+
+
+## Admin caller inspection findings (2026-10-26)
+
+Read-only inspection of the Admin repository's current default branch found these concrete caller contracts:
+
+- `lib/features/service_location/services/service_location_service.dart` calls `setServiceLocationStatus` with `locationType`, `locationId`, and `isActive`.
+- The same service calls `activateServiceLocation` with `locationType` and `locationId`.
+- `lib/features/service_location/services/service_location_boundary_service.dart` calls `reviewServiceLocationBoundary` with `boundaryId`, `decision`, and `notes`; boundary ownership is currently validated as `city` or `area` in the service.
+- `lib/features/service_location/models/service_location_models.dart` describes the current hierarchy as Country → State → District → Service City → Service Area → optional Locality/Village, with legacy City records potentially missing `districtId`.
+- `lib/features/service_location/screens/service_location_screen.dart` still exposes District status toggles and Area service-status toggles. That UI conflicts with the approved contract that only Zone has service activation/deactivation.
+- The Admin service's current trusted-save schema still has legacy `area` and `locality` fields; no verified end-to-end canonical `zone` contract has been established.
+
+## Migration decision / implementation gate
+
+This evidence confirms that changing only the Firebase callable would break the Admin client contract, while changing only the Admin UI would be rejected by the current backend schema. Therefore this PR must remain documentation-only until a coordinated contract is chosen.
+
+Recommended low-risk migration direction for the next design review:
+1. Preserve existing `service_areas` documents and their IDs; do not rename/delete live data.
+2. Introduce a canonical API-level type `zone` through an explicit compatibility adapter, initially mapping to existing Area storage only if each legacy record's parents and verified polygon are validated.
+3. Hide/remove all non-Zone activation toggles in Admin and replace Area labels with Zone only after backend compatibility tests pass.
+4. Keep District as hierarchy metadata, not a service-activation toggle; preserve existing records and audit their legacy status fields rather than bulk rewriting them.
+5. Before adding a live-booking deactivation guard, inspect all booking/walk repositories and their actual schema. No booking collection name or guard has been assumed here.
+6. Add executable emulator tests only after these contracts and the exact test fixtures are aligned; run CI in the PR branch and review failures before any merge.
+
+These are recommendations, not applied runtime changes. No Firebase production data or deployment was touched.
