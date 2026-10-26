@@ -635,7 +635,17 @@ export const decideServiceZoneFounderApproval = onCall({ region: "asia-south1" }
     if(typeof boundaryId!=="string") throw new HttpsError("failed-precondition","Verified boundary reference is missing.");
     const bRef=db.doc(`service_location_boundaries/${boundaryId}`), bSnap=await tx.get(bRef), b=asBoundary(bSnap.data());
     if(!bSnap.exists || b.locationId!==zoneId || b.locationType!=="zone" || b.verificationStatus!=="verified" || canonicalBoundaryHash(b)!==expectedHash) throw new HttpsError("failed-precondition","Submitted boundary changed; Central Admin must resubmit.");
-    const status=decision==="deactivate"?"deactivation_approved":(decision==="approve"||decision==="reactivate")?"approved":decision==="reject"?"rejected":"changes_required";
+    const status = decision === "deactivate"
+      ? "deactivation_approved"
+      : (decision === "approve" || decision === "reactivate")
+        ? "approved"
+        : isDeactivationSubmission
+          ? "active"
+          : isReactivationSubmission
+            ? "suspended"
+            : decision === "reject"
+              ? "rejected"
+              : "changes_required";
     tx.update(zoneRef,{workflowStatus:status,founderDecision:decision,founderDecisionNotes:notes.trim(),founderDecisionBy:uid,founderDecisionAt:FieldValue.serverTimestamp(),
       ...((decision==="approve"||decision==="reactivate")?{approvalUid:uid,approvedRevision:expectedRevision,approvedBoundaryHash:expectedHash,approvedAt:FieldValue.serverTimestamp()}:
         decision==="deactivate"?{deactivationApprovedBy:uid,deactivationApprovedRevision:expectedRevision,deactivationApprovedBoundaryHash:expectedHash,deactivationApprovedAt:FieldValue.serverTimestamp()}:
