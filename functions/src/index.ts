@@ -521,7 +521,7 @@ export const activateServiceZone = onCall({ region: "asia-south1" }, async (requ
     }
     const currentZoneBoundaryData = requireVerifiedBoundary(currentZoneBoundary.data(), zoneBoundaryId, zoneId, "zone");
     const currentCityBoundaryData = requireVerifiedBoundary(currentCityBoundary.data(), cityBoundaryId, cityId, "city");
-    if (currentZone.get("workflowStatus") !== "approved" ||
+    if (!["approved", "active"].includes(String(currentZone.get("workflowStatus"))) ||
         currentZone.get("approvalUid") === undefined ||
         currentZone.get("approvedRevision") !== currentZone.get("revision") ||
         currentZone.get("approvedBoundaryHash") !== canonicalBoundaryHash(currentZoneBoundaryData)) {
@@ -538,7 +538,7 @@ export const activateServiceZone = onCall({ region: "asia-south1" }, async (requ
     }
     if (currentZone.get("isServiceActive") === true) return;
     const auditRef = db.collection("service_location_activation_audit").doc();
-    tx.update(zoneRef, { isServiceActive: true, updatedAt: FieldValue.serverTimestamp() });
+    tx.update(zoneRef, { isServiceActive: true, workflowStatus: "active", updatedAt: FieldValue.serverTimestamp() });
     // Guard-write every ancestor, including Country, so activation conflicts
     // transactionally with concurrent deactivation at any level.
     tx.update(countryRef, { activationGuardAt: FieldValue.serverTimestamp() });
