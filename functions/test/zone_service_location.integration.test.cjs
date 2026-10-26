@@ -78,7 +78,7 @@ test("Zone activation requires privileged auth, verified contained boundary and 
   t.after(async () => {
     await Promise.all(paths.map((path) => db.doc(path).delete().catch(() => undefined)));
     for (const collection of ["service_location_activation_audit", "service_location_status_audit", "service_location_boundary_review_audit"]) {
-      const snap = await db.collection(collection).where("locationId", "in", [ids.zone, ids.outsideZone]).get().catch(() => ({ docs: [] }));
+      const snap = await db.collection(collection).where("locationId", "in", [ids.zone, ids.outsideZone, ids.reviewZone, ids.city]).get().catch(() => ({ docs: [] }));
       await Promise.all(snap.docs.map((doc) => doc.ref.delete().catch(() => undefined)));
     }
   });
