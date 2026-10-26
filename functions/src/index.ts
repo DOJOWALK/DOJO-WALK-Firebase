@@ -883,7 +883,7 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     ]);
     const actorRole = actorSnap.get("role");
     if (!actorSnap.exists || actorSnap.get("isActive") !== true ||
-        !["super_admin", "admin"].includes(actorRole)) {
+        !(["super_admin", "admin"].includes(actorRole) || (type === "zone" && actorRole === "central_admin"))) {
       throw new HttpsError("permission-denied", "An active admin account is required.");
     }
     if (type === "zone" && actorRole !== "central_admin") {
