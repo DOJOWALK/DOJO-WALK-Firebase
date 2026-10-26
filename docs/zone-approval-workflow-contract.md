@@ -9,7 +9,7 @@ Status: implementation in progress on PR #39. This document is a contract; CI on
 - Recheck actor role and active status inside every Firestore transaction.
 
 ## Zone workflow fields
-- workflowStatus: draft | submitted | changes_required | rejected | approved | active | deactivation_submitted | deactivation_approved | suspended | deactivated
+- workflowStatus: draft | submitted | changes_required | rejected | approved | active | deactivation_submitted | deactivation_approved | reactivation_submitted | suspended | deactivated
 - revision: monotonically increasing integer, incremented whenever approval-relevant Zone details or verified boundary changes.
 - boundaryHash: SHA-256 of canonical verified polygon coordinates and boundary identity; computed server-side.
 - submittedRevision, submittedBoundaryHash, submittedBy, submittedAt
@@ -25,7 +25,7 @@ Status: implementation in progress on PR #39. This document is a contract; CI on
 6. Parent State/District/City must exist and have canonical matching ancestry. Their legacy service-active flags must not be required for Zone activation.
 7. Central Admin requests Zone deactivation with a reason; Founder approval is required before Central Admin executes deactivation. The request and decision bind to the current revision and boundary hash.
 8. Central Admin may emergency-suspend an active Zone with a reason and audit record; notify Founder. Emergency suspension cannot activate/reactivate. Emergency suspension remains a separate implementation gate.
-9. Reactivation after suspension requires current valid Founder approval and all backend readiness checks.
+9. Reactivation after emergency suspension requires Central Admin to submit a fresh request; the backend increments revision and hashes the current verified boundary. Founder must explicitly decide `reactivate` for that exact revision/hash, after which Central Admin separately activates through the normal readiness checks.
 
 ## Mandatory negative tests
 - Unauthenticated and inactive actors are rejected.
