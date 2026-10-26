@@ -7,12 +7,12 @@ if (!process.env.FIRESTORE_EMULATOR_HOST) {
 }
 
 const { GeoPoint, getFirestore } = require("firebase-admin/firestore");
-const { activateServiceZone, reviewServiceLocationBoundary, saveServiceLocationWithNameIndex, setServiceLocationStatus, submitServiceZoneForFounderReview, decideServiceZoneFounderApproval, requestServiceZoneDeactivation } = require("../lib/index");
+const { activateServiceZone, reviewServiceLocationBoundary, saveServiceLocationWithNameIndex, setServiceLocationStatus, submitServiceZoneForFounderReview, decideServiceZoneFounderApproval, requestServiceZoneDeactivation, suspendServiceZoneForEmergency } = require("../lib/index");
 const db = getFirestore();
 const suffix = randomUUID().replace(/-/g, "").slice(0, 12);
 const ids = Object.fromEntries([
   "admin", "central", "founder", "support", "basicAdmin", "inactiveAdmin", "unknownRole", "authTestZone", "country", "state", "district", "city", "zone",
-  "cityBoundary", "zoneBoundary", "outsideZone", "outsideBoundary", "createdZone", "reviewZone", "reviewBoundary", "reviewOutsideBoundary",
+  "cityBoundary", "zoneBoundary", "outsideZone", "outsideBoundary", "createdZone", "reviewZone", "reviewBoundary", "reviewOutsideBoundary", "emergencyNotification",
 ].map((key) => [key, `zone-it-${key}-${suffix}`]));
 
 const points = (south, west, north, east) => [
@@ -326,5 +326,31 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     const audit = await db.collection("service_location_status_audit")
       .where("locationId", "==", ids.zone).get();
     assert.ok(audit.docs.length > 0);
+  });
+
+  await t.test("Central Admin can emergency-suspend a Zone with reason, audit and Founder inbox notification", async () => {
+    const zoneRef = db.doc(`service_zones/${ids.zone}`);
+    await zoneRef.set({ isServiceActive: true, workflowStatus: "active", revision: 7, approvedRevision: 7, approvedBoundaryHash: "old-hash", approvalUid: ids.founder }, { merge: true });
+    const result = await suspendServiceZoneForEmergency.run({
+      auth: { uid: ids.central, token: { uid: ids.central } },
+      data: { zoneId: ids.zone, reason: "Safety incident reported; stop new service immediately.", severity: "SEV-1" },
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.workflowStatus, "suspended");
+    assert.equal(result.founderNotificationQueued, true);
+    const suspended = await zoneRef.get();
+    assert.equal(suspended.get("isServiceActive"), false);
+    assert.equal(suspended.get("workflowStatus"), "suspended");
+    assert.equal(suspended.get("approvedRevision"), undefined);
+    assert.equal(suspended.get("emergencySuspensionSeverity"), "SEV-1");
+    const audit = await db.collection("service_zone_approval_audit").where("zoneId", "==", ids.zone).where("action", "==", "emergency_suspended").get();
+    assert.ok(audit.docs.some((doc) => doc.get("actorUid") === ids.central));
+    const notifications = await db.collection("founder_notifications").where("zoneId", "==", ids.zone).where("notificationType", "==", "emergency_zone_suspension").get();
+    assert.ok(notifications.docs.some((doc) => doc.get("targetRole") === "founder" && doc.get("status") === "unread"));
+    await expectCode(activate(ids.central, ids.zone), "failed-precondition");
+    await expectCode(suspendServiceZoneForEmergency.run({
+      auth: { uid: ids.admin, token: { uid: ids.admin } },
+      data: { zoneId: ids.zone, reason: "Unauthorized attempt" },
+    }), "permission-denied");
   });
 });
