@@ -53,5 +53,6 @@ Status: implementation in progress on PR #39. This document is a contract; CI on
 - `decideServiceZoneFounderApproval`: Founder-only approve/reject/request-changes decisions; also approves a submitted deactivation request.
 - `activateServiceZone`: Central Admin activation only when the current revision and boundary hash have Founder approval.
 - `requestServiceZoneDeactivation` + `setServiceLocationStatus`: Central Admin requests deactivation; Founder approves; Central Admin executes only if approval and current boundary hash still match.
+- `suspendServiceZoneForEmergency`: Central Admin emergency-stops a Zone with a reason/severity, writes an audit entry, clears reusable activation approval, and queues a Founder inbox notification. It cannot activate or reactivate a Zone.
 
-Emergency suspension and explicit automated tests for every replay/stale-state branch are still outstanding. Keep the PR Draft and unmerged until the exact final head passes all CI gates.
+Emergency suspension is implemented as a Central Admin-only callable with a mandatory reason, severity, durable Founder inbox notification record, approval-field invalidation, and audit entry. Automated push/email delivery is not configured by this callable; the notification is queued in Firestore for the Founder-facing admin inbox. Explicit replay/stale-state tests still need broader review. Keep the PR Draft and unmerged until the exact final head passes all CI gates.
