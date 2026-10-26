@@ -485,7 +485,7 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in is required.");
   const uid = request.auth.uid;
   const { locationType, locationId, isActive } = request.data ?? {};
-  const validTypes = ["country", "state", "district", "city", "area", "locality"];
+  const validTypes = ["country", "state", "district", "city", "area", "locality", "zone"];
   if (!validTypes.includes(locationType) ||
       typeof locationId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(locationId) ||
       typeof isActive !== "boolean") {
@@ -499,15 +499,18 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
   if ((locationType === "city" || locationType === "area") && isActive) {
     throw new HttpsError("failed-precondition", "Use activateServiceLocation to activate a City or Area.");
   }
+  if (locationType === "zone" && isActive) {
+    throw new HttpsError("failed-precondition", "Use activateServiceZone to activate a Zone after boundary verification.");
+  }
 
   const collectionByType: Record<string, string> = {
     country: "service_countries", state: "service_states", district: "service_districts", city: "service_cities",
-    area: "service_areas", locality: "service_localities",
+    area: "service_areas", locality: "service_localities", zone: "service_zones",
   };
   const targetRef = db.doc(`${collectionByType[locationType]}/${locationId}`);
   const statusField = locationType === "country" || locationType === "state" ? "isActive" : "isServiceActive";
   const parentFieldByType: Record<string, string> = {
-    country: "", state: "countryId", district: "stateId", city: "stateId", area: "cityId", locality: "areaId",
+    country: "", state: "countryId", district: "stateId", city: "stateId", area: "cityId", locality: "areaId", zone: "",
   };
   const parentCollectionByType: Record<string, string> = {
     state: "service_countries", district: "service_states", city: "service_states", area: "service_cities", locality: "service_areas",
@@ -519,6 +522,7 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
     city: { collection: "service_areas", field: "cityId", activeField: "isServiceActive" },
     area: { collection: "service_localities", field: "areaId", activeField: "isServiceActive" },
     locality: null,
+    zone: null,
   };
 
   await db.runTransaction(async (tx) => {
