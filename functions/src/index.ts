@@ -367,6 +367,115 @@ export const activateServiceLocation = onCall({ region: "asia-south1" }, async (
 
 
 /**
+ * Activate a Zone only after its own boundary has been verified and confirmed
+ * to fit inside its currently active parent City's verified boundary.
+ * This is intentionally separate from the legacy City/Area activation path:
+ * Zone's canonical schema is State → District → City and does not require
+ * legacy countryId fields on the Zone document.
+ */
+export const activateServiceZone = onCall({ region: "asia-south1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in is required.");
+  const uid = request.auth.uid;
+  const zoneId = request.data?.zoneId;
+  if (typeof zoneId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(zoneId)) {
+    throw new HttpsError("invalid-argument", "Provide a valid zoneId.");
+  }
+
+  const actorRef = db.doc(`admin_users/${uid}`);
+  const zoneRef = db.doc(`service_zones/${zoneId}`);
+  const actor = await actorRef.get();
+  if (!actor.exists || actor.get("isActive") !== true || actor.get("role") !== "super_admin") {
+    throw new HttpsError("permission-denied", "An active super_admin account is required.");
+  }
+  const zone = await zoneRef.get();
+  if (!zone.exists) throw new HttpsError("not-found", "Zone was not found.");
+
+  const stateId = zone.get("stateId");
+  const districtId = zone.get("districtId");
+  const cityId = zone.get("cityId");
+  if (![stateId, districtId, cityId].every((v) => typeof v === "string" && /^[A-Za-z0-9_-]{1,150}$/.test(v))) {
+    throw new HttpsError("failed-precondition", "Zone must reference valid State, District and City IDs.");
+  }
+
+  const stateRef = db.doc(`service_states/${stateId}`);
+  const districtRef = db.doc(`service_districts/${districtId}`);
+  const cityRef = db.doc(`service_cities/${cityId}`);
+  const zoneBoundaryId = zone.get("verifiedBoundaryId");
+  if (typeof zoneBoundaryId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(zoneBoundaryId)) {
+    throw new HttpsError("failed-precondition", "Zone must have a verified boundary before activation.");
+  }
+  const zoneBoundaryRef = db.doc(`service_location_boundaries/${zoneBoundaryId}`);
+  const city = await cityRef.get();
+  if (!city.exists) throw new HttpsError("failed-precondition", "Parent City was not found.");
+  const cityBoundaryId = city.get("verifiedBoundaryId");
+  if (typeof cityBoundaryId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(cityBoundaryId)) {
+    throw new HttpsError("failed-precondition", "Parent City must have a verified boundary.");
+  }
+  const cityBoundaryRef = db.doc(`service_location_boundaries/${cityBoundaryId}`);
+  const initialZoneBoundary = await zoneBoundaryRef.get();
+  const initialCityBoundary = await cityBoundaryRef.get();
+  const zoneBoundary = requireVerifiedBoundary(initialZoneBoundary.data(), zoneBoundaryId, zoneId, "zone");
+  const cityBoundary = requireVerifiedBoundary(initialCityBoundary.data(), cityBoundaryId, cityId, "city");
+  try {
+    assertAreaCoveredByCity(zoneBoundary, cityBoundary);
+  } catch (error) {
+    throw new HttpsError("failed-precondition", error instanceof Error ? error.message : "Zone must fit inside its parent City.");
+  }
+
+  await db.runTransaction(async (tx) => {
+    const [currentActor, currentZone, currentState, currentDistrict, currentCity, currentZoneBoundary, currentCityBoundary] =
+      await Promise.all([
+        tx.get(actorRef), tx.get(zoneRef), tx.get(stateRef), tx.get(districtRef), tx.get(cityRef),
+        tx.get(zoneBoundaryRef), tx.get(cityBoundaryRef),
+      ]);
+    if (!currentActor.exists || currentActor.get("isActive") !== true || currentActor.get("role") !== "super_admin") {
+      throw new HttpsError("permission-denied", "Admin access changed during validation.");
+    }
+    if (!currentZone.exists || currentZone.get("stateId") !== stateId ||
+        currentZone.get("districtId") !== districtId || currentZone.get("cityId") !== cityId ||
+        currentZone.get("verifiedBoundaryId") !== zoneBoundaryId) {
+      throw new HttpsError("aborted", "Zone ancestry or boundary reference changed. Retry.");
+    }
+    if (!currentState.exists || currentState.get("isActive") !== true) {
+      throw new HttpsError("failed-precondition", "Parent State must exist and be active.");
+    }
+    if (!currentDistrict.exists || currentDistrict.get("stateId") !== stateId ||
+        currentDistrict.get("isServiceActive") !== true) {
+      throw new HttpsError("failed-precondition", "Parent District must be active and belong to the selected State.");
+    }
+    if (!currentCity.exists || currentCity.get("stateId") !== stateId ||
+        currentCity.get("districtId") !== districtId || currentCity.get("isServiceActive") !== true ||
+        currentCity.get("verifiedBoundaryId") !== cityBoundaryId) {
+      throw new HttpsError("failed-precondition", "Parent City must be active, match the selected hierarchy and keep its verified boundary.");
+    }
+    const currentZoneBoundaryData = requireVerifiedBoundary(currentZoneBoundary.data(), zoneBoundaryId, zoneId, "zone");
+    const currentCityBoundaryData = requireVerifiedBoundary(currentCityBoundary.data(), cityBoundaryId, cityId, "city");
+    if (JSON.stringify(currentZoneBoundaryData.points) !== JSON.stringify(zoneBoundary.points) ||
+        JSON.stringify(currentCityBoundaryData.points) !== JSON.stringify(cityBoundary.points)) {
+      throw new HttpsError("aborted", "Zone or City boundary changed during validation. Retry.");
+    }
+    try {
+      assertAreaCoveredByCity(currentZoneBoundaryData, currentCityBoundaryData);
+    } catch {
+      throw new HttpsError("failed-precondition", "Zone is not fully within the current parent City boundary.");
+    }
+    if (currentZone.get("isServiceActive") === true) return;
+    const auditRef = db.collection("service_location_activation_audit").doc();
+    tx.update(zoneRef, { isServiceActive: true, updatedAt: FieldValue.serverTimestamp() });
+    tx.update(stateRef, { activationGuardAt: FieldValue.serverTimestamp() });
+    tx.update(districtRef, { activationGuardAt: FieldValue.serverTimestamp() });
+    tx.update(cityRef, { activationGuardAt: FieldValue.serverTimestamp() });
+    tx.create(auditRef, {
+      actorUid: uid, locationId: zoneId, locationType: "zone", boundaryId: zoneBoundaryId,
+      result: "activated", createdAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  return { ok: true, zoneId, locationType: "zone" };
+});
+
+
+/**
  * Server-authoritative status changes for Country, State, City, Area and Locality.
  * City/Area activation remains geometry-validated by activateServiceLocation.
  * Every descendant activation writes all ancestor guard fields in the same
