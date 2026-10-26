@@ -828,10 +828,15 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     const parentData = parentSnaps.map((snap) => snap.data() ?? {});
     if (type === "zone" && (
       parentData[1].stateId !== parentIds[0] ||
+      parentData[1].countryId !== parentData[0].countryId ||
       parentData[2].stateId !== parentIds[0] ||
+      parentData[2].countryId !== parentData[0].countryId ||
       parentData[2].districtId !== parentIds[1]
     )) {
-      throw new HttpsError("failed-precondition", "Zone District and City must belong to the selected State and District.");
+      throw new HttpsError(
+        "failed-precondition",
+        "Zone State, District and City must belong to one consistent Country/State/District hierarchy.",
+      );
     }
     if (type === "state" && parentData[0].name === undefined) {
       throw new HttpsError("failed-precondition", "Country parent is invalid.");
