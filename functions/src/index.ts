@@ -604,6 +604,7 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     city: ["countryId", "stateId", "districtId", "name"],
     area: ["countryId", "stateId", "cityId", "name"],
     locality: ["countryId", "stateId", "cityId", "areaId", "name", "pincode"],
+    zone: ["stateId", "districtId", "cityId", "name"],
   };
   for (const key of Object.keys(proposed)) {
     if (!mutableFields[type].includes(key)) {
@@ -622,6 +623,7 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     city: proposed.districtId === undefined ? ["countryId", "stateId"] : ["countryId", "stateId", "districtId"],
     area: ["countryId", "stateId", "cityId"],
     locality: ["countryId", "stateId", "cityId", "areaId"],
+    zone: ["stateId", "districtId", "cityId"],
   };
   const parentIds = parentFieldsByType[type].map((field) => {
     const value = proposed[field];
@@ -631,9 +633,11 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     return value.trim();
   });
   const parentRefs = parentIds.map((id, i) => {
-    const parentType: ServiceLocationType[] = type === "city" && proposed.districtId !== undefined
-      ? ["country", "state", "district"]
-      : ["country", "state", "city", "area"];
+    const parentType: ServiceLocationType[] = type === "zone"
+      ? ["state", "district", "city"]
+      : type === "city" && proposed.districtId !== undefined
+        ? ["country", "state", "district"]
+        : ["country", "state", "city", "area"];
     return db.collection(SERVICE_LOCATION_COLLECTIONS[parentType[i]]).doc(id);
   });
   const normalizedName = (proposed.name as string).trim().toLowerCase().replace(/\s+/g, " ");
