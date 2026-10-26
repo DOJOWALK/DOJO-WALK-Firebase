@@ -1017,7 +1017,8 @@ service cloud.firestore {
         && data.locationType in [
           'city',
           'area',
-          'locality'
+          'locality',
+          'zone'
         ];
     }
 
@@ -1334,6 +1335,22 @@ service cloud.firestore {
     // =====================================================
 
     match /service_localities/{localityId} {
+      allow get, list: if isAdmin();
+
+      allow create: if false;
+
+      allow update: if false;
+
+      allow delete: if false;
+    }
+
+    // =====================================================
+    // SERVICE ZONES
+    // =====================================================
+
+    // Zone records are read-only to clients; creation, boundary verification,
+    // activation and audit changes must use trusted server callables.
+    match /service_zones/{zoneId} {
       allow get, list: if isAdmin();
 
       allow create: if false;
