@@ -40,3 +40,22 @@ These are the acceptance cases required before replacing legacy City/Area activa
 1. Confirm all Firestore collections used for bookings, live walks, assignments and zone operations from source/tests.
 2. Decide whether legacy `service_areas` records become canonical Zones in place or are migrated to a new collection. Do not mix both approaches.
 3. Locate every client caller of `activateServiceLocation`, `setServiceLocationStatus`, and `reviewServiceLocationBoundary`.
+
+## Additional Admin client evidence (2026-10-26)
+
+Reviewed the current Admin service file at `lib/features/service_location/services/service_location_service.dart` on the Admin default branch. It still exposes the legacy hierarchy and writes:
+- `service_countries`, `service_states`, `service_districts`, `service_cities`, `service_areas`, `service_localities`.
+- `setCityServiceStatus` routes activation through `activateServiceLocation(locationType: "city")` and deactivation through `setServiceLocationStatus(locationType: "city")`.
+- `setAreaServiceStatus` routes activation through `activateServiceLocation(locationType: "area")` and deactivation through `setServiceLocationStatus(locationType: "area")`.
+- `setLocalityServiceStatus` calls `setServiceLocationStatus(locationType: "locality")`.
+- The client also performs preflight checks for active Country/State/City and parent-child guards. Those checks are not a substitute for server-side authorization and transactional validation.
+
+### Required client migration gates
+- Remove/hide activation controls for State, District and City; these are hierarchy metadata.
+- Remove/hide Locality creation/activation from the canonical service-zone workflow, without deleting existing locality data.
+- Add Zone as the canonical UI concept, with one explicit compatibility mapping to `service_areas` only if the schema decision formally chooses in-place legacy storage.
+- Ensure Zone boundary review and activation call the same canonical `zone` contract; never send `city` or `area` as canonical types from the updated UI.
+- Search all Admin call sites and update them together with callable changes. Do not make the Admin client call the new contract before the backend and emulator tests are ready.
+- Preserve the existing save/import flows and unique-name index behavior unless separately tested.
+
+Evidence status: source inspection only. No Admin code was changed, no Emulator tests were executed, and no CI pass is claimed.
