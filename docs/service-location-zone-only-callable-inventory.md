@@ -209,3 +209,38 @@ Gate status:
 - Booking-to-zone reference: **not established in reviewed contract**
 - Runtime/rules changes and Emulator tests: **not done**
 - Production data/deployment/merge: **unchanged**
+
+
+## Status-writer and authorization evidence matrix (2026-10-26)
+
+| Surface reviewed in existing repository audit | Evidence | Confidence / limitation |
+| --- | --- | --- |
+| Customer booking creation | Creates `status: pending`, `walkerId: null` | Confirmed in inspected booking confirmation path |
+| Customer booking display | Reads booking and assignment fields | Read path; not assignment |
+| Admin booking screen/dashboard/live operations | Reads booking status, walker ID/name, and live-operation data | Reviewed paths are readers; not proof every Admin file is covered |
+| Admin walker-management service | Updates walker profile state and writes audit log; has booking read stream | Not an assignment writer in the reviewed method |
+| Partner booking list | Queries bookings assigned to current UID and consumes statuses including `assigned` / `accepted` | Consumer path |
+| Partner walk-details/navigation | Updates lifecycle status such as `accepted` and walk progression | No `walkerId` assignment found in reviewed paths |
+| Partner live-walk record | Writes a separate walk record carrying the current Walker UID | Must not be mistaken for assigning the parent booking |
+| Firestore Rules | Existing contract permits some Admin booking updates including assignment fields | Permission is not proof of an implemented assignment UI/service; exact current deployed rules revision remains unverified |
+| Firebase Functions source inspected | Location-management callables found; assignment callable not found in inspected file | Does not exclude another repo, deployment, branch, or external/manual process |
+
+### Safe operational conclusion
+
+At present, the evidence supports neither claiming “automatic assignment is implemented” nor claiming “no assignment exists anywhere.” The exact operational assignment path remains an unresolved dependency.
+
+No booking status or assignment field should be rewritten as part of the Zone migration until this dependency is resolved. In particular:
+- Do not infer that a `walks/{id}` record is equivalent to a booking assignment.
+- Do not assume the status list in this document is exhaustive.
+- Do not narrow Firestore Rules based solely on repository search; first identify and preserve any legitimate trusted/manual workflow.
+- Do not allow Zone deactivation to pass when the affected booking set cannot be determined reliably.
+
+### Exit criteria before runtime implementation
+
+1. Identify and verify the actual assignment operator/path (Admin UI, callable, external backend, script, or documented manual process).
+2. Obtain the exact allowed booking status transitions and assignment/reassignment policy.
+3. Confirm the current rules/workflow revision and whether any external writer depends on it.
+4. Define trusted booking-to-zone mapping and the fail-closed treatment of legacy/ambiguous bookings.
+5. Implement coordinated emulator tests only after these contracts are resolved.
+
+This matrix records evidence and blockers; it does not claim runtime tests passed or production behavior was verified.
