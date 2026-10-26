@@ -390,6 +390,18 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     assert.equal(reactivation.workflowStatus, "reactivation_submitted");
     assert.equal(reactivation.revision, 8);
     await expectCode(activate(ids.central, ids.zone), "failed-precondition");
+    const reactivationChanges = await decideServiceZoneFounderApproval.run({
+      auth: { uid: ids.founder, token: { uid: ids.founder } },
+      data: { zoneId: ids.zone, decision: "changes_required", notes: "Attach the completed safety review." },
+    });
+    assert.equal(reactivationChanges.workflowStatus, "suspended");
+    assert.equal((await zoneRef.get()).get("isServiceActive"), false);
+    const resubmittedReactivation = await requestServiceZoneReactivation.run({
+      auth: { uid: ids.central, token: { uid: ids.central } },
+      data: { zoneId: ids.zone, reason: "Safety review attached; requesting approval again." },
+    });
+    assert.equal(resubmittedReactivation.workflowStatus, "reactivation_submitted");
+    assert.equal(resubmittedReactivation.revision, 9);
     const founderDecision = await decideServiceZoneFounderApproval.run({
       auth: { uid: ids.founder, token: { uid: ids.founder } },
       data: { zoneId: ids.zone, decision: "reactivate", notes: "Reviewed safety evidence; reactivation approved." },
