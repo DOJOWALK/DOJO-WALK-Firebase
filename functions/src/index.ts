@@ -455,6 +455,79 @@ export const requestServiceZoneDeactivation = onCall({ region: "asia-south1" }, 
   });
 });
 
+/** Emergency safety stop: Central Admin may suspend a Zone immediately with a mandatory reason. This does not grant activation/reactivation authority. */
+export const suspendServiceZoneForEmergency = onCall({ region: "asia-south1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in is required.");
+  const uid = request.auth.uid;
+  const { zoneId, reason, severity } = request.data ?? {};
+  if (typeof zoneId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(zoneId)) {
+    throw new HttpsError("invalid-argument", "Provide a valid zoneId.");
+  }
+  if (typeof reason !== "string" || !reason.trim() || reason.trim().length > 2000) {
+    throw new HttpsError("invalid-argument", "An emergency suspension reason is required (max 2000 characters).");
+  }
+  const allowedSeverity = ["SEV-1", "SEV-2", "SEV-3", "SEV-4"];
+  if (severity !== undefined && !allowedSeverity.includes(severity)) {
+    throw new HttpsError("invalid-argument", "severity must be SEV-1, SEV-2, SEV-3 or SEV-4.");
+  }
+  const actorRef = db.doc(`admin_users/${uid}`);
+  const zoneRef = db.doc(`service_zones/${zoneId}`);
+  const actor = await actorRef.get();
+  if (!actor.exists || actor.get("isActive") !== true || actor.get("role") !== "central_admin") {
+    throw new HttpsError("permission-denied", "An active Central Admin account is required.");
+  }
+  return db.runTransaction(async (tx) => {
+    const [currentActor, zone] = await Promise.all([tx.get(actorRef), tx.get(zoneRef)]);
+    if (!currentActor.exists || currentActor.get("isActive") !== true || currentActor.get("role") !== "central_admin") {
+      throw new HttpsError("permission-denied", "Central Admin access changed.");
+    }
+    if (!zone.exists) throw new HttpsError("not-found", "Zone was not found.");
+    const data = zone.data()!;
+    if (data.isServiceActive !== true && data.workflowStatus === "suspended") {
+      return { ok: true, zoneId, workflowStatus: "suspended", alreadySuspended: true };
+    }
+    const now = FieldValue.serverTimestamp();
+    const auditRef = db.collection("service_zone_approval_audit").doc();
+    const notificationRef = db.collection("founder_notifications").doc();
+    tx.update(zoneRef, {
+      isServiceActive: false,
+      workflowStatus: "suspended",
+      emergencySuspensionReason: reason.trim(),
+      emergencySuspensionSeverity: severity ?? "SEV-2",
+      emergencySuspendedBy: uid,
+      emergencySuspendedAt: now,
+      updatedAt: now,
+      // Do not retain a usable activation approval after an emergency stop.
+      approvalUid: FieldValue.delete(),
+      approvedRevision: FieldValue.delete(),
+      approvedBoundaryHash: FieldValue.delete(),
+      approvedAt: FieldValue.delete(),
+    });
+    tx.create(auditRef, {
+      zoneId,
+      revision: Number(data.revision ?? 1),
+      actorUid: uid,
+      action: "emergency_suspended",
+      reason: reason.trim(),
+      severity: severity ?? "SEV-2",
+      createdAt: now,
+    });
+    // Durable Founder-facing inbox item. A push/email delivery channel is not configured here.
+    tx.create(notificationRef, {
+      targetRole: "founder",
+      notificationType: "emergency_zone_suspension",
+      title: "Emergency Zone suspension",
+      message: reason.trim(),
+      zoneId,
+      severity: severity ?? "SEV-2",
+      createdBy: uid,
+      status: "unread",
+      createdAt: now,
+    });
+    return { ok: true, zoneId, workflowStatus: "suspended", founderNotificationQueued: true };
+  });
+});
+
 export const decideServiceZoneFounderApproval = onCall({ region: "asia-south1" }, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in is required.");
   const uid=request.auth.uid, {zoneId,decision,notes}=request.data??{};
