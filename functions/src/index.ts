@@ -351,6 +351,7 @@ export const activateServiceLocation = onCall({ region: "asia-south1" }, async (
     // Touch every ancestor in this transaction so a concurrent ancestor
     // deactivation conflicts and retries against the newly active descendant.
     tx.update(countryRef, { activationGuardAt: FieldValue.serverTimestamp() });
+    tx.update(countryRef, { activationGuardAt: FieldValue.serverTimestamp() });
     tx.update(stateRef, { activationGuardAt: FieldValue.serverTimestamp() });
     if (districtRef) tx.update(districtRef, { activationGuardAt: FieldValue.serverTimestamp() });
     if (parentRef) tx.update(parentRef, { activationGuardAt: FieldValue.serverTimestamp() });
@@ -400,6 +401,12 @@ export const activateServiceZone = onCall({ region: "asia-south1" }, async (requ
   const stateRef = db.doc(`service_states/${stateId}`);
   const districtRef = db.doc(`service_districts/${districtId}`);
   const cityRef = db.doc(`service_cities/${cityId}`);
+  const stateSnapshot = await stateRef.get();
+  const countryId = stateSnapshot.get("countryId");
+  if (!stateSnapshot.exists || typeof countryId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(countryId)) {
+    throw new HttpsError("failed-precondition", "Parent State must reference a valid Country.");
+  }
+  const countryRef = db.doc(`service_countries/${countryId}`);
   const zoneBoundaryId = zone.get("verifiedBoundaryId");
   if (typeof zoneBoundaryId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(zoneBoundaryId)) {
     throw new HttpsError("failed-precondition", "Zone must have a verified boundary before activation.");
@@ -423,9 +430,9 @@ export const activateServiceZone = onCall({ region: "asia-south1" }, async (requ
   }
 
   await db.runTransaction(async (tx) => {
-    const [currentActor, currentZone, currentState, currentDistrict, currentCity, currentZoneBoundary, currentCityBoundary] =
+    const [currentActor, currentZone, currentCountry, currentState, currentDistrict, currentCity, currentZoneBoundary, currentCityBoundary] =
       await Promise.all([
-        tx.get(actorRef), tx.get(zoneRef), tx.get(stateRef), tx.get(districtRef), tx.get(cityRef),
+        tx.get(actorRef), tx.get(zoneRef), tx.get(countryRef), tx.get(stateRef), tx.get(districtRef), tx.get(cityRef),
         tx.get(zoneBoundaryRef), tx.get(cityBoundaryRef),
       ]);
     if (!currentActor.exists || currentActor.get("isActive") !== true || currentActor.get("role") !== "super_admin") {
@@ -436,8 +443,11 @@ export const activateServiceZone = onCall({ region: "asia-south1" }, async (requ
         currentZone.get("verifiedBoundaryId") !== zoneBoundaryId) {
       throw new HttpsError("aborted", "Zone ancestry or boundary reference changed. Retry.");
     }
-    if (!currentState.exists || currentState.get("isActive") !== true) {
-      throw new HttpsError("failed-precondition", "Parent State must exist and be active.");
+    if (!currentCountry.exists || currentCountry.get("isActive") !== true) {
+      throw new HttpsError("failed-precondition", "Parent Country must exist and be active.");
+    }
+    if (!currentState.exists || currentState.get("isActive") !== true || currentState.get("countryId") !== countryId) {
+      throw new HttpsError("failed-precondition", "Parent State must be active and belong to its Country.");
     }
     if (!currentDistrict.exists || currentDistrict.get("stateId") !== stateId ||
         currentDistrict.get("isServiceActive") !== true) {
