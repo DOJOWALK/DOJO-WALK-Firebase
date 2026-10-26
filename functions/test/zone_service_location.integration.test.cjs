@@ -11,7 +11,7 @@ const { activateServiceZone, reviewServiceLocationBoundary, saveServiceLocationW
 const db = getFirestore();
 const suffix = randomUUID().replace(/-/g, "").slice(0, 12);
 const ids = Object.fromEntries([
-  "admin", "support", "basicAdmin", "inactiveAdmin", "unknownRole", "country", "state", "district", "city", "zone",
+  "admin", "support", "basicAdmin", "inactiveAdmin", "unknownRole", "authTestZone", "country", "state", "district", "city", "zone",
   "cityBoundary", "zoneBoundary", "outsideZone", "outsideBoundary", "createdZone", "reviewZone", "reviewBoundary", "reviewOutsideBoundary",
 ].map((key) => [key, `zone-it-${key}-${suffix}`]));
 
@@ -70,7 +70,7 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     `admin_users/${ids.admin}`, `admin_users/${ids.support}`, `admin_users/${ids.basicAdmin}`, `admin_users/${ids.inactiveAdmin}`, `admin_users/${ids.unknownRole}`,
     `service_countries/${ids.country}`, `service_states/${ids.state}`,
     `service_districts/${ids.district}`, `service_cities/${ids.city}`,
-    `service_zones/${ids.zone}`, `service_zones/${ids.outsideZone}`, `service_zones/${ids.createdZone}`, `service_zones/${ids.reviewZone}`,
+    `service_zones/${ids.zone}`, `service_zones/${ids.outsideZone}`, `service_zones/${ids.createdZone}`, `service_zones/${ids.authTestZone}`, `service_zones/${ids.reviewZone}`,
     `service_location_boundaries/${ids.cityBoundary}`,
     `service_location_boundaries/${ids.zoneBoundary}`,
     `service_location_boundaries/${ids.outsideBoundary}`, `service_location_boundaries/${ids.reviewBoundary}`, `service_location_boundaries/${ids.reviewOutsideBoundary}`,
@@ -187,12 +187,12 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     const payload = {
       stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Authorization Test Zone",
     };
-    await expectCode(save(undefined, payload), "unauthenticated");
-    await expectCode(save(`missing-admin-${suffix}`, payload), "permission-denied");
-    await expectCode(save(ids.inactiveAdmin, payload), "permission-denied");
-    await expectCode(save(ids.basicAdmin, payload), "permission-denied");
-    await expectCode(save(ids.unknownRole, payload), "permission-denied");
-    assert.equal((await db.doc(`service_zones/${ids.createdZone}`).get()).exists, false);
+    await expectCode(save(undefined, payload, ids.authTestZone), "unauthenticated");
+    await expectCode(save(`missing-admin-${suffix}`, payload, ids.authTestZone), "permission-denied");
+    await expectCode(save(ids.inactiveAdmin, payload, ids.authTestZone), "permission-denied");
+    await expectCode(save(ids.basicAdmin, payload, ids.authTestZone), "permission-denied");
+    await expectCode(save(ids.unknownRole, payload, ids.authTestZone), "permission-denied");
+    assert.equal((await db.doc(`service_zones/${ids.authTestZone}`).get()).exists, false);
   });
 
   await t.test("rejects Zone activation through generic status callable", async () => {
