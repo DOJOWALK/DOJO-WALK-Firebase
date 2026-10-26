@@ -64,7 +64,7 @@ export const SERVICE_LOCATION_ALLOWED_FIELDS: Record<ServiceLocationType, readon
   city: ["countryId", "stateId", "districtId", "name", "boundary", "boundarySource", "boundaryVerified", "verifiedBoundaryId", "isServiceActive"],
   area: ["countryId", "stateId", "cityId", "name", "boundary", "boundarySource", "boundaryVerified", "verifiedBoundaryId", "isServiceActive"],
   locality: ["countryId", "stateId", "cityId", "areaId", "name", "pincode", "boundary", "boundarySource", "boundaryVerified", "isServiceActive"],
-  zone: ["stateId", "districtId", "cityId", "name", "isServiceActive"],
+  zone: ["stateId", "districtId", "cityId", "name"],
 };
 
 /**
