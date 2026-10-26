@@ -153,3 +153,31 @@ Any future deactivation transaction must check authoritative booking status and 
 - Runtime code, rules, live data, deployment, merge: **unchanged**.
 
 This finding is a blocker, not permission to guess a schema or ship a partial guard.
+
+
+## Assignment-writer audit follow-up (2026-10-26)
+
+Cross-checked Admin's existing Step 198/199 audit documents against current indexed paths. Findings are bounded to the repositories/branches and files inspected:
+
+- Customer booking creation sets `status: pending` and `walkerId: null`; its booking flow reads/displays assignment state but no writer was found.
+- Admin booking, dashboard, and live-operations screens primarily read booking records. The reviewed walker-admin service updates walker profile state and audit logs, not booking assignment.
+- Partner home consumes bookings already assigned to the signed-in UID. Partner walk-details changes status to `accepted`; navigation updates lifecycle status; live-walk creates/updates a separate walk record. These reviewed paths do not choose or assign `walkerId`.
+- Existing rules reportedly permit Admin booking updates for allowlisted fields including `walkerId` and `assignedAt`; permission to write is not an assignment algorithm.
+- The current review still has not identified an authoritative assignment writer. This could be a missing application feature, a manual workflow, or an external/unindexed service. Do not state it is definitively absent organization-wide.
+
+### Implementation gate updated
+
+Before implementing the zone deactivation guard or any assignment behavior:
+1. Confirm with the project owner whether a separate backend, automation, manual Admin workflow, or external service currently assigns bookings.
+2. If no supported writer exists, design one trusted server-side assignment transaction/callable; do not let Customer/Partner clients assign themselves.
+3. Establish a canonical, server-validated booking-to-zone reference and explicit legacy handling.
+4. Specify allowed booking status transitions and reassignment/cancellation policy.
+5. Test authorization, walker approval/active state, zone ancestry and active state, schedule/availability, idempotency, concurrency, and audit logging in Emulator.
+6. Keep this PR draft and do not merge/deploy or touch production data.
+
+### Status
+
+- Repository path audit: **existing audit documents re-read and reconciled**.
+- Authoritative assignment writer: **not found in inspected paths; owner/external workflow confirmation required**.
+- Canonical booking-zone reference: **not established**.
+- Runtime changes/tests: **not performed**.
