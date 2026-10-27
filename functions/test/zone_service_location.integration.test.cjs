@@ -250,6 +250,18 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     await db.doc(`admin_users/${ids.founder}`).update({ isActive: true });
   });
 
+  await t.test("standard submission and Founder decision replays are rejected", async () => {
+    await submitZone(ids.central, ids.reviewZone);
+    await expectCode(submitZone(ids.central, ids.reviewZone), "already-exists");
+    const decision = () => decideServiceZoneFounderApproval.run({
+      auth: { uid: ids.founder, token: { uid: ids.founder } },
+      data: { zoneId: ids.reviewZone, decision: "approve", notes: "Replay audit test" },
+    });
+    const approved = await decision();
+    assert.equal(approved.workflowStatus, "approved");
+    await expectCode(decision(), "failed-precondition");
+  });
+
   await t.test("stale boundary hash invalidates Founder approval", async () => {
     await approveZone(ids.reviewZone);
     const boundaryRef = db.doc(`service_location_boundaries/${ids.reviewBoundary}`);
@@ -331,6 +343,7 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     // The preceding happy-path test activated this Zone; reset it so this test
     // proves the failed ancestry check cannot activate an inactive Zone.
     await requestServiceZoneDeactivation.run({ auth: { uid: ids.central, token: { uid: ids.central } }, data: { zoneId: ids.zone, notes: "Test deactivation request" } });
+    await expectCode(requestServiceZoneDeactivation.run({ auth: { uid: ids.central, token: { uid: ids.central } }, data: { zoneId: ids.zone, notes: "Duplicate request must be rejected" } }), "failed-precondition");
     const deactivationChanges = await decideServiceZoneFounderApproval.run({
       auth: { uid: ids.founder, token: { uid: ids.founder } },
       data: { zoneId: ids.zone, decision: "changes_required", notes: "Please clarify the service continuity plan." },
@@ -338,9 +351,17 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     assert.equal(deactivationChanges.workflowStatus, "active");
     assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), true);
     assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("approvedRevision"), 1);
+    await expectCode(decideServiceZoneFounderApproval.run({ auth: { uid: ids.founder, token: { uid: ids.founder } }, data: { zoneId: ids.zone, decision: "changes_required", notes: "Replay of old decision must fail" } }), "failed-precondition");
     await requestServiceZoneDeactivation.run({ auth: { uid: ids.central, token: { uid: ids.central } }, data: { zoneId: ids.zone, notes: "Updated deactivation request after clarification" } });
     await decideServiceZoneFounderApproval.run({ auth: { uid: ids.founder, token: { uid: ids.founder } }, data: { zoneId: ids.zone, decision: "deactivate", notes: "Founder approved deactivation for test" } });
+    const zoneBoundaryRef = db.doc(`service_location_boundaries/${ids.zoneBoundary}`);
+    const zoneBoundaryBefore = await zoneBoundaryRef.get();
+    const originalZonePoints = zoneBoundaryBefore.get("points");
+    await zoneBoundaryRef.update({ points: points(28.521, 77.321, 28.541, 77.341) });
+    await expectCode(status(ids.central, "zone", ids.zone, false), "failed-precondition");
+    await zoneBoundaryRef.update({ points: originalZonePoints });
     await status(ids.central, "zone", ids.zone, false);
+    await expectCode(decideServiceZoneFounderApproval.run({ auth: { uid: ids.founder, token: { uid: ids.founder } }, data: { zoneId: ids.zone, decision: "deactivate", notes: "Replay after deactivation must fail" } }), "failed-precondition");
     await db.doc(`admin_users/${ids.central}`).update({ isActive: false });
     await expectCode(activate(ids.central), "permission-denied");
     await db.doc(`admin_users/${ids.central}`).update({ isActive: true });
