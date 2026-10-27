@@ -1307,7 +1307,8 @@ service cloud.firestore {
     // =====================================================
 
     match /service_states/{stateId} {
-      allow get, list: if isAdmin();
+      // Central Admin must read the reference hierarchy to create Zones.
+      allow get, list: if isZoneWorkflowUser();
 
       allow create: if false;
 
@@ -1323,7 +1324,8 @@ service cloud.firestore {
     // District hierarchy records are read-only to Admin clients. All mutations
     // must go through the trusted callable so name indexes remain consistent.
     match /service_districts/{districtId} {
-      allow get, list: if isAdmin();
+      // Central Admin must read the reference hierarchy to create Zones.
+      allow get, list: if isZoneWorkflowUser();
 
       allow create: if false;
 
@@ -1337,7 +1339,8 @@ service cloud.firestore {
     // =====================================================
 
     match /service_cities/{cityId} {
-      allow get, list: if isAdmin();
+      // Central Admin must read the reference hierarchy to create Zones.
+      allow get, list: if isZoneWorkflowUser();
 
       allow create: if false;
 
