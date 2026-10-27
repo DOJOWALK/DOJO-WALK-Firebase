@@ -7,7 +7,7 @@ if (!process.env.FIRESTORE_EMULATOR_HOST) {
 }
 
 const { GeoPoint, getFirestore } = require("firebase-admin/firestore");
-const { activateServiceZone, reviewServiceLocationBoundary, saveServiceLocationWithNameIndex, setServiceLocationStatus, submitServiceZoneForFounderReview, decideServiceZoneFounderApproval, requestServiceZoneDeactivation, suspendServiceZoneForEmergency, requestServiceZoneReactivation } = require("../lib/index");
+const { activateServiceLocation, activateServiceZone, reviewServiceLocationBoundary, saveServiceLocationWithNameIndex, setServiceLocationStatus, submitServiceZoneForFounderReview, decideServiceZoneFounderApproval, requestServiceZoneDeactivation, suspendServiceZoneForEmergency, requestServiceZoneReactivation } = require("../lib/index");
 const db = getFirestore();
 const suffix = randomUUID().replace(/-/g, "").slice(0, 12);
 const ids = Object.fromEntries([
@@ -76,6 +76,19 @@ async function expectCode(promise, code) {
     return true;
   });
 }
+
+test("legacy City/Area activation callable is disabled; only Zone workflow may activate service", async () => {
+  for (const locationType of ["city", "area"]) {
+    await expectCode(activateServiceLocation.run({
+      auth: { uid: "legacy-activation-regression", token: { uid: "legacy-activation-regression" } },
+      data: { locationType, locationId: `legacy-${locationType}-regression` },
+    }), "failed-precondition");
+  }
+  await expectCode(activateServiceLocation.run({
+    auth: { uid: "legacy-activation-regression", token: { uid: "legacy-activation-regression" } },
+    data: { locationType: "zone", locationId: "legacy-zone-regression" },
+  }), "invalid-argument");
+});
 
 test("Zone activation requires privileged auth, verified contained boundary and active ancestry; deactivation is audited", async (t) => {
   const paths = [
