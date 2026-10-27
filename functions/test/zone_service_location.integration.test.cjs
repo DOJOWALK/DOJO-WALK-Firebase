@@ -403,11 +403,11 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     await expectCode(activate(ids.central, ids.zone), "failed-precondition");
     await expectCode(suspendServiceZoneForEmergency.run({
       auth: { uid: ids.admin, token: { uid: ids.admin } },
-      data: { zoneId: ids.zone, reason: "Unauthorized attempt" },
+      data: { zoneId: ids.zone, reason: "Unauthorized attempt", severity: "SEV-1" },
     }), "permission-denied");
     await expectCode(suspendServiceZoneForEmergency.run({
       auth: { uid: ids.inactiveAdmin, token: { uid: ids.inactiveAdmin } },
-      data: { zoneId: ids.zone, reason: "Inactive account must not suspend" },
+      data: { zoneId: ids.zone, reason: "Inactive account must not suspend", severity: "SEV-1" },
     }), "permission-denied");
     await expectCode(suspendServiceZoneForEmergency.run({
       auth: { uid: ids.central, token: { uid: ids.central } },
