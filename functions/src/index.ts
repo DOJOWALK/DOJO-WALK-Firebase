@@ -232,9 +232,13 @@ export const activateServiceLocation = onCall({ region: "asia-south1" }, async (
       typeof locationId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(locationId)) {
     throw new HttpsError("invalid-argument", "Provide a valid locationType and locationId.");
   }
-  if (locationType === "city") {
-    throw new HttpsError("failed-precondition", "City is a reference hierarchy record. Only Zone can be activated for customer service.");
-  }
+  // This callable is retained only as a compatibility endpoint for old clients.
+  // POL-038 makes Zone the sole service activation unit; City and Area must
+  // never be activated through this legacy path.
+  throw new HttpsError(
+    "failed-precondition",
+    "Legacy City/Area activation is disabled. Use the Founder-approved Zone workflow.",
+  );
 
   const actorRef = db.doc(`admin_users/${uid}`);
   const actorSnap = await actorRef.get();
