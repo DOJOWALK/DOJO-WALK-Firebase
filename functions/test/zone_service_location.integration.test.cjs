@@ -226,7 +226,16 @@ test("Zone activation requires privileged auth, verified contained boundary and 
   });
 
   await t.test("rejects Zone activation through generic status callable", async () => {
+    // Only activateServiceZone may activate a Zone; the generic status
+    // callable must not become a route around Founder approval.
     await expectCode(status(ids.admin, "zone", ids.zone, true), "failed-precondition");
+    await expectCode(status(ids.central, "zone", ids.zone, true), "permission-denied");
+    await expectCode(status(ids.founder, "zone", ids.zone, true), "permission-denied");
+
+    // Only Central Admin may execute a Founder-approved Zone deactivation.
+    // Technical Super Admin and Founder roles must not inherit this authority.
+    await expectCode(status(ids.admin, "zone", ids.zone, false), "permission-denied");
+    await expectCode(status(ids.founder, "zone", ids.zone, false), "permission-denied");
     assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), false);
   });
 
