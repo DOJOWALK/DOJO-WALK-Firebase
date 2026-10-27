@@ -792,7 +792,7 @@ test('service District reads are super_admin-only and direct client writes are d
 
 
 
-test('service Zones are readable by active super_admin only and never directly writable by clients', async () => {
+test('service Zones are readable by active Zone workflow roles and never directly writable by clients', async () => {
   await env.withSecurityRulesDisabled(async (context) => {
     await setDoc(doc(context.firestore(), 'service_zones/zone-1'), {
       stateId: 'up',
@@ -813,6 +813,12 @@ test('service Zones are readable by active super_admin only and never directly w
 
   await assertSucceeds(getDoc(doc(superDb, 'service_zones/zone-1')));
   await assertSucceeds(getDocs(collection(superDb, 'service_zones')));
+  const centralWorkflowDb = env.authenticatedContext('central-active').firestore();
+  const founderWorkflowDb = env.authenticatedContext('founder-active').firestore();
+  await assertSucceeds(getDoc(doc(centralWorkflowDb, 'service_zones/zone-1')));
+  await assertSucceeds(getDocs(collection(centralWorkflowDb, 'service_zones')));
+  await assertSucceeds(getDoc(doc(founderWorkflowDb, 'service_zones/zone-1')));
+  await assertSucceeds(getDocs(collection(founderWorkflowDb, 'service_zones')));
   await assertFails(getDoc(doc(inactiveDb, 'service_zones/zone-1')));
   await assertFails(getDocs(collection(inactiveDb, 'service_zones')));
   await assertFails(getDoc(doc(supportDb, 'service_zones/zone-1')));
