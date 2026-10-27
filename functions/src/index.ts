@@ -429,7 +429,7 @@ export const submitServiceZoneForFounderReview = onCall({ region: "asia-south1" 
     if (!bSnap.exists || b.locationId!==zoneId || b.locationType!=="zone" || b.verificationStatus!=="verified") throw new HttpsError("failed-precondition", "The current Zone boundary must be verified.");
     polygonFromBoundary(b);
     const revision=Number.isInteger(data.revision)&&data.revision>0?data.revision:1, hash=canonicalBoundaryHash(b);
-    tx.update(zoneRef,{revision,workflowStatus:"submitted",submittedRevision:revision,submittedBoundaryHash:hash,submittedBy:uid,submittedAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});
+    tx.update(zoneRef,{revision,workflowStatus:"submitted",submittedRevision:revision,submittedBoundaryHash:hash,submittedBy:uid,submittedAt:FieldValue.serverTimestamp(),approvalUid:FieldValue.delete(),approvedRevision:FieldValue.delete(),approvedBoundaryHash:FieldValue.delete(),approvedAt:FieldValue.delete(),updatedAt:FieldValue.serverTimestamp()});
     tx.create(db.collection("service_zone_approval_audit").doc(),{zoneId,revision,boundaryHash:hash,actorUid:uid,action:"submitted",createdAt:FieldValue.serverTimestamp()});
     return {ok:true,zoneId,revision,boundaryHash:hash,workflowStatus:"submitted"};
   });
