@@ -470,6 +470,12 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     });
     assert.equal(reactivation.workflowStatus, "reactivation_submitted");
     assert.equal(reactivation.revision, 8);
+    await expectCode(save(ids.central, {
+      stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Attempt to edit submitted reactivation",
+    }, ids.zone), "failed-precondition");
+    const stillSubmittedReactivation = await zoneRef.get();
+    assert.equal(stillSubmittedReactivation.get("workflowStatus"), "reactivation_submitted");
+    assert.equal(stillSubmittedReactivation.get("revision"), 8);
     await expectCode(reviewBoundary(ids.central, ids.suspendedBoundary, "verified"), "failed-precondition");
     assert.equal((await zoneRef.get()).get("workflowStatus"), "reactivation_submitted");
     assert.equal((await db.doc(`service_location_boundaries/${ids.suspendedBoundary}`).get()).get("verificationStatus"), "pending");
