@@ -386,6 +386,16 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     assert.equal(suspended.get("workflowStatus"), "suspended");
     assert.equal(suspended.get("approvedRevision"), undefined);
     assert.equal(suspended.get("emergencySuspensionSeverity"), "SEV-1");
+    const notificationsBeforeReplay = await db.collection("founder_notifications")
+      .where("zoneId", "==", ids.zone).where("notificationType", "==", "emergency_zone_suspension").get();
+    const replaySuspension = await suspendServiceZoneForEmergency.run({
+      auth: { uid: ids.central, token: { uid: ids.central } },
+      data: { zoneId: ids.zone, reason: "Duplicate request must not create another incident.", severity: "SEV-1" },
+    });
+    assert.equal(replaySuspension.alreadySuspended, true);
+    const notificationsAfterReplay = await db.collection("founder_notifications")
+      .where("zoneId", "==", ids.zone).where("notificationType", "==", "emergency_zone_suspension").get();
+    assert.equal(notificationsAfterReplay.size, notificationsBeforeReplay.size);
     const audit = await db.collection("service_zone_approval_audit").where("zoneId", "==", ids.zone).where("action", "==", "emergency_suspended").get();
     assert.ok(audit.docs.some((doc) => doc.get("actorUid") === ids.central));
     const notifications = await db.collection("founder_notifications").where("zoneId", "==", ids.zone).where("notificationType", "==", "emergency_zone_suspension").get();
@@ -401,7 +411,11 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     }), "permission-denied");
     await expectCode(suspendServiceZoneForEmergency.run({
       auth: { uid: ids.central, token: { uid: ids.central } },
-      data: { zoneId: ids.zone, reason: "   " },
+      data: { zoneId: ids.zone, reason: "Missing severity must be rejected." },
+    }), "invalid-argument");
+    await expectCode(suspendServiceZoneForEmergency.run({
+      auth: { uid: ids.central, token: { uid: ids.central } },
+      data: { zoneId: ids.zone, reason: "   ", severity: "SEV-2" },
     }), "invalid-argument");
     await expectCode(suspendServiceZoneForEmergency.run({
       auth: { uid: ids.central, token: { uid: ids.central } },
