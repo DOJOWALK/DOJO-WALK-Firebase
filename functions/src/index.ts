@@ -1138,6 +1138,9 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
       if (type === "zone" && current.isServiceActive === true) {
         throw new HttpsError("failed-precondition", "An active Zone must complete Founder-approved deactivation before it can be edited.");
       }
+      if (type === "zone" && current.workflowStatus === "suspended") {
+        throw new HttpsError("failed-precondition", "An emergency-suspended Zone must complete the Founder-approved reactivation workflow before it can be edited.");
+      }
       if (type === "city" && (current.districtId !== undefined) !== (proposed.districtId !== undefined)) {
         throw new HttpsError("failed-precondition", "Adding or removing a City District requires a separate migration.");
       }
