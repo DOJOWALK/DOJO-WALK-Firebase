@@ -185,9 +185,17 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     }), "permission-denied");
   });
 
-  await t.test("Super Admin cannot review a Zone boundary; Central Admin owns boundary operations", async () => {
-    await expectCode(reviewBoundary(ids.admin, ids.reviewBoundary), "permission-denied");
-    assert.equal((await db.doc(`service_location_boundaries/${ids.reviewBoundary}`).get()).get("verificationStatus"), "pending");
+  await t.test("Only an active Central Admin can review a Zone boundary", async () => {
+    // Technical Super Admin, Founder, inactive admins and ordinary support
+    // accounts must not inherit Central Admin boundary-review authority.
+    for (const uid of [ids.admin, ids.founder, ids.inactiveAdmin, ids.support]) {
+      await expectCode(reviewBoundary(uid, ids.reviewBoundary), "permission-denied");
+      assert.equal(
+        (await db.doc(`service_location_boundaries/${ids.reviewBoundary}`).get()).get("verificationStatus"),
+        "pending",
+        `Boundary must remain pending after unauthorized review attempt by ${uid}`,
+      );
+    }
   });
 
   await t.test("Zone boundary review verifies containment without requiring an active City", async () => {
