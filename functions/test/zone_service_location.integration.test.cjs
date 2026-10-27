@@ -12,7 +12,7 @@ const db = getFirestore();
 const suffix = randomUUID().replace(/-/g, "").slice(0, 12);
 const ids = Object.fromEntries([
   "admin", "central", "founder", "support", "basicAdmin", "inactiveAdmin", "unknownRole", "authTestZone", "country", "state", "district", "city", "zone",
-  "cityBoundary", "zoneBoundary", "outsideZone", "outsideBoundary", "createdZone", "reviewZone", "reviewBoundary", "reviewOutsideBoundary", "suspendedBoundary", "emergencyNotification",
+  "cityBoundary", "zoneBoundary", "outsideZone", "outsideBoundary", "createdZone", "reviewZone", "reviewBoundary", "reviewOutsideBoundary", "rejectedZone", "rejectedBoundary", "suspendedBoundary", "emergencyNotification",
 ].map((key) => [key, `zone-it-${key}-${suffix}`]));
 
 const points = (south, west, north, east) => [
@@ -82,10 +82,10 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     `admin_users/${ids.admin}`, `admin_users/${ids.central}`, `admin_users/${ids.founder}`, `admin_users/${ids.support}`, `admin_users/${ids.basicAdmin}`, `admin_users/${ids.inactiveAdmin}`, `admin_users/${ids.unknownRole}`,
     `service_countries/${ids.country}`, `service_states/${ids.state}`,
     `service_districts/${ids.district}`, `service_cities/${ids.city}`,
-    `service_zones/${ids.zone}`, `service_zones/${ids.outsideZone}`, `service_zones/${ids.createdZone}`, `service_zones/${ids.authTestZone}`, `service_zones/${ids.reviewZone}`,
+    `service_zones/${ids.zone}`, `service_zones/${ids.outsideZone}`, `service_zones/${ids.createdZone}`, `service_zones/${ids.authTestZone}`, `service_zones/${ids.reviewZone}`, `service_zones/${ids.rejectedZone}`,
     `service_location_boundaries/${ids.cityBoundary}`,
     `service_location_boundaries/${ids.zoneBoundary}`,
-    `service_location_boundaries/${ids.outsideBoundary}`, `service_location_boundaries/${ids.reviewBoundary}`, `service_location_boundaries/${ids.reviewOutsideBoundary}`, `service_location_boundaries/${ids.suspendedBoundary}`,
+    `service_location_boundaries/${ids.outsideBoundary}`, `service_location_boundaries/${ids.reviewBoundary}`, `service_location_boundaries/${ids.reviewOutsideBoundary}`, `service_location_boundaries/${ids.rejectedBoundary}`, `service_location_boundaries/${ids.suspendedBoundary}`,
   ];
   t.after(async () => {
     await Promise.all(paths.map((path) => db.doc(path).delete().catch(() => undefined)));
@@ -123,6 +123,12 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     db.doc(`service_zones/${ids.reviewZone}`).set({
       stateId: ids.state, districtId: ids.district, cityId: ids.city, isServiceActive: false,
     }),
+    db.doc(`service_zones/${ids.rejectedZone}`).set({
+      stateId: ids.state, districtId: ids.district, cityId: ids.city, isServiceActive: false, verifiedBoundaryId: ids.rejectedBoundary,
+    }),
+    db.doc(`service_location_boundaries/${ids.rejectedBoundary}`).set(
+      verifiedBoundary(ids.rejectedZone, "zone", points(28.52, 77.32, 28.54, 77.34)),
+    ),
     db.doc(`service_location_boundaries/${ids.reviewBoundary}`).set({
       ...verifiedBoundary(ids.reviewZone, "zone", points(28.52, 77.32, 28.54, 77.34)),
       verificationStatus: "pending",
@@ -268,13 +274,13 @@ test("Zone activation requires privileged auth, verified contained boundary and 
   });
 
   await t.test("final Founder rejection blocks resubmission of the same Zone", async () => {
-    await submitZone(ids.central, ids.reviewZone);
+    await submitZone(ids.central, ids.rejectedZone);
     await decideServiceZoneFounderApproval.run({
       auth: { uid: ids.founder, token: { uid: ids.founder } },
-      data: { zoneId: ids.reviewZone, decision: "reject", notes: "Final rejection for test" },
+      data: { zoneId: ids.rejectedZone, decision: "reject", notes: "Final rejection for test" },
     });
-    assert.equal((await db.doc(`service_zones/${ids.reviewZone}`).get()).get("workflowStatus"), "rejected");
-    await expectCode(submitZone(ids.central, ids.reviewZone), "failed-precondition");
+    assert.equal((await db.doc(`service_zones/${ids.rejectedZone}`).get()).get("workflowStatus"), "rejected");
+    await expectCode(submitZone(ids.central, ids.rejectedZone), "failed-precondition");
   });
 
   await t.test("standard submission and Founder decision replays are rejected", async () => {
