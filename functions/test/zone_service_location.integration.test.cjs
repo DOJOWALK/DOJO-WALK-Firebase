@@ -279,8 +279,18 @@ test("Zone activation requires privileged auth, verified contained boundary and 
       auth: { uid: ids.founder, token: { uid: ids.founder } },
       data: { zoneId: ids.rejectedZone, decision: "reject", notes: "Final rejection for test" },
     });
-    assert.equal((await db.doc(`service_zones/${ids.rejectedZone}`).get()).get("workflowStatus"), "rejected");
+    const rejectedRef = db.doc(`service_zones/${ids.rejectedZone}`);
+    const rejectedBeforeEdit = await rejectedRef.get();
+    assert.equal(rejectedBeforeEdit.get("workflowStatus"), "rejected");
+    const revisionBeforeEdit = rejectedBeforeEdit.get("revision");
     await expectCode(submitZone(ids.central, ids.rejectedZone), "failed-precondition");
+    // The save callable must not reset final rejection to draft or increment revision.
+    await expectCode(save(ids.central, {
+      stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Try to edit finally rejected Zone",
+    }, ids.rejectedZone), "failed-precondition");
+    const rejectedAfterEdit = await rejectedRef.get();
+    assert.equal(rejectedAfterEdit.get("workflowStatus"), "rejected");
+    assert.equal(rejectedAfterEdit.get("revision"), revisionBeforeEdit);
   });
 
   await t.test("standard submission and Founder decision replays are rejected", async () => {
