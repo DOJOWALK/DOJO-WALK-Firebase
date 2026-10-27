@@ -470,6 +470,9 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     });
     assert.equal(reactivation.workflowStatus, "reactivation_submitted");
     assert.equal(reactivation.revision, 8);
+    await expectCode(reviewBoundary(ids.central, ids.suspendedBoundary, "verified"), "failed-precondition");
+    assert.equal((await zoneRef.get()).get("workflowStatus"), "reactivation_submitted");
+    assert.equal((await db.doc(`service_location_boundaries/${ids.suspendedBoundary}`).get()).get("verificationStatus"), "pending");
     // The ordinary approval submission must not downgrade reactivation_submitted
     // to submitted, otherwise Founder could use generic "approve" instead of
     // the required explicit "reactivate" decision.
