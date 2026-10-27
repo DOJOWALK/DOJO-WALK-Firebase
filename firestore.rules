@@ -219,7 +219,9 @@ service cloud.firestore {
 
       allow create, delete: if false;
 
+      // Founder authority must not be disabled or modified by the technical Super Admin through client rules.
       allow update: if isAdmin()
+        && resource.data.get('role', '') != 'founder'
         && request.resource.data.diff(resource.data)
           .affectedKeys()
           .hasOnly([
