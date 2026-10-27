@@ -12,7 +12,7 @@ const db = getFirestore();
 const suffix = randomUUID().replace(/-/g, "").slice(0, 12);
 const ids = Object.fromEntries([
   "admin", "central", "founder", "support", "basicAdmin", "inactiveAdmin", "unknownRole", "authTestZone", "country", "state", "district", "city", "zone",
-  "cityBoundary", "zoneBoundary", "outsideZone", "outsideBoundary", "createdZone", "reviewZone", "reviewBoundary", "reviewOutsideBoundary", "emergencyNotification",
+  "cityBoundary", "zoneBoundary", "outsideZone", "outsideBoundary", "createdZone", "reviewZone", "reviewBoundary", "reviewOutsideBoundary", "suspendedBoundary", "emergencyNotification",
 ].map((key) => [key, `zone-it-${key}-${suffix}`]));
 
 const points = (south, west, north, east) => [
@@ -85,7 +85,7 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     `service_zones/${ids.zone}`, `service_zones/${ids.outsideZone}`, `service_zones/${ids.createdZone}`, `service_zones/${ids.authTestZone}`, `service_zones/${ids.reviewZone}`,
     `service_location_boundaries/${ids.cityBoundary}`,
     `service_location_boundaries/${ids.zoneBoundary}`,
-    `service_location_boundaries/${ids.outsideBoundary}`, `service_location_boundaries/${ids.reviewBoundary}`, `service_location_boundaries/${ids.reviewOutsideBoundary}`,
+    `service_location_boundaries/${ids.outsideBoundary}`, `service_location_boundaries/${ids.reviewBoundary}`, `service_location_boundaries/${ids.reviewOutsideBoundary}`, `service_location_boundaries/${ids.suspendedBoundary}`,
   ];
   t.after(async () => {
     await Promise.all(paths.map((path) => db.doc(path).delete().catch(() => undefined)));
@@ -414,6 +414,15 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     const stillSuspended = await zoneRef.get();
     assert.equal(stillSuspended.get("workflowStatus"), "suspended");
     assert.equal(stillSuspended.get("revision"), suspendedRevision);
+    const suspendedBoundaryRef = db.doc(`service_location_boundaries/${ids.suspendedBoundary}`);
+    await suspendedBoundaryRef.set({
+      locationId: ids.zone, locationType: "zone", points: points(0.2, 0.2, 0.3, 0.3),
+      verificationStatus: "pending", sourceName: "Suspended-boundary bypass test", sourceReference: "TEST-ONLY",
+    });
+    await expectCode(reviewBoundary(ids.central, ids.suspendedBoundary, "verified"), "failed-precondition");
+    assert.equal((await zoneRef.get()).get("workflowStatus"), "suspended");
+    assert.equal((await zoneRef.get()).get("revision"), suspendedRevision);
+    assert.equal((await suspendedBoundaryRef.get()).get("verificationStatus"), "pending");
     const notificationsBeforeReplay = await db.collection("founder_notifications")
       .where("zoneId", "==", ids.zone).where("notificationType", "==", "emergency_zone_suspension").get();
     const replaySuspension = await suspendServiceZoneForEmergency.run({
