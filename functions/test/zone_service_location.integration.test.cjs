@@ -355,6 +355,25 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     assert.ok(audit.docs.some((doc) => doc.get("result") === "activated" && doc.get("locationType") === "zone"));
   });
 
+  await t.test("rejects service status changes for every non-Zone location type", async () => {
+    const legacyAndParentTypes = [
+      ["country", ids.country],
+      ["state", ids.state],
+      ["district", ids.district],
+      ["city", ids.city],
+      ["area", ids.city],
+      ["locality", ids.city],
+    ];
+    for (const [locationType, locationId] of legacyAndParentTypes) {
+      await expectCode(status(ids.admin, locationType, locationId, true), "failed-precondition");
+      await expectCode(status(ids.admin, locationType, locationId, false), "failed-precondition");
+    }
+    assert.equal((await db.doc(`service_countries/${ids.country}`).get()).get("isActive"), true);
+    assert.equal((await db.doc(`service_states/${ids.state}`).get()).get("isActive"), true);
+    assert.equal((await db.doc(`service_districts/${ids.district}`).get()).get("isServiceActive"), true);
+    assert.equal((await db.doc(`service_cities/${ids.city}`).get()).get("isServiceActive"), true);
+  });
+
   await t.test("rejects Zone polygon outside parent City", async () => {
     await expectCode(activate(ids.central, ids.outsideZone), "failed-precondition");
     assert.equal((await db.doc(`service_zones/${ids.outsideZone}`).get()).get("isServiceActive"), false);
