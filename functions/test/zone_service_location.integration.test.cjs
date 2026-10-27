@@ -290,6 +290,8 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     } finally {
       await boundaryRef.update({ points: originalPoints });
     }
+    // Restore the fixture to an approved state for the following revision test.
+    await approveZone(ids.reviewZone);
   });
 
   await t.test("Zone revision changes invalidate an otherwise valid Founder approval", async () => {
