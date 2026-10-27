@@ -470,6 +470,14 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     });
     assert.equal(reactivation.workflowStatus, "reactivation_submitted");
     assert.equal(reactivation.revision, 8);
+    // The ordinary approval submission must not downgrade reactivation_submitted
+    // to submitted, otherwise Founder could use generic "approve" instead of
+    // the required explicit "reactivate" decision.
+    await expectCode(submitServiceZoneForFounderReview.run({
+      auth: { uid: ids.central, token: { uid: ids.central } },
+      data: { zoneId: ids.zone },
+    }), "failed-precondition");
+    assert.equal((await zoneRef.get()).get("workflowStatus"), "reactivation_submitted");
     await expectCode(activate(ids.central, ids.zone), "failed-precondition");
     const reactivationChanges = await decideServiceZoneFounderApproval.run({
       auth: { uid: ids.founder, token: { uid: ids.founder } },
