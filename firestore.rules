@@ -225,7 +225,6 @@ service cloud.firestore {
           .hasOnly([
             'name',
             'email',
-            'role',
             'isActive',
             'updatedAt'
           ])
