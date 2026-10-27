@@ -797,6 +797,9 @@ test('super_admin cannot grant Founder authority by changing any admin role', as
   await assertFails(updateDoc(doc(db, 'admin_users/super-active'), { role: 'founder' }));
   await assertFails(updateDoc(doc(db, 'admin_users/central-active'), { role: 'founder' }));
   await assertFails(updateDoc(doc(db, 'admin_users/founder-active'), { role: 'super_admin' }));
+  // Founder approval authority must not be disabled or renamed by a client-side admin edit.
+  await assertFails(updateDoc(doc(db, 'admin_users/founder-active'), { isActive: false }));
+  await assertFails(updateDoc(doc(db, 'admin_users/founder-active'), { name: 'Changed Founder' }));
   await assertSucceeds(updateDoc(doc(db, 'admin_users/central-active'), { isActive: false }));
 });
 
