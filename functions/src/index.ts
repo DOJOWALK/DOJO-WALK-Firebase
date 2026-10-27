@@ -297,7 +297,8 @@ export const activateServiceLocation = onCall({ region: "asia-south1" }, async (
     }
     if (parentSnap.get("countryId") !== countryId || parentSnap.get("stateId") !== stateId) {
       throw new HttpsError("failed-precondition", "Area Country and State must match its parent City.");
-    }    const parentBoundaryId = parentSnap.get("verifiedBoundaryId");
+    }
+    const parentBoundaryId = parentSnap.get("verifiedBoundaryId");
     if (typeof parentBoundaryId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(parentBoundaryId)) {
       throw new HttpsError("failed-precondition", "Parent City must reference a valid verified boundary ID.");
     }
@@ -895,7 +896,8 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
       if (typeof countryId !== "string" || !countryId) {
         throw new HttpsError("failed-precondition", "District State parent is invalid.");
       }
-      districtCountryRef = db.doc(`service_countries/${countryId}`);      const districtCountrySnap = await tx.get(districtCountryRef);
+      districtCountryRef = db.doc(`service_countries/${countryId}`);
+      const districtCountrySnap = await tx.get(districtCountryRef);
       if (!districtCountrySnap.exists || districtCountrySnap.get("isActive") !== true) {
         throw new HttpsError("failed-precondition", "District Country must be active first.");
       }
@@ -1200,7 +1202,8 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     if (type === "city" && parentData[1].countryId !== parentIds[0]) {
       throw new HttpsError("failed-precondition", "State does not belong to the selected Country.");
     }
-    if (type === "city" && proposed.districtId !== undefined &&        (parentData[2].countryId !== parentIds[0] || parentData[2].stateId !== parentIds[1])) {
+    if (type === "city" && proposed.districtId !== undefined &&
+        (parentData[2].countryId !== parentIds[0] || parentData[2].stateId !== parentIds[1])) {
       throw new HttpsError("failed-precondition", "District does not belong to the selected State and Country.");
     }
     if (type === "area" && (parentData[1].countryId !== parentIds[0] ||
@@ -1499,7 +1502,8 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
       id: string; type: string; name: string; parentId: string;
       alreadyExists: boolean; sourceLine: number;
     }> = [];
-    for (const node of nodes) {      if (!node || typeof node !== "object" ||
+    for (const node of nodes) {
+      if (!node || typeof node !== "object" ||
           typeof node.id !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(node.id) ||
           typeof node.type !== "string" || !allowedTypes.has(node.type) ||
           typeof node.name !== "string" || !node.name.trim() || node.name.trim().length > 180 ||
@@ -1798,7 +1802,8 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
         }
 
         // Counts are part of the durable audit contract, not merely a client
-        // summary. Derive them from the immutable plan so a caller cannot mark        // reused locations as newly created (or vice versa) while still making
+        // summary. Derive them from the immutable plan so a caller cannot mark
+        // reused locations as newly created (or vice versa) while still making
         // the totals add up to plannedRecords.
         const expectedReusedRecords = planned.filter((node) => node.alreadyExists === true).length;
         const expectedCreatedRecords = planned.length - expectedReusedRecords;
