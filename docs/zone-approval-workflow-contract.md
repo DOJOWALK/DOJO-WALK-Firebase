@@ -1,6 +1,6 @@
 # DOJO WALK Zone Approval Workflow — implementation contract
 
-Status: implementation in progress on PR #39. This document is a contract; CI on the exact current head is still required before treating the workflow as verified.
+Status: implementation is present on PR #39. At commit `b491d0f97ab8077d003638697325b12ee21d7726`, the Functions build/Geometry/Callable Integration Tests and Firestore Security Rules/Workflow YAML Validation workflows passed. Keep the PR Draft and unmerged while final review continues; a passing CI run is not production approval.
 
 ## Authority
 - Central Admin (admin_users/{uid}.role == central_admin, active) owns Zone draft creation/editing, boundary preparation, submission, and operational follow-up.
@@ -25,7 +25,7 @@ Status: implementation in progress on PR #39. This document is a contract; CI on
 5. Central Admin can request activation only after Founder approval matches current revision and hash; backend rechecks boundary and canonical ancestry transactionally.
 6. Parent State/District/City must exist and have canonical matching ancestry. Their legacy service-active flags must not be required for Zone activation.
 7. Central Admin requests Zone deactivation with a reason; Founder approval is required before Central Admin executes deactivation. The request and decision bind to the current revision and boundary hash.
-8. Central Admin may emergency-suspend an active Zone with a reason and audit record; notify Founder. Emergency suspension cannot activate/reactivate. Emergency suspension remains a separate implementation gate.
+8. Central Admin may emergency-suspend an active Zone with a mandatory reason/severity, audit record, and durable Founder inbox notification. Emergency suspension cannot activate/reactivate. Push/email delivery is not configured by the callable.
 9. Reactivation after emergency suspension requires Central Admin to submit a fresh request; the backend increments revision and hashes the current verified boundary. Founder must explicitly decide `reactivate` for that exact revision/hash, after which Central Admin separately activates through the normal readiness checks.
 
 ## Mandatory negative tests
@@ -56,4 +56,4 @@ Status: implementation in progress on PR #39. This document is a contract; CI on
 - `requestServiceZoneDeactivation` + `setServiceLocationStatus`: Central Admin requests deactivation; Founder approves; Central Admin executes only if approval and current boundary hash still match.
 - `suspendServiceZoneForEmergency`: Central Admin emergency-stops a Zone with a reason/severity, writes an audit entry, clears reusable activation approval, and queues a Founder inbox notification. It cannot activate or reactivate a Zone.
 
-Emergency suspension is implemented as a Central Admin-only callable with a mandatory reason, severity, durable Founder inbox notification record, approval-field invalidation, and audit entry. Reactivation now requires a new Central Admin submission and explicit Founder `reactivate` decision tied to a newly incremented revision and current verified boundary hash. Automated push/email delivery is not configured by this callable; the notification is queued in Firestore for the Founder-facing admin inbox. Explicit replay/stale-state tests still need broader review. Keep the PR Draft and unmerged until the exact final head passes all CI gates.
+Emergency suspension is implemented as a Central Admin-only callable with mandatory reason and severity, durable Founder inbox notification record, approval-field invalidation, and audit entry. Reactivation requires a new Central Admin submission and explicit Founder `reactivate` decision tied to a newly incremented revision and current verified boundary hash. Automated push/email delivery is not configured by this callable; the notification is queued in Firestore for the Founder-facing admin inbox. Emulator integration coverage includes replayed submissions/decisions, stale revision/hash rejection, suspension bypass attempts, and the reactivation workflow. The exact head cited above passed the configured CI workflows; final security review and any required fixes must be validated on the new exact head before merge. No production deployment is authorized.
