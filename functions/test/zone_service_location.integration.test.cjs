@@ -267,6 +267,16 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     await db.doc(`admin_users/${ids.founder}`).update({ isActive: true });
   });
 
+  await t.test("final Founder rejection blocks resubmission of the same Zone", async () => {
+    await submitZone(ids.central, ids.reviewZone);
+    await decideServiceZoneFounderApproval.run({
+      auth: { uid: ids.founder, token: { uid: ids.founder } },
+      data: { zoneId: ids.reviewZone, decision: "reject", notes: "Final rejection for test" },
+    });
+    assert.equal((await db.doc(`service_zones/${ids.reviewZone}`).get()).get("workflowStatus"), "rejected");
+    await expectCode(submitZone(ids.central, ids.reviewZone), "failed-precondition");
+  });
+
   await t.test("standard submission and Founder decision replays are rejected", async () => {
     await submitZone(ids.central, ids.reviewZone);
     await expectCode(submitZone(ids.central, ids.reviewZone), "already-exists");
