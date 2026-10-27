@@ -421,6 +421,10 @@ test("Zone activation requires privileged auth, verified contained boundary and 
       auth: { uid: ids.central, token: { uid: ids.central } },
       data: { zoneId: ids.zone, reason: "Invalid severity test", severity: "SEV-5" },
     }), "invalid-argument");
+    await expectCode(suspendServiceZoneForEmergency.run({
+      auth: { uid: ids.central, token: { uid: ids.central } },
+      data: { zoneId: ids.createdZone, reason: "A draft Zone must not be emergency-suspended.", severity: "SEV-2" },
+    }), "failed-precondition");
 
     await expectCode(activate(ids.central, ids.zone), "failed-precondition");
     const reactivation = await requestServiceZoneReactivation.run({
