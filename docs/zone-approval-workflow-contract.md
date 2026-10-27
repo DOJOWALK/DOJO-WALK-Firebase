@@ -1,6 +1,6 @@
 # DOJO WALK Zone Approval Workflow — implementation contract
 
-Status: implementation is present on PR #39. At commit `b491d0f97ab8077d003638697325b12ee21d7726`, the Functions build/Geometry/Callable Integration Tests and Firestore Security Rules/Workflow YAML Validation workflows passed. Keep the PR Draft and unmerged while final review continues; a passing CI run is not production approval.
+Status: implementation is present on PR #39. The PR description records the latest exact head SHA and its CI results; verify that SHA before relying on a validation result. Earlier CI passes on a prior commit are not evidence for a newer head. Keep the PR Draft and unmerged while final review continues; a passing CI run is not production approval.
 
 ## Authority
 - Central Admin (admin_users/{uid}.role == central_admin, active) owns Zone draft creation/editing, boundary preparation, submission, and operational follow-up.
