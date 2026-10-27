@@ -467,8 +467,8 @@ export const suspendServiceZoneForEmergency = onCall({ region: "asia-south1" }, 
     throw new HttpsError("invalid-argument", "An emergency suspension reason is required (max 2000 characters).");
   }
   const allowedSeverity = ["SEV-1", "SEV-2", "SEV-3", "SEV-4"];
-  if (severity !== undefined && !allowedSeverity.includes(severity)) {
-    throw new HttpsError("invalid-argument", "severity must be SEV-1, SEV-2, SEV-3 or SEV-4.");
+  if (typeof severity !== "string" || !allowedSeverity.includes(severity)) {
+    throw new HttpsError("invalid-argument", "A valid severity is required: SEV-1, SEV-2, SEV-3 or SEV-4.");
   }
   const actorRef = db.doc(`admin_users/${uid}`);
   const zoneRef = db.doc(`service_zones/${zoneId}`);
@@ -485,6 +485,9 @@ export const suspendServiceZoneForEmergency = onCall({ region: "asia-south1" }, 
     const data = zone.data()!;
     if (data.isServiceActive !== true && data.workflowStatus === "suspended") {
       return { ok: true, zoneId, workflowStatus: "suspended", alreadySuspended: true };
+    }
+    if (data.isServiceActive !== true || data.workflowStatus !== "active") {
+      throw new HttpsError("failed-precondition", "Only an active Zone can be emergency-suspended.");
     }
     const now = FieldValue.serverTimestamp();
     const auditRef = db.collection("service_zone_approval_audit").doc();
