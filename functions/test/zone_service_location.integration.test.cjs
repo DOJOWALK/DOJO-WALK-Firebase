@@ -407,6 +407,13 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     assert.equal(suspended.get("workflowStatus"), "suspended");
     assert.equal(suspended.get("approvedRevision"), undefined);
     assert.equal(suspended.get("emergencySuspensionSeverity"), "SEV-1");
+    const suspendedRevision = suspended.get("revision");
+    await expectCode(save(ids.central, {
+      stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Attempt to bypass reactivation",
+    }, ids.zone), "failed-precondition");
+    const stillSuspended = await zoneRef.get();
+    assert.equal(stillSuspended.get("workflowStatus"), "suspended");
+    assert.equal(stillSuspended.get("revision"), suspendedRevision);
     const notificationsBeforeReplay = await db.collection("founder_notifications")
       .where("zoneId", "==", ids.zone).where("notificationType", "==", "emergency_zone_suspension").get();
     const replaySuspension = await suspendServiceZoneForEmergency.run({
