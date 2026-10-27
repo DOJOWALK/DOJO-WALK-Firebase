@@ -46,6 +46,13 @@ service cloud.firestore {
         && get(adminPath()).data.get('role', '') == 'central_admin';
     }
 
+    function isActiveFounder() {
+      return signedIn()
+        && exists(adminPath())
+        && get(adminPath()).data.get('isActive', false) == true
+        && get(adminPath()).data.get('role', '') == 'founder';
+    }
+
     function validTimestamp(value) {
       return value is timestamp;
     }
@@ -1538,6 +1545,21 @@ service cloud.firestore {
         && validOptionalBool(request.resource.data, 'afterIsActive');
 
       allow update, delete: if false;
+    }
+
+    // Founder-only inbox access. Creation is server-only; Founder may read
+    // Founder-targeted notifications and mark an unread item as read.
+    match /founder_notifications/{notificationId} {
+      allow get: if isActiveFounder()
+        && resource.data.get('targetRole', '') == 'founder';
+      allow list: if isActiveFounder()
+        && resource.data.get('targetRole', '') == 'founder';
+      allow update: if isActiveFounder()
+        && resource.data.get('targetRole', '') == 'founder'
+        && resource.data.get('status', '') == 'unread'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && request.resource.data.status == 'read';
+      allow create, delete: if false;
     }
 
     // =====================================================
