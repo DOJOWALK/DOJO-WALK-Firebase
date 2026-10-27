@@ -433,6 +433,15 @@ test("Zone activation requires privileged auth, verified contained boundary and 
       data: { zoneId: ids.zone, decision: "reactivate", notes: "Reviewed safety evidence; reactivation approved." },
     });
     assert.equal(founderDecision.workflowStatus, "approved");
+    // Founder decisions are bound to the current submitted workflow state; replaying the same approval must fail.
+    await expectCode(decideServiceZoneFounderApproval.run({
+      auth: { uid: ids.founder, token: { uid: ids.founder } },
+      data: { zoneId: ids.zone, decision: "reactivate", notes: "Replay attempt must be rejected." },
+    }), "failed-precondition");
+    await expectCode(decideServiceZoneFounderApproval.run({
+      auth: { uid: ids.founder, token: { uid: ids.founder } },
+      data: { zoneId: ids.zone, decision: "approve", notes: "Wrong workflow decision must be rejected." },
+    }), "failed-precondition");
     const reactivated = await activate(ids.central, ids.zone);
     assert.equal(reactivated.ok, true);
     assert.equal((await zoneRef.get()).get("isServiceActive"), true);
