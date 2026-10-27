@@ -128,6 +128,9 @@ export const reviewServiceLocationBoundary = onCall({ region: "asia-south1" }, a
     if (!currentBoundary.exists || !currentLocation.exists) {
       throw new HttpsError("not-found", "Boundary or owning location was not found.");
     }
+    if (locationType === "zone" && currentLocation.get("workflowStatus") === "suspended") {
+      throw new HttpsError("failed-precondition", "An emergency-suspended Zone must complete the Founder-approved reactivation workflow before its boundary can be changed.");
+    }
     const boundary = asBoundary(currentBoundary.data());
     if (boundary.locationId !== locationId || boundary.locationType !== locationType ||
         currentBoundary.get("verificationStatus") !== "pending") {
