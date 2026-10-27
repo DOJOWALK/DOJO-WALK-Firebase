@@ -273,6 +273,25 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     await boundaryRef.update({ points: originalPoints });
   });
 
+  await t.test("Founder cannot decide a submission after its boundary changes", async () => {
+    await submitZone(ids.central, ids.reviewZone);
+    const boundaryRef = db.doc(`service_location_boundaries/${ids.reviewBoundary}`);
+    const before = await boundaryRef.get();
+    const originalPoints = before.get("points");
+    try {
+      await boundaryRef.update({ points: points(28.522, 77.322, 28.542, 77.342) });
+      await expectCode(decideServiceZoneFounderApproval.run({
+        auth: { uid: ids.founder, token: { uid: ids.founder } },
+        data: { zoneId: ids.reviewZone, decision: "approve", notes: "Stale submission must be rejected" },
+      }), "failed-precondition");
+      const unchanged = await db.doc(`service_zones/${ids.reviewZone}`).get();
+      assert.equal(unchanged.get("workflowStatus"), "submitted");
+      assert.equal(unchanged.get("approvalUid"), undefined);
+    } finally {
+      await boundaryRef.update({ points: originalPoints });
+    }
+  });
+
   await t.test("Zone revision changes invalidate an otherwise valid Founder approval", async () => {
     const zoneRef = db.doc(`service_zones/${ids.reviewZone}`);
     const before = await zoneRef.get();
