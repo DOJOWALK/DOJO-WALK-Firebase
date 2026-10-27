@@ -147,6 +147,15 @@ test('unauthenticated reads and writes to service locations are denied', async (
   }));
 });
 
+test('Central Admin can read the parent hierarchy needed to create Zones', async () => {
+  const db = env.authenticatedContext('central-active').firestore();
+
+  await assertSucceeds(getDoc(doc(db, 'service_states/up')));
+  await assertSucceeds(getDocs(collection(db, 'service_states')));
+  await assertSucceeds(getDocs(collection(db, 'service_districts')));
+  await assertSucceeds(getDocs(collection(db, 'service_cities')));
+});
+
 test('even an active super_admin must use the trusted callable to create a country', async () => {
   const db = env.authenticatedContext('super-active').firestore();
   await assertFails(setDoc(doc(db, 'service_countries/india-new'), {
