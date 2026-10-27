@@ -419,6 +419,9 @@ export const submitServiceZoneForFounderReview = onCall({ region: "asia-south1" 
     if (!z.exists) throw new HttpsError("not-found", "Zone was not found.");
     const data=z.data()!, boundaryId=data.verifiedBoundaryId;
     if (data.isServiceActive === true) throw new HttpsError("failed-precondition", "Deactivate the Zone before resubmission.");
+    if (data.workflowStatus === "suspended" || data.workflowStatus === "reactivation_submitted") {
+      throw new HttpsError("failed-precondition", "An emergency-suspended Zone must use the dedicated Founder-approved reactivation workflow.");
+    }
     if (data.workflowStatus === "submitted") throw new HttpsError("already-exists", "This Zone revision is already submitted.");
     if (typeof boundaryId !== "string") throw new HttpsError("failed-precondition", "A verified Zone boundary is required.");
     const bRef=db.doc(`service_location_boundaries/${boundaryId}`), bSnap=await tx.get(bRef), b=asBoundary(bSnap.data());
