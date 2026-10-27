@@ -792,6 +792,14 @@ test('service District reads are super_admin-only and direct client writes are d
 
 
 
+test('super_admin cannot grant Founder authority by changing any admin role', async () => {
+  const db = env.authenticatedContext('super-active').firestore();
+  await assertFails(updateDoc(doc(db, 'admin_users/super-active'), { role: 'founder' }));
+  await assertFails(updateDoc(doc(db, 'admin_users/central-active'), { role: 'founder' }));
+  await assertFails(updateDoc(doc(db, 'admin_users/founder-active'), { role: 'super_admin' }));
+  await assertSucceeds(updateDoc(doc(db, 'admin_users/central-active'), { isActive: false }));
+});
+
 test('service Zones are readable by active Zone workflow roles and never directly writable by clients', async () => {
   await env.withSecurityRulesDisabled(async (context) => {
     await setDoc(doc(context.firestore(), 'service_zones/zone-1'), {
