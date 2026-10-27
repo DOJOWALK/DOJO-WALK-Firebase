@@ -798,6 +798,17 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
       typeof isActive !== "boolean") {
     throw new HttpsError("invalid-argument", "Provide locationType, locationId and boolean isActive.");
   }
+  // Only Zones have service activation/deactivation status. Parent hierarchy
+  // records (Country/State/District/City) are references, and legacy Area/
+  // Locality status paths must not remain callable through this generic API.
+  // Zone activation uses activateServiceZone; deactivation still requires
+  // current Founder approval and is audited below.
+  if (locationType !== "zone") {
+    throw new HttpsError(
+      "failed-precondition",
+      "Only Zone has service activation/deactivation status. Use the Zone approval workflow.",
+    );
+  }
   const actorRef = db.doc(`admin_users/${uid}`);
   const actor = await actorRef.get();
   if (!actor.exists || actor.get("isActive") !== true ||
