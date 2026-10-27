@@ -7,7 +7,7 @@ import {
   assertSucceeds,
   assertFails,
 } from '@firebase/rules-unit-testing';
-import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, serverTimestamp, query, where } from 'firebase/firestore';
 
 const projectId = 'demo-dojo-rules-tests';
 let env;
@@ -33,6 +33,12 @@ beforeEach(async () => {
     });
     await setDoc(doc(db, 'admin_users/central-active'), {
       role: 'central_admin', isActive: true,
+    });
+    await setDoc(doc(db, 'admin_users/founder-active'), {
+      role: 'founder', isActive: true,
+    });
+    await setDoc(doc(db, 'admin_users/founder-inactive'), {
+      role: 'founder', isActive: false,
     });
     await setDoc(doc(db, 'admin_users/super-inactive'), {
       role: 'super_admin', isActive: false,
@@ -863,4 +869,40 @@ test('trusted service location import run state is inaccessible to direct client
   await assertFails(getDoc(doc(db, 'service_location_import_runs/server-created')));
   await assertFails(updateDoc(doc(db, 'service_location_import_runs/server-created'), { status: 'completed' }));
   await assertFails(deleteDoc(doc(db, 'service_location_import_runs/server-created')));
+});
+
+
+test('Founder inbox notifications are readable and acknowledgeable only by an active Founder', async () => {
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'founder_notifications/zone-emergency-1'), {
+      targetRole: 'founder',
+      notificationType: 'emergency_zone_suspension',
+      zoneId: 'zone-1',
+      title: 'Emergency Zone suspension',
+      message: 'Safety incident reported.',
+      status: 'unread',
+      createdAt: new Date('2026-10-27T00:00:00Z'),
+    });
+  });
+
+  const founderDb = env.authenticatedContext('founder-active').firestore();
+  const founderItem = doc(founderDb, 'founder_notifications/zone-emergency-1');
+  await assertSucceeds(getDoc(founderItem));
+  const inbox = await assertSucceeds(getDocs(query(
+    collection(founderDb, 'founder_notifications'),
+    where('targetRole', '==', 'founder'),
+  )));
+  assert.equal(inbox.size, 1);
+  await assertSucceeds(updateDoc(founderItem, { status: 'read' }));
+  await assertFails(updateDoc(founderItem, { message: 'Tamper attempt' }));
+
+  const centralDb = env.authenticatedContext('central-active').firestore();
+  await assertFails(getDoc(doc(centralDb, 'founder_notifications/zone-emergency-1')));
+  await assertFails(getDocs(query(
+    collection(centralDb, 'founder_notifications'),
+    where('targetRole', '==', 'founder'),
+  )));
+
+  const inactiveFounderDb = env.authenticatedContext('founder-inactive').firestore();
+  await assertFails(getDoc(doc(inactiveFounderDb, 'founder_notifications/zone-emergency-1')));
 });
