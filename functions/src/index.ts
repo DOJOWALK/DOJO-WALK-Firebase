@@ -1354,7 +1354,7 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
       // approvals cannot be mistaken for the newly edited Zone's state.
       for (const field of [
         "deactivationRequestedRevision", "deactivationRequestedBoundaryHash",
-        "deactivationRequestedBy", "deactivationRequestReason", "deactivationRequestedAt",
+        "deactivationRequestedBy", "deactivationRequestReason", "deactivationRequestNotes", "deactivationRequestedAt",
         "deactivationApprovedBy", "deactivationApprovedRevision",
         "deactivationApprovedBoundaryHash", "deactivationApprovedAt",
         "reactivationRequestedRevision", "reactivationRequestedBoundaryHash",
