@@ -549,23 +549,22 @@ test("Zone activation requires privileged auth, verified contained boundary and 
   });
 
 
-  await t.test("deactivates Zone through audited status callable", async () => {
-    const result = await status(ids.central, "zone", ids.zone, false);
-    assert.equal(result.ok, true);
-    assert.equal(result.alreadyInRequestedState, false);
+  await t.test("repeated Zone deactivation is idempotent and does not duplicate audit", async () => {
+    // The preceding test has already exercised the approved deactivation
+    // transition. This fixture is intentionally inactive here, so this test
+    // verifies a no-op replay rather than pretending a new transition occurs.
     assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), false);
     const auditBeforeReplay = await db.collection("service_location_status_audit")
       .where("locationId", "==", ids.zone).get();
     assert.ok(auditBeforeReplay.docs.length > 0);
 
-    // A repeated request is explicitly idempotent: no second audit and no
-    // implication that another deactivation action was performed.
     const replay = await status(ids.central, "zone", ids.zone, false);
     assert.equal(replay.ok, true);
     assert.equal(replay.alreadyInRequestedState, true);
     const auditAfterReplay = await db.collection("service_location_status_audit")
       .where("locationId", "==", ids.zone).get();
     assert.equal(auditAfterReplay.docs.length, auditBeforeReplay.docs.length);
+    assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), false);
   });
 
   await t.test("Central Admin can emergency-suspend a Zone with reason, audit and Founder inbox notification", async () => {
