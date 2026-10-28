@@ -315,6 +315,29 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     assert.equal(submitted.get("submittedRevision"), submittedRevision);
     assert.equal(typeof submitted.get("submittedBoundaryHash"), "string");
 
+    // Simulate stale metadata left by an earlier deactivation/reactivation
+    // request; editing must clear it along with the prior submission.
+    await zoneRef.update({
+      deactivationRequestedRevision: submittedRevision,
+      deactivationRequestedBoundaryHash: "stale-deactivation-hash",
+      deactivationRequestedBy: ids.central,
+      deactivationRequestReason: "stale request",
+      deactivationRequestedAt: new Date(),
+      deactivationApprovedBy: ids.founder,
+      deactivationApprovedRevision: submittedRevision,
+      deactivationApprovedBoundaryHash: "stale-approved-hash",
+      deactivationApprovedAt: new Date(),
+      reactivationRequestedRevision: submittedRevision,
+      reactivationRequestedBoundaryHash: "stale-reactivation-hash",
+      reactivationRequestedBy: ids.central,
+      reactivationRequestReason: "stale reactivation",
+      reactivationRequestedAt: new Date(),
+      founderDecision: "approve",
+      founderDecisionNotes: "old decision",
+      founderDecisionBy: ids.founder,
+      founderDecisionAt: new Date(),
+    });
+
     await save(ids.central, {
       stateId: ids.state, districtId: ids.district, cityId: ids.city,
       name: "Renamed Review Zone",
@@ -327,6 +350,18 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     assert.equal(edited.get("approvedRevision"), undefined);
     assert.equal(edited.get("approvedBoundaryHash"), undefined);
     assert.equal(edited.get("submittedBoundaryHash"), undefined);
+    for (const field of [
+      "submittedRevision", "submittedBy",
+      "deactivationRequestedRevision", "deactivationRequestedBoundaryHash",
+      "deactivationRequestedBy", "deactivationRequestReason", "deactivationRequestedAt",
+      "deactivationApprovedBy", "deactivationApprovedRevision",
+      "deactivationApprovedBoundaryHash", "deactivationApprovedAt",
+      "reactivationRequestedRevision", "reactivationRequestedBoundaryHash",
+      "reactivationRequestedBy", "reactivationRequestReason", "reactivationRequestedAt",
+      "founderDecision", "founderDecisionNotes", "founderDecisionBy", "founderDecisionAt",
+    ]) {
+      assert.equal(edited.get(field), undefined, `stale workflow field ${field} must be cleared`);
+    }
     await expectCode(decideServiceZoneFounderApproval.run({
       auth: { uid: ids.founder, token: { uid: ids.founder } },
       data: { zoneId: ids.reviewZone, decision: "approve", notes: "Old submission must no longer be approvable" },
