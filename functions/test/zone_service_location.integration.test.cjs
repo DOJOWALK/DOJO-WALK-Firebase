@@ -353,7 +353,7 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     for (const field of [
       "submittedRevision", "submittedBy",
       "deactivationRequestedRevision", "deactivationRequestedBoundaryHash",
-      "deactivationRequestedBy", "deactivationRequestReason", "deactivationRequestedAt",
+      "deactivationRequestedBy", "deactivationRequestReason", "deactivationRequestNotes", "deactivationRequestedAt",
       "deactivationApprovedBy", "deactivationApprovedRevision",
       "deactivationApprovedBoundaryHash", "deactivationApprovedAt",
       "reactivationRequestedRevision", "reactivationRequestedBoundaryHash",
