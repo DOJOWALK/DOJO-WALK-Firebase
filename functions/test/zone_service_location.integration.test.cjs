@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { randomUUID } = require("node:crypto");
+const { randomUUID, createHash } = require("node:crypto");
 
 if (!process.env.FIRESTORE_EMULATOR_HOST) {
   throw new Error("Zone callable tests require FIRESTORE_EMULATOR_HOST; refusing to run without the Firestore Emulator.");
@@ -379,8 +379,9 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     try {
       await boundaryRef.update({ points: points(28.521, 77.321, 28.541, 77.341) });
       const changed = await boundaryRef.get();
+      const changedHash = createHash("sha256").update(JSON.stringify(changed.get("points").map((point) => [point.latitude, point.longitude]))).digest("hex");
       assert.notEqual(
-        require("../lib/index").__testOnlyCanonicalBoundaryHash?.(changed.data()),
+        changedHash,
         (await db.doc(`service_zones/${ids.reviewZone}`).get()).get("approvedBoundaryHash"),
         "changed boundary must not retain the Founder-approved hash",
       );
