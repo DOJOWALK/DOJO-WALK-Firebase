@@ -205,7 +205,7 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     }
   });
 
-  await t.test("Zone boundary review verifies containment without requiring an active City", async () => {
+  await t.test("Zone boundary review validates Zone geometry without City containment gate", async () => {
     const cityRef = db.doc(`service_cities/${ids.city}`);
     await cityRef.update({ isServiceActive: false });
     try {
@@ -216,8 +216,11 @@ test("Zone activation requires privileged auth, verified contained boundary and 
       assert.equal(reviewed.get("verificationStatus"), "verified");
       assert.equal((await db.doc(`service_zones/${ids.reviewZone}`).get()).get("verifiedBoundaryId"), ids.reviewBoundary);
 
-      await expectCode(reviewBoundary(ids.central, ids.reviewOutsideBoundary), "failed-precondition");
-      assert.equal((await db.doc(`service_location_boundaries/${ids.reviewOutsideBoundary}`).get()).get("verificationStatus"), "pending");
+      // POL-038: City containment is reference/geographic validation, not a
+      // Zone verification or activation gate.
+      const outsideReview = await reviewBoundary(ids.central, ids.reviewOutsideBoundary);
+      assert.equal(outsideReview.ok, true);
+      assert.equal((await db.doc(`service_location_boundaries/${ids.reviewOutsideBoundary}`).get()).get("verificationStatus"), "verified");
     } finally {
       await cityRef.update({ isServiceActive: true });
     }
