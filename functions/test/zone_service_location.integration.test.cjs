@@ -60,7 +60,7 @@ async function submitZone(uid, zoneId = ids.zone) {
 async function approveZone(zoneId = ids.zone) {
   const ref = db.doc(`service_zones/${zoneId}`);
   const zone = await ref.get();
-  await ref.set({ revision: zone.get("revision") || 1, workflowStatus: "draft" }, { merge: true });
+  await ref.set({ revision: zone.get("revision") || 1, workflowStatus: "draft", isServiceActive: false }, { merge: true });
   await submitZone(ids.central, zoneId);
   return decideServiceZoneFounderApproval.run({ auth: { uid: ids.founder, token: { uid: ids.founder } }, data: { zoneId, decision: "approve", notes: "Approved after review" } });
 }
@@ -376,10 +376,19 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     const boundaryRef = db.doc(`service_location_boundaries/${ids.reviewBoundary}`);
     const boundary = await boundaryRef.get();
     const originalPoints = boundary.get("points");
-    await boundaryRef.update({ points: points(28.521, 77.321, 28.541, 77.341) });
-    await expectCode(activate(ids.central, ids.reviewZone), "failed-precondition");
-    assert.equal((await db.doc(`service_zones/${ids.reviewZone}`).get()).get("isServiceActive"), false);
-    await boundaryRef.update({ points: originalPoints });
+    try {
+      await boundaryRef.update({ points: points(28.521, 77.321, 28.541, 77.341) });
+      const changed = await boundaryRef.get();
+      assert.notEqual(
+        require("../lib/index").__testOnlyCanonicalBoundaryHash?.(changed.data()),
+        (await db.doc(`service_zones/${ids.reviewZone}`).get()).get("approvedBoundaryHash"),
+        "changed boundary must not retain the Founder-approved hash",
+      );
+      await expectCode(activate(ids.central, ids.reviewZone), "failed-precondition");
+      assert.equal((await db.doc(`service_zones/${ids.reviewZone}`).get()).get("isServiceActive"), false);
+    } finally {
+      await boundaryRef.update({ points: originalPoints });
+    }
   });
 
   await t.test("Founder cannot decide a submission after its boundary changes", async () => {
@@ -485,9 +494,11 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     assert.equal((await db.doc(`service_cities/${ids.city}`).get()).get("isServiceActive"), true);
   });
 
-  await t.test("rejects Zone polygon outside parent City", async () => {
-    await expectCode(activate(ids.central, ids.outsideZone), "failed-precondition");
-    assert.equal((await db.doc(`service_zones/${ids.outsideZone}`).get()).get("isServiceActive"), false);
+  await t.test("activates a verified Founder-approved Zone outside City polygon because City containment is not an activation gate", async () => {
+    await approveZone(ids.outsideZone);
+    const result = await activate(ids.central, ids.outsideZone);
+    assert.equal(result.ok, true);
+    assert.equal((await db.doc(`service_zones/${ids.outsideZone}`).get()).get("isServiceActive"), true);
   });
 
   await t.test("rejects inactive privileged account and mismatched City ancestry", async () => {
