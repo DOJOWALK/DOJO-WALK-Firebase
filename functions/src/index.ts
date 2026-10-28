@@ -1345,8 +1345,24 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
       locationData.approvedRevision = FieldValue.delete();
       locationData.approvedBoundaryHash = FieldValue.delete();
       locationData.submittedBoundaryHash = FieldValue.delete();
+      locationData.submittedRevision = FieldValue.delete();
+      locationData.submittedBy = FieldValue.delete();
       locationData.approvedAt = FieldValue.delete();
       locationData.submittedAt = FieldValue.delete();
+      // An edit starts a new draft revision. Remove all workflow-specific
+      // request/decision metadata so stale deactivation or reactivation
+      // approvals cannot be mistaken for the newly edited Zone's state.
+      for (const field of [
+        "deactivationRequestedRevision", "deactivationRequestedBoundaryHash",
+        "deactivationRequestedBy", "deactivationRequestReason", "deactivationRequestedAt",
+        "deactivationApprovedBy", "deactivationApprovedRevision",
+        "deactivationApprovedBoundaryHash", "deactivationApprovedAt",
+        "reactivationRequestedRevision", "reactivationRequestedBoundaryHash",
+        "reactivationRequestedBy", "reactivationRequestReason", "reactivationRequestedAt",
+        "founderDecision", "founderDecisionNotes", "founderDecisionBy", "founderDecisionAt",
+      ]) {
+        locationData[field] = FieldValue.delete();
+      }
     }
     if (targetSnap.exists) {
       // Do not permit client saves to change activation/boundary state.
