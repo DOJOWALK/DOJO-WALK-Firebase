@@ -740,11 +740,18 @@ export const activateServiceZone = onCall({ region: "asia-south1" }, async (requ
       throw new HttpsError("failed-precondition", "Parent City must exist and match the selected hierarchy.");
     }
     const currentZoneBoundaryData = requireVerifiedBoundary(currentZoneBoundary.data(), zoneBoundaryId, zoneId, "zone");
+    const currentBoundaryHash = canonicalBoundaryHash(currentZoneBoundaryData);
+    const approvedBoundaryHash = currentZone.get("approvedBoundaryHash");
+    const submittedBoundaryHash = currentZone.get("submittedBoundaryHash");
     if (!["approved", "active"].includes(String(currentZone.get("workflowStatus"))) ||
-        currentZone.get("approvalUid") === undefined ||
+        typeof currentZone.get("approvalUid") !== "string" ||
+        currentZone.get("approvalUid").length === 0 ||
         currentZone.get("approvedRevision") !== currentZone.get("revision") ||
-        currentZone.get("approvedBoundaryHash") !== canonicalBoundaryHash(currentZoneBoundaryData)) {
-      throw new HttpsError("failed-precondition", "Current Zone revision and boundary require Founder approval before activation.");
+        typeof approvedBoundaryHash !== "string" ||
+        approvedBoundaryHash !== currentBoundaryHash ||
+        typeof submittedBoundaryHash !== "string" ||
+        submittedBoundaryHash !== currentBoundaryHash) {
+      throw new HttpsError("failed-precondition", "Current Zone revision and boundary require current Founder approval before activation.");
     }
     if (JSON.stringify(currentZoneBoundaryData.points) !== JSON.stringify(zoneBoundary.points)) {
       throw new HttpsError("aborted", "Zone boundary changed during validation. Retry.");
