@@ -847,14 +847,16 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
     zone: null,
   };
 
-  await db.runTransaction(async (tx) => {
+  const transactionResult = await db.runTransaction(async (tx) => {
     const [currentActor, target] = await Promise.all([tx.get(actorRef), tx.get(targetRef)]);
     if (!currentActor.exists || currentActor.get("isActive") !== true ||
         (locationType === "zone" && !isActive ? currentActor.get("role") !== "central_admin" : currentActor.get("role") !== "super_admin")) {
       throw new HttpsError("permission-denied", "Admin access changed during validation.");
     }
     if (!target.exists) throw new HttpsError("not-found", "Service location was not found.");
-    if (target.get(statusField) === isActive) return;
+    if (target.get(statusField) === isActive) {
+      return { alreadyInRequestedState: true };
+    }
     if (locationType === "zone" && !isActive) {
       const revision=Number(target.get("revision")??1), boundaryId=target.get("verifiedBoundaryId");
       if (target.get("workflowStatus")!=="deactivation_approved" ||
@@ -1057,8 +1059,9 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
       result: isActive ? "activated" : "deactivated",
       createdAt: FieldValue.serverTimestamp(),
     });
+    return { alreadyInRequestedState: false };
   });
-  return { ok: true, locationId, locationType, isActive };
+  return { ok: true, locationId, locationType, isActive, ...transactionResult };
 });
 
 
