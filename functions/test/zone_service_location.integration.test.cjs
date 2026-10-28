@@ -532,10 +532,20 @@ test("Zone activation requires privileged auth, verified contained boundary and 
   await t.test("deactivates Zone through audited status callable", async () => {
     const result = await status(ids.central, "zone", ids.zone, false);
     assert.equal(result.ok, true);
+    assert.equal(result.alreadyInRequestedState, false);
     assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), false);
-    const audit = await db.collection("service_location_status_audit")
+    const auditBeforeReplay = await db.collection("service_location_status_audit")
       .where("locationId", "==", ids.zone).get();
-    assert.ok(audit.docs.length > 0);
+    assert.ok(auditBeforeReplay.docs.length > 0);
+
+    // A repeated request is explicitly idempotent: no second audit and no
+    // implication that another deactivation action was performed.
+    const replay = await status(ids.central, "zone", ids.zone, false);
+    assert.equal(replay.ok, true);
+    assert.equal(replay.alreadyInRequestedState, true);
+    const auditAfterReplay = await db.collection("service_location_status_audit")
+      .where("locationId", "==", ids.zone).get();
+    assert.equal(auditAfterReplay.docs.length, auditBeforeReplay.docs.length);
   });
 
   await t.test("Central Admin can emergency-suspend a Zone with reason, audit and Founder inbox notification", async () => {
