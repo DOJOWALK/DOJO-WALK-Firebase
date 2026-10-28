@@ -305,6 +305,33 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     await expectCode(decision(), "failed-precondition");
   });
 
+  await t.test("editing a submitted Zone invalidates the pending Founder decision and advances revision", async () => {
+    await submitZone(ids.central, ids.reviewZone);
+    const zoneRef = db.doc(`service_zones/${ids.reviewZone}`);
+    const submitted = await zoneRef.get();
+    const submittedRevision = submitted.get("revision");
+    assert.equal(submitted.get("workflowStatus"), "submitted");
+    assert.equal(submitted.get("submittedRevision"), submittedRevision);
+    assert.equal(typeof submitted.get("submittedBoundaryHash"), "string");
+
+    await save(ids.central, {
+      stateId: ids.state, districtId: ids.district, cityId: ids.city,
+      name: "Renamed Review Zone",
+    }, ids.reviewZone);
+
+    const edited = await zoneRef.get();
+    assert.equal(edited.get("workflowStatus"), "draft");
+    assert.equal(edited.get("revision"), submittedRevision + 1);
+    assert.equal(edited.get("approvalUid"), undefined);
+    assert.equal(edited.get("approvedRevision"), undefined);
+    assert.equal(edited.get("approvedBoundaryHash"), undefined);
+    assert.equal(edited.get("submittedBoundaryHash"), undefined);
+    await expectCode(decideServiceZoneFounderApproval.run({
+      auth: { uid: ids.founder, token: { uid: ids.founder } },
+      data: { zoneId: ids.reviewZone, decision: "approve", notes: "Old submission must no longer be approvable" },
+    }), "failed-precondition");
+  });
+
   await t.test("stale boundary hash invalidates Founder approval", async () => {
     await approveZone(ids.reviewZone);
     const boundaryRef = db.doc(`service_location_boundaries/${ids.reviewBoundary}`);
