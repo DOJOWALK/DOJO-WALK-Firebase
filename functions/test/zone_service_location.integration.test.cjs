@@ -418,18 +418,20 @@ test("Zone activation requires privileged auth, verified contained boundary and 
   });
 
   await t.test("activates a verified Zone without parent service-active flags and writes activation audit", async () => {
+    const cityRef = db.doc(`service_cities/${ids.city}`);
     await Promise.all([
       db.doc(`service_states/${ids.state}`).update({ isActive: false }),
       db.doc(`service_districts/${ids.district}`).update({ isServiceActive: false }),
-      db.doc(`service_cities/${ids.city}`).update({ isServiceActive: false }),
+      cityRef.update({ isServiceActive: false, verifiedBoundaryId: null }),
     ]);
     await approveZone(ids.zone);
+    // Missing City boundary must not block a verified, Founder-approved Zone.
     const result = await activate(ids.central);
     assert.equal(result.ok, true);
     await Promise.all([
       db.doc(`service_states/${ids.state}`).update({ isActive: true }),
       db.doc(`service_districts/${ids.district}`).update({ isServiceActive: true }),
-      db.doc(`service_cities/${ids.city}`).update({ isServiceActive: true }),
+      cityRef.update({ isServiceActive: true, verifiedBoundaryId: ids.cityBoundary }),
     ]);
     assert.equal(result.locationType, "zone");
     assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), true);
