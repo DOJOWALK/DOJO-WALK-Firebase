@@ -121,7 +121,8 @@ test("Zone activation requires privileged auth, verified contained boundary and 
       verifiedBoundary(ids.zone, "zone", points(28.52, 77.32, 28.54, 77.34)),
     ),
     db.doc(`service_zones/${ids.reviewZone}`).set({
-      stateId: ids.state, districtId: ids.district, cityId: ids.city, isServiceActive: false,
+      stateId: ids.state, districtId: ids.district, cityId: ids.city,
+      name: "Review Zone", isServiceActive: false,
     }),
     db.doc(`service_zones/${ids.rejectedZone}`).set({
       stateId: ids.state, districtId: ids.district, cityId: ids.city, isServiceActive: false, verifiedBoundaryId: ids.rejectedBoundary,
