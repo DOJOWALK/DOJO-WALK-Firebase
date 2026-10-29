@@ -374,7 +374,8 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     await Promise.all([
       db.doc(`service_states/${ids.state}`).update({ isActive: true }),
       db.doc(`service_districts/${ids.district}`).update({ isServiceActive: true }),
-      db.doc(`service_cities/${ids.city}`).update({ isServiceActive: true }),
+      // Restore the City reference fixture only after proving activation does not need its polygon.
+      db.doc(`service_cities/${ids.city}`).update({ isServiceActive: true, verifiedBoundaryId: ids.cityBoundary }),
     ]);
     assert.equal(result.locationType, "zone");
     assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), true);
