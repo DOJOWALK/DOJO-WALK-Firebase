@@ -154,24 +154,28 @@ export const reviewServiceLocationBoundary = onCall({ region: "asia-south1" }, a
           if (typeof cityId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(cityId)) {
             throw new Error("Area or Zone must reference a valid parent City.");
           }
-          const cityRef = db.doc(`service_cities/${cityId}`);
-          const citySnapshot = await tx.get(cityRef);
+          const citySnapshot = await tx.get(db.doc(`service_cities/${cityId}`));
           if (!citySnapshot.exists) {
             throw new Error("Parent City must exist before Area/Zone verification.");
           }
-          const cityBoundaryId = citySnapshot.get("verifiedBoundaryId");
-          if (typeof cityBoundaryId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(cityBoundaryId)) {
-            throw new Error("Parent City must reference a verified boundary.");
+          // Zone polygons are independently verified and are not dependent on
+          // a City polygon. Legacy Area review retains its historical
+          // City-containment check; Area is not an activation path.
+          if (locationType === "area") {
+            const cityBoundaryId = citySnapshot.get("verifiedBoundaryId");
+            if (typeof cityBoundaryId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(cityBoundaryId)) {
+              throw new Error("Parent City must reference a verified boundary.");
+            }
+            const cityBoundarySnapshot = await tx.get(db.doc(`service_location_boundaries/${cityBoundaryId}`));
+            parentBoundary = asBoundary(cityBoundarySnapshot.data());
+            if (!cityBoundarySnapshot.exists ||
+                parentBoundary.locationId !== cityId ||
+                parentBoundary.locationType !== "city" ||
+                parentBoundary.verificationStatus !== "verified") {
+              throw new Error("Parent City boundary is not verified for that City.");
+            }
+            assertAreaCoveredByCity(boundary, parentBoundary);
           }
-          const cityBoundarySnapshot = await tx.get(db.doc(`service_location_boundaries/${cityBoundaryId}`));
-          parentBoundary = asBoundary(cityBoundarySnapshot.data());
-          if (!cityBoundarySnapshot.exists ||
-              parentBoundary.locationId !== cityId ||
-              parentBoundary.locationType !== "city" ||
-              parentBoundary.verificationStatus !== "verified") {
-            throw new Error("Parent City boundary is not verified for that City.");
-          }
-          assertAreaCoveredByCity(boundary, parentBoundary);
         }
       } catch (error) {
         throw new HttpsError("failed-precondition", error instanceof Error ? error.message : "Boundary geometry validation failed.");
@@ -556,26 +560,14 @@ export const activateServiceZone = onCall({ region: "asia-south1" }, async (requ
   const zoneBoundaryRef = db.doc(`service_location_boundaries/${zoneBoundaryId}`);
   const city = await cityRef.get();
   if (!city.exists) throw new HttpsError("failed-precondition", "Parent City was not found.");
-  const cityBoundaryId = city.get("verifiedBoundaryId");
-  if (typeof cityBoundaryId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(cityBoundaryId)) {
-    throw new HttpsError("failed-precondition", "Parent City must have a verified boundary.");
-  }
-  const cityBoundaryRef = db.doc(`service_location_boundaries/${cityBoundaryId}`);
   const initialZoneBoundary = await zoneBoundaryRef.get();
-  const initialCityBoundary = await cityBoundaryRef.get();
-  const zoneBoundary = requireVerifiedBoundary(initialZoneBoundary.data(), zoneBoundaryId, zoneId, "zone");
-  const cityBoundary = requireVerifiedBoundary(initialCityBoundary.data(), cityBoundaryId, cityId, "city");
-  try {
-    assertAreaCoveredByCity(zoneBoundary, cityBoundary);
-  } catch (error) {
-    throw new HttpsError("failed-precondition", error instanceof Error ? error.message : "Zone must fit inside its parent City.");
-  }
+  requireVerifiedBoundary(initialZoneBoundary.data(), zoneBoundaryId, zoneId, "zone");
 
   await db.runTransaction(async (tx) => {
-    const [currentActor, currentZone, currentCountry, currentState, currentDistrict, currentCity, currentZoneBoundary, currentCityBoundary] =
+    const [currentActor, currentZone, currentCountry, currentState, currentDistrict, currentCity, currentZoneBoundary] =
       await Promise.all([
         tx.get(actorRef), tx.get(zoneRef), tx.get(countryRef), tx.get(stateRef), tx.get(districtRef), tx.get(cityRef),
-        tx.get(zoneBoundaryRef), tx.get(cityBoundaryRef),
+        tx.get(zoneBoundaryRef),
       ]);
     if (!currentActor.exists || currentActor.get("isActive") !== true || currentActor.get("role") !== "central_admin") {
       throw new HttpsError("permission-denied", "Central Admin access changed during validation.");
@@ -589,25 +581,18 @@ export const activateServiceZone = onCall({ region: "asia-south1" }, async (requ
     if (!currentState.exists || currentState.get("countryId") !== countryId) throw new HttpsError("failed-precondition", "Parent State must exist and belong to its Country.");
     if (!currentDistrict.exists || currentDistrict.get("stateId") !== stateId || currentDistrict.get("countryId") !== countryId) throw new HttpsError("failed-precondition", "Parent District must exist and belong to the selected Country/State.");
     if (!currentCity.exists || currentCity.get("countryId") !== countryId || currentCity.get("stateId") !== stateId ||
-        currentCity.get("districtId") !== districtId || currentCity.get("verifiedBoundaryId") !== cityBoundaryId) {
-      throw new HttpsError("failed-precondition", "Parent City must exist, match the selected hierarchy and keep its verified boundary.");
+        currentCity.get("districtId") !== districtId) {
+      throw new HttpsError("failed-precondition", "Parent City must exist and match the selected hierarchy.");
     }
     const currentZoneBoundaryData = requireVerifiedBoundary(currentZoneBoundary.data(), zoneBoundaryId, zoneId, "zone");
-    const currentCityBoundaryData = requireVerifiedBoundary(currentCityBoundary.data(), cityBoundaryId, cityId, "city");
     if (!["approved", "active"].includes(String(currentZone.get("workflowStatus"))) ||
         currentZone.get("approvalUid") === undefined ||
         currentZone.get("approvedRevision") !== currentZone.get("revision") ||
         currentZone.get("approvedBoundaryHash") !== canonicalBoundaryHash(currentZoneBoundaryData)) {
       throw new HttpsError("failed-precondition", "Current Zone revision and boundary require Founder approval before activation.");
     }
-    if (JSON.stringify(currentZoneBoundaryData.points) !== JSON.stringify(zoneBoundary.points) ||
-        JSON.stringify(currentCityBoundaryData.points) !== JSON.stringify(cityBoundary.points)) {
-      throw new HttpsError("aborted", "Zone or City boundary changed during validation. Retry.");
-    }
-    try {
-      assertAreaCoveredByCity(currentZoneBoundaryData, currentCityBoundaryData);
-    } catch {
-      throw new HttpsError("failed-precondition", "Zone is not fully within the current parent City boundary.");
+    if (JSON.stringify(currentZoneBoundaryData.points) !== JSON.stringify(initialZoneBoundary.get("points"))) {
+      throw new HttpsError("aborted", "Zone boundary changed during validation. Retry.");
     }
     if (currentZone.get("isServiceActive") === true) return;
     const auditRef = db.collection("service_location_activation_audit").doc();
