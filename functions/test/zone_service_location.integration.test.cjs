@@ -429,8 +429,16 @@ test("Zone activation requires privileged auth, its verified boundary and valid 
     assert.equal((await db.doc(`service_cities/${ids.city}`).get()).get("isServiceActive"), true);
   });
 
-  await t.test("rejects Zone polygon outside parent City", async () => {
-    await expectCode(activate(ids.central, ids.outsideZone), "failed-precondition");
+  await t.test("Zone activation relies on its own verified polygon, not City polygon containment", async () => {
+    // This valid Zone polygon lies outside the synthetic City polygon. The
+    // adopted policy requires a valid parent City record and independently
+    // verified Zone boundary; it does not require a City boundary polygon.
+    await approveZone(ids.outsideZone);
+    const result = await activate(ids.central, ids.outsideZone);
+    assert.equal(result.ok, true);
+    assert.equal(result.locationType, "zone");
+    assert.equal((await db.doc(`service_zones/${ids.outsideZone}`).get()).get("isServiceActive"), true);
+    await status(ids.central, "zone", ids.outsideZone, false);
     assert.equal((await db.doc(`service_zones/${ids.outsideZone}`).get()).get("isServiceActive"), false);
   });
 
