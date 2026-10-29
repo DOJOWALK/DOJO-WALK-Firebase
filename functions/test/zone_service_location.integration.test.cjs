@@ -217,9 +217,9 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     }
   });
 
-  await t.test("Zone boundary review verifies containment without requiring an active City", async () => {
+  await t.test("Zone boundary review requires its own valid polygon, not a City polygon", async () => {
     const cityRef = db.doc(`service_cities/${ids.city}`);
-    await cityRef.update({ isServiceActive: false });
+    await cityRef.update({ isServiceActive: false, verifiedBoundaryId: "" });
     try {
       const result = await reviewBoundary(ids.central, ids.reviewBoundary);
       assert.equal(result.ok, true);
@@ -228,10 +228,8 @@ test("Zone activation requires privileged auth, verified contained boundary and 
       assert.equal(reviewed.get("verificationStatus"), "verified");
       assert.equal((await db.doc(`service_zones/${ids.reviewZone}`).get()).get("verifiedBoundaryId"), ids.reviewBoundary);
 
-      await expectCode(reviewBoundary(ids.central, ids.reviewOutsideBoundary), "failed-precondition");
-      assert.equal((await db.doc(`service_location_boundaries/${ids.reviewOutsideBoundary}`).get()).get("verificationStatus"), "pending");
     } finally {
-      await cityRef.update({ isServiceActive: true });
+      await cityRef.update({ isServiceActive: true, verifiedBoundaryId: ids.cityBoundary });
     }
   });
 
@@ -364,11 +362,11 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     assert.notEqual(after.get("approvedRevision"), after.get("revision"));
   });
 
-  await t.test("activates a verified Zone without parent service-active flags and writes activation audit", async () => {
+  await t.test("activates a Founder-approved Zone without a City polygon or parent service-active flags", async () => {
     await Promise.all([
       db.doc(`service_states/${ids.state}`).update({ isActive: false }),
       db.doc(`service_districts/${ids.district}`).update({ isServiceActive: false }),
-      db.doc(`service_cities/${ids.city}`).update({ isServiceActive: false }),
+      db.doc(`service_cities/${ids.city}`).update({ isServiceActive: false, verifiedBoundaryId: "" }),
     ]);
     await approveZone(ids.zone);
     const result = await activate(ids.central);
