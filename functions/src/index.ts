@@ -614,10 +614,10 @@ export const activateServiceZone = onCall({ region: "asia-south1" }, async (requ
 
 
 /**
- * Server-authoritative status changes for Country, State, City, Area and Locality.
- * City/Area activation remains geometry-validated by activateServiceLocation.
- * Every descendant activation writes all ancestor guard fields in the same
- * transaction, serializing it against concurrent ancestor deactivation.
+ * Server-authoritative status changes for reference hierarchy records and Zone deactivation.
+ * Zone activation must use activateServiceZone, which verifies the Zone polygon,
+ * exact Founder-approved revision/hash, ancestry, and writes an activation audit.
+ * Legacy City/Area activation is blocked by activateServiceLocation.
  */
 export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in is required.");
