@@ -90,7 +90,7 @@ test("legacy City/Area activation callable is disabled; only Zone workflow may a
   }), "invalid-argument");
 });
 
-test("Zone activation requires privileged auth, verified contained boundary and active ancestry; deactivation is audited", async (t) => {
+test("Zone activation requires privileged auth, its verified boundary and valid ancestry; deactivation is audited", async (t) => {
   const paths = [
     `admin_users/${ids.admin}`, `admin_users/${ids.central}`, `admin_users/${ids.founder}`, `admin_users/${ids.support}`, `admin_users/${ids.basicAdmin}`, `admin_users/${ids.inactiveAdmin}`, `admin_users/${ids.unknownRole}`,
     `service_countries/${ids.country}`, `service_states/${ids.state}`,
