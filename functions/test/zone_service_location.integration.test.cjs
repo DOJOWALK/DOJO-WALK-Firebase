@@ -408,6 +408,36 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     }
   });
 
+  await t.test("Founder approval is invalidated when boundary identity or verification provenance changes", async () => {
+    await approveZone(ids.reviewZone);
+    const zoneRef = db.doc(`service_zones/${ids.reviewZone}`);
+    const originalZone = await zoneRef.get();
+    const originalBoundaryId = originalZone.get("verifiedBoundaryId");
+    const originalBoundaryRef = db.doc(`service_location_boundaries/${originalBoundaryId}`);
+    const originalBoundary = await originalBoundaryRef.get();
+    const alternateBoundaryId = `${ids.reviewBoundary}-identity-copy`;
+    const alternateBoundaryRef = db.doc(`service_location_boundaries/${alternateBoundaryId}`);
+    try {
+      // Same boundary content under a different document identity must not
+      // inherit the Founder approval bound to the original boundary document.
+      await alternateBoundaryRef.set(originalBoundary.data());
+      await zoneRef.update({ verifiedBoundaryId: alternateBoundaryId });
+      await expectCode(activate(ids.central, ids.reviewZone), "failed-precondition");
+      await zoneRef.update({ verifiedBoundaryId: originalBoundaryId });
+
+      // Verification provenance is part of the approval fingerprint too.
+      const originalSourceReference = originalBoundary.get("sourceReference");
+      await originalBoundaryRef.update({ sourceReference: `${originalSourceReference}-changed` });
+      await expectCode(activate(ids.central, ids.reviewZone), "failed-precondition");
+      await originalBoundaryRef.update({ sourceReference: originalSourceReference });
+    } finally {
+      await zoneRef.update({ verifiedBoundaryId: originalBoundaryId });
+      await alternateBoundaryRef.delete();
+      await originalBoundaryRef.update({ sourceReference: originalBoundary.get("sourceReference") });
+    }
+    assert.equal((await zoneRef.get()).get("isServiceActive"), false);
+  });
+
   await t.test("Founder cannot decide a submission after its boundary changes", async () => {
     await submitZone(ids.central, ids.reviewZone);
     const boundaryRef = db.doc(`service_location_boundaries/${ids.reviewBoundary}`);
