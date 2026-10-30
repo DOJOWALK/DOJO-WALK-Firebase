@@ -614,19 +614,23 @@ export const activateServiceZone = onCall({ region: "asia-south1" }, async (requ
 
 
 /**
- * Server-authoritative status changes for reference hierarchy records and Zone deactivation.
+ * Server-authoritative Zone deactivation only.
  * Zone activation must use activateServiceZone, which verifies the Zone polygon,
  * exact Founder-approved revision/hash, ancestry, and writes an activation audit.
- * Legacy City/Area activation is blocked by activateServiceLocation.
+ * Parent hierarchy and legacy Area/Locality status changes are rejected.
  */
 export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in is required.");
   const uid = request.auth.uid;
   const { locationType, locationId, isActive } = request.data ?? {};
-  if (locationType !== "zone" ||
+  const validTypes = ["country", "state", "district", "city", "area", "locality", "zone"];
+  if (!validTypes.includes(locationType) ||
       typeof locationId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(locationId) ||
       typeof isActive !== "boolean") {
-    throw new HttpsError("invalid-argument", "Provide locationType='zone', a valid locationId and boolean isActive.");
+    throw new HttpsError("invalid-argument", "Provide a valid locationType, locationId and boolean isActive.");
+  }
+  if (locationType !== "zone") {
+    throw new HttpsError("failed-precondition", "Only Zone has service activation/deactivation status.");
   }
   // Zone activation is exclusively handled by activateServiceZone. This
   // callable is retained only for Founder-approved Zone deactivation.
