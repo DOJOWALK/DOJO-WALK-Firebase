@@ -1,117 +1,175 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { randomUUID } = require("node:crypto");
-const { initializeApp, deleteApp } = require("firebase/app");
-const {
-  getAuth,
-  connectAuthEmulator,
-  createUserWithEmailAndPassword,
-  deleteUser,
-} = require("firebase/auth");
+const { initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
-require("../lib/index"); // initialize Admin SDK against the emulator project
+const { serviceLocationNameIndexId } = require("../lib/location_name_index");
 
-const projectId =
-  process.env.GCLOUD_PROJECT ||
-  process.env.GOOGLE_CLOUD_PROJECT ||
-  "demo-dojo-rules-tests";
+// This test intentionally exercises the real callable HTTP endpoint. It must
+// never run against a deployed Firebase project.
+if (!process.env.FIRESTORE_EMULATOR_HOST) {
+  throw new Error("Add Location callable integration test requires Firebase Emulators; refusing to run outside emulator tests.");
+}
+
+const projectId = process.env.GCLOUD_PROJECT || "demo-dojo-rules-tests";
+const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST || "127.0.0.1:9099";
 const functionsHost = process.env.FUNCTIONS_EMULATOR_HOST || "127.0.0.1:5001";
-const authHost = process.env.AUTH_EMULATOR_HOST || "127.0.0.1:9099";
+const callableUrl = `http://${functionsHost}/${projectId}/asia-south1/saveServiceLocationWithNameIndex`;
+initializeApp({ projectId });
 const db = getFirestore();
 
-function callableUrl() {
-  return `http://${functionsHost}/${projectId}/asia-south1/saveServiceLocationWithNameIndex`;
-}
-
-async function callSave(token, payload) {
-  const headers = { "content-type": "application/json" };
-  if (token) headers.authorization = `Bearer ${token}`;
-  const response = await fetch(callableUrl(), {
+async function callSave(idToken, data) {
+  return fetch(callableUrl, {
     method: "POST",
-    headers,
-    body: JSON.stringify({
-      data: { locationType: "state", payload },
-    }),
+    headers: {
+      "Content-Type": "application/json",
+      ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+    },
+    body: JSON.stringify({ data }),
   });
+}
+
+async function createEmulatorUser() {
+  const suffix = randomUUID().replace(/-/g, "").slice(0, 16);
+  const response = await fetch(
+    `http://${authHost}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=fake-api-key`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: `add-location-it-${suffix}@example.test`,
+        password: `Test-${suffix}-Aa9!`,
+        returnSecureToken: true,
+      }),
+    },
+  );
   const body = await response.json();
-  return { response, body };
+  assert.equal(response.ok, true, `Auth Emulator sign-up failed: ${JSON.stringify(body)}`);
+  assert.equal(typeof body.localId, "string");
+  assert.equal(typeof body.idToken, "string");
+  return body;
 }
 
-async function createEmulatorUser(suffix) {
-  const app = initializeApp(
-    { projectId, apiKey: "fake-api-key" },
-    `service-location-callable-${suffix}`,
-  );
-  const auth = getAuth(app);
-  connectAuthEmulator(auth, `http://${authHost}`, { disableWarnings: true });
-  const credential = await createUserWithEmailAndPassword(
-    auth,
-    `service-location-${suffix}@example.test`,
-    `T3st-${suffix}!`,
-  );
-  return { app, auth, user: credential.user, token: await credential.user.getIdToken() };
-}
-
-test("saveServiceLocationWithNameIndex enforces admin auth, persists inactive state, and rejects duplicate", async (t) => {
-  const suffix = randomUUID().replace(/-/g, "");
-  const countryId = `e2e_country_${suffix}`;
-  const admin = await createEmulatorUser(suffix);
-  const adminRef = db.doc(`admin_users/${admin.user.uid}`);
-  const countryRef = db.doc(`service_countries/${countryId}`);
-  const createdLocationIds = [];
+test("Add Location callable: authenticated save, Firestore read-back, and duplicate rejection", async (t) => {
+  const suffix = randomUUID().replace(/-/g, "").slice(0, 12);
+  const countryId = `it-country-${suffix}`;
+  const stateId = `it-state-${suffix}`;
+  const duplicateStateId = `it-state-duplicate-${suffix}`;
+  const countryName = `Add Location Country ${suffix}`;
+  const stateName = `Add Location State ${suffix}`;
+  const countryIndexId = serviceLocationNameIndexId("service_countries", [], countryName);
+  const stateIndexId = serviceLocationNameIndexId("service_states", [countryId], stateName);
+  let uid;
 
   t.after(async () => {
-    for (const id of createdLocationIds) {
-      await db.doc(`service_states/${id}`).delete().catch(() => {});
-      const indexes = await db.collection("service_location_name_indexes")
-        .where("documentId", "==", id).get().catch(() => null);
-      if (indexes) {
-        for (const doc of indexes.docs) await doc.ref.delete().catch(() => {});
-      }
-    }
-    await adminRef.delete().catch(() => {});
-    await countryRef.delete().catch(() => {});
-    await deleteUser(admin.user).catch(() => {});
-    await deleteApp(admin.app).catch(() => {});
+    const paths = [
+      `service_countries/${countryId}`,
+      `service_states/${stateId}`,
+      `service_states/${duplicateStateId}`,
+      `service_location_name_indexes/${countryIndexId}`,
+      `service_location_name_indexes/${stateIndexId}`,
+    ];
+    if (uid) paths.push(`admin_users/${uid}`);
+    await Promise.all(paths.map((path) => db.doc(path).delete().catch(() => undefined)));
+    // The Auth Emulator is ephemeral for this workflow; its user disappears
+    // when the emulator process exits.
   });
 
-  await countryRef.set({ name: "India", code: "IN", isActive: true });
+  const unauthenticated = await callSave(null, {
+    locationType: "country",
+    locationId: countryId,
+    payload: { name: countryName, code: "IT" },
+  });
+  assert.equal(unauthenticated.status, 401);
+  assert.equal((await unauthenticated.json()).error?.status, "UNAUTHENTICATED");
+
+  const user = await createEmulatorUser();
+  uid = user.localId;
+  // This seed uses the Admin SDK against the Firestore Emulator only. The
+  // callable still receives and verifies a real Auth Emulator ID token.
+  const adminRef = db.doc(`admin_users/${uid}`);
   await adminRef.set({ role: "super_admin", isActive: true });
 
-  const stateName = `E2E State ${suffix}`;
-  const payload = { countryId, name: stateName };
-
-  const unauthenticated = await callSave(null, payload);
-  assert.equal(unauthenticated.response.ok, false, "unauthenticated calls must be rejected");
-
-  const saved = await callSave(admin.token, payload);
-  assert.equal(saved.response.ok, true, JSON.stringify(saved.body));
-  const result = saved.body.data ?? saved.body.result;
-  assert.equal(result?.ok, true);
-  const locationId = result.locationId;
-  assert.ok(locationId, "callable should return the persisted location ID");
-  createdLocationIds.push(locationId);
-
-  const stored = await db.doc(`service_states/${locationId}`).get();
-  assert.equal(stored.exists, true, "saved state must be readable from emulator Firestore");
-  assert.equal(stored.get("name"), stateName);
-  assert.equal(stored.get("countryId"), countryId);
-  assert.equal(stored.get("isActive"), false, "new state must remain inactive");
-
-  const duplicate = await callSave(admin.token, payload);
-  assert.equal(duplicate.response.ok, false, "duplicate names under the same parent must be rejected");
-
-  await adminRef.delete();
-  const missingAdmin = await callSave(admin.token, {
-    countryId,
-    name: `Missing Admin ${suffix}`,
-  });
-  assert.equal(missingAdmin.response.ok, false, "a signed-in user without an admin record must be rejected");
-
+  // Explicit negative authorization cases: inactive admins and active
+  // non-admin roles must not be able to create service locations.
   await adminRef.set({ role: "super_admin", isActive: false });
-  const inactiveAdmin = await callSave(admin.token, {
-    countryId,
-    name: `Inactive Admin ${suffix}`,
+  const inactiveAdminResponse = await callSave(user.idToken, {
+    locationType: "country",
+    locationId: countryId,
+    payload: { name: countryName, code: "IT" },
   });
-  assert.equal(inactiveAdmin.response.ok, false, "inactive admins must be rejected");
+  const inactiveAdminBody = await inactiveAdminResponse.json();
+  assert.equal(inactiveAdminBody.error?.status, "PERMISSION_DENIED", JSON.stringify(inactiveAdminBody));
+  assert.equal((await db.doc(`service_countries/${countryId}`).get()).exists, false,
+    "Inactive admin must not create a Country");
+
+  await adminRef.set({ role: "customer", isActive: true });
+  const wrongRoleResponse = await callSave(user.idToken, {
+    locationType: "country",
+    locationId: countryId,
+    payload: { name: countryName, code: "IT" },
+  });
+  const wrongRoleBody = await wrongRoleResponse.json();
+  assert.equal(wrongRoleBody.error?.status, "PERMISSION_DENIED", JSON.stringify(wrongRoleBody));
+  assert.equal((await db.doc(`service_countries/${countryId}`).get()).exists, false,
+    "An active non-admin role must not create a Country");
+
+  await adminRef.set({ role: "super_admin", isActive: true });
+
+  // A valid admin still cannot create a child whose parent does not exist.
+  const missingParentResponse = await callSave(user.idToken, {
+    locationType: "state",
+    locationId: stateId,
+    payload: { countryId: `missing-country-${suffix}`, name: stateName },
+  });
+  const missingParentBody = await missingParentResponse.json();
+  assert.equal(missingParentBody.error?.status, "FAILED_PRECONDITION", JSON.stringify(missingParentBody));
+  assert.equal((await db.doc(`service_states/${stateId}`).get()).exists, false,
+    "A State with a missing Country parent must not be created");
+
+  const countryResponse = await callSave(user.idToken, {
+    locationType: "country",
+    locationId: countryId,
+    payload: { name: countryName, code: "IT" },
+  });
+  const countryBody = await countryResponse.json();
+  assert.equal(countryResponse.status, 200, JSON.stringify(countryBody));
+  assert.equal(countryBody.result?.locationId, countryId);
+
+  const countrySnapshot = await db.doc(`service_countries/${countryId}`).get();
+  assert.equal(countrySnapshot.exists, true, "Country should be readable after callable save");
+  assert.equal(countrySnapshot.get("name"), countryName);
+  assert.equal(countrySnapshot.get("code"), "IT");
+  assert.equal(countrySnapshot.get("isActive"), false, "New locations must remain inactive");
+  const countryIndexSnapshot = await db.doc(`service_location_name_indexes/${countryIndexId}`).get();
+  assert.equal(countryIndexSnapshot.exists, true);
+  assert.equal(countryIndexSnapshot.get("documentId"), countryId);
+
+  const stateResponse = await callSave(user.idToken, {
+    locationType: "state",
+    locationId: stateId,
+    payload: { countryId, name: stateName },
+  });
+  const stateBody = await stateResponse.json();
+  assert.equal(stateResponse.status, 200, JSON.stringify(stateBody));
+  assert.equal(stateBody.result?.locationId, stateId);
+
+  const stateSnapshot = await db.doc(`service_states/${stateId}`).get();
+  assert.equal(stateSnapshot.exists, true, "State should be readable after callable save");
+  assert.equal(stateSnapshot.get("name"), stateName);
+  assert.equal(stateSnapshot.get("countryId"), countryId);
+  assert.equal(stateSnapshot.get("isActive"), false, "New States must remain inactive");
+  const stateIndexSnapshot = await db.doc(`service_location_name_indexes/${stateIndexId}`).get();
+  assert.equal(stateIndexSnapshot.exists, true);
+  assert.equal(stateIndexSnapshot.get("documentId"), stateId);
+
+  const duplicateResponse = await callSave(user.idToken, {
+    locationType: "state",
+    locationId: duplicateStateId,
+    payload: { countryId, name: stateName },
+  });
+  const duplicateBody = await duplicateResponse.json();
+  assert.equal(duplicateBody.error?.status, "ALREADY_EXISTS", JSON.stringify(duplicateBody));
+  assert.equal((await db.doc(`service_states/${duplicateStateId}`).get()).exists, false,
+    "Duplicate save must not create a second State document");
 });
