@@ -13,6 +13,8 @@ import {
   updateDoc,
   deleteDoc,
   serverTimestamp,
+  runTransaction,
+  getDoc,
 } from 'firebase/firestore';
 
 const projectId = 'demo-dojo-walker-lifecycle-rules';
@@ -295,4 +297,69 @@ test('walker audit records cannot be edited or deleted', async () => {
   await assertFails(
     deleteDoc(doc(db, 'audit_logs/immutable-event')),
   );
+});
+
+
+test('walker decision and audit event commit together in a Firestore transaction', async () => {
+  const db = adminDb();
+  const walkerRef = doc(db, 'walkers/walker-1');
+  const auditRef = doc(db, 'audit_logs/transaction-approved');
+
+  await assertSucceeds(runTransaction(db, async (transaction) => {
+    const walkerSnapshot = await transaction.get(walkerRef);
+    assert.equal(walkerSnapshot.exists(), true);
+    transaction.update(walkerRef, walkerDecision());
+    transaction.set(auditRef, {
+      actorUid: 'super-active',
+      actorRole: 'super_admin',
+      action: 'walker_approved',
+      targetType: 'walker',
+      targetId: 'walker-1',
+      beforeStatus: 'under_review',
+      afterStatus: 'approved',
+      beforeVerificationStatus: 'pending',
+      afterVerificationStatus: 'verified',
+      beforeIsApproved: false,
+      afterIsApproved: true,
+      beforeIsActive: false,
+      afterIsActive: true,
+      createdAt: serverTimestamp(),
+    });
+  }));
+
+  const walker = await getDoc(walkerRef);
+  const audit = await getDoc(auditRef);
+  assert.equal(walker.data().status, 'approved');
+  assert.equal(walker.data().isActive, true);
+  assert.equal(audit.exists(), true);
+  assert.equal(audit.data().actorUid, 'super-active');
+  assert.equal(audit.data().action, 'walker_approved');
+});
+
+test('a denied audit write rolls back the walker update in the same transaction', async () => {
+  const db = adminDb();
+  const walkerRef = doc(db, 'walkers/walker-1');
+  const auditRef = doc(db, 'audit_logs/transaction-invalid-event');
+
+  await assertFails(runTransaction(db, async (transaction) => {
+    const walkerSnapshot = await transaction.get(walkerRef);
+    assert.equal(walkerSnapshot.exists(), true);
+    transaction.update(walkerRef, walkerDecision());
+    transaction.set(auditRef, {
+      actorUid: 'super-active',
+      actorRole: 'super_admin',
+      action: 'walker_event_not_allowed',
+      targetType: 'walker',
+      targetId: 'walker-1',
+      createdAt: serverTimestamp(),
+    });
+  }));
+
+  const walker = await getDoc(walkerRef);
+  const audit = await getDoc(auditRef);
+  assert.equal(walker.data().status, 'under_review');
+  assert.equal(walker.data().verificationStatus, 'pending');
+  assert.equal(walker.data().isApproved, false);
+  assert.equal(walker.data().isActive, false);
+  assert.equal(audit.exists(), false);
 });
