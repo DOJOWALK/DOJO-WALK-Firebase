@@ -11,6 +11,7 @@ import {
   doc,
   setDoc,
   updateDoc,
+  deleteDoc,
   serverTimestamp,
 } from 'firebase/firestore';
 
@@ -292,7 +293,6 @@ test('walker audit records cannot be edited or deleted', async () => {
     }),
   );
   await assertFails(
-    env.authenticatedContext('super-active').firestore()
-      .doc('audit_logs/immutable-event').delete(),
+    deleteDoc(doc(db, 'audit_logs/immutable-event')),
   );
 });
