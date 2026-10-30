@@ -28,7 +28,7 @@ function asNameIndexSnapshot(snapshot: FirebaseFirestore.DocumentSnapshot): Name
 function asBoundary(data: FirebaseFirestore.DocumentData | undefined): BoundaryDoc {
   return (data ?? {}) as BoundaryDoc;
 }
-function canonicalBoundaryHash(boundary: BoundaryDoc): string {
+function canonicalBoundaryHash(boundary: BoundaryDoc, boundaryId: string): string {
   const points = Array.isArray(boundary.points) ? boundary.points.map((p: any) => {
     const lat = typeof p?.latitude === "number" ? p.latitude : p?._latitude;
     const lng = typeof p?.longitude === "number" ? p.longitude : p?._longitude;
@@ -36,7 +36,28 @@ function canonicalBoundaryHash(boundary: BoundaryDoc): string {
     return [lat, lng];
   }) : [];
   if (points.length < 4) throw new HttpsError("failed-precondition", "A valid polygon is required.");
-  return createHash("sha256").update(JSON.stringify(points)).digest("hex");
+  const sourceName = typeof boundary.sourceName === "string" ? boundary.sourceName.trim() : "";
+  const sourceReference = typeof boundary.sourceReference === "string" ? boundary.sourceReference.trim() : "";
+  const verifiedBy = typeof boundary.verifiedBy === "string" ? boundary.verifiedBy.trim() : "";
+  if (!boundaryId || !boundary.locationId || !boundary.locationType ||
+      !sourceName || !sourceReference || !verifiedBy || !isValidVerificationTimestamp(boundary.verifiedAt)) {
+    throw new HttpsError("failed-precondition", "Boundary identity and verification provenance are required for approval.");
+  }
+  const verifiedAt = boundary.verifiedAt instanceof Date
+    ? boundary.verifiedAt
+    : (boundary.verifiedAt as { toDate: () => Date }).toDate();
+  const approvalFingerprint = {
+    boundaryId,
+    locationId: boundary.locationId,
+    locationType: boundary.locationType,
+    verificationStatus: boundary.verificationStatus,
+    sourceName,
+    sourceReference,
+    verifiedBy,
+    verifiedAt: verifiedAt.toISOString(),
+    points,
+  };
+  return createHash("sha256").update(JSON.stringify(approvalFingerprint)).digest("hex");
 }
 
 function isValidVerificationTimestamp(value: unknown): boolean {
@@ -434,7 +455,7 @@ export const submitServiceZoneForFounderReview = onCall({ region: "asia-south1" 
     const bRef=db.doc(`service_location_boundaries/${boundaryId}`), bSnap=await tx.get(bRef), b=asBoundary(bSnap.data());
     if (!bSnap.exists || b.locationId!==zoneId || b.locationType!=="zone" || b.verificationStatus!=="verified") throw new HttpsError("failed-precondition", "The current Zone boundary must be verified.");
     polygonFromBoundary(b);
-    const revision=Number.isInteger(data.revision)&&data.revision>0?data.revision:1, hash=canonicalBoundaryHash(b);
+    const revision=Number.isInteger(data.revision)&&data.revision>0?data.revision:1, hash=canonicalBoundaryHash(b, boundaryId);
     tx.update(zoneRef,{revision,workflowStatus:"submitted",submittedRevision:revision,submittedBoundaryHash:hash,submittedBy:uid,submittedAt:FieldValue.serverTimestamp(),approvalUid:FieldValue.delete(),approvedRevision:FieldValue.delete(),approvedBoundaryHash:FieldValue.delete(),approvedAt:FieldValue.delete(),updatedAt:FieldValue.serverTimestamp()});
     tx.create(db.collection("service_zone_approval_audit").doc(),{zoneId,revision,boundaryHash:hash,actorUid:uid,action:"submitted",createdAt:FieldValue.serverTimestamp()});
     return {ok:true,zoneId,revision,boundaryHash:hash,workflowStatus:"submitted"};
@@ -580,7 +601,7 @@ export const requestServiceZoneReactivation = onCall({ region: "asia-south1" }, 
       throw new HttpsError("failed-precondition", "A currently verified Zone boundary is required for reactivation.");
     }
     const revision = Number(data.revision ?? 1) + 1;
-    const boundaryHash = canonicalBoundaryHash(boundary);
+    const boundaryHash = canonicalBoundaryHash(boundary, boundaryId);
     const now = FieldValue.serverTimestamp();
     tx.update(zoneRef, {
       revision,
@@ -649,7 +670,7 @@ export const decideServiceZoneFounderApproval = onCall({ region: "asia-south1" }
     const boundaryId=d.verifiedBoundaryId;
     if(typeof boundaryId!=="string") throw new HttpsError("failed-precondition","Verified boundary reference is missing.");
     const bRef=db.doc(`service_location_boundaries/${boundaryId}`), bSnap=await tx.get(bRef), b=asBoundary(bSnap.data());
-    if(!bSnap.exists || b.locationId!==zoneId || b.locationType!=="zone" || b.verificationStatus!=="verified" || canonicalBoundaryHash(b)!==expectedHash) throw new HttpsError("failed-precondition","Submitted boundary changed; Central Admin must resubmit.");
+    if(!bSnap.exists || b.locationId!==zoneId || b.locationType!=="zone" || b.verificationStatus!=="verified" || canonicalBoundaryHash(b, boundaryId)!==expectedHash) throw new HttpsError("failed-precondition","Submitted boundary changed; Central Admin must resubmit.");
     const status = decision === "deactivate"
       ? "deactivation_approved"
       : (decision === "approve" || decision === "reactivate")
@@ -740,7 +761,7 @@ export const activateServiceZone = onCall({ region: "asia-south1" }, async (requ
       throw new HttpsError("failed-precondition", "Parent City must exist and match the selected hierarchy.");
     }
     const currentZoneBoundaryData = requireVerifiedBoundary(currentZoneBoundary.data(), zoneBoundaryId, zoneId, "zone");
-    const currentBoundaryHash = canonicalBoundaryHash(currentZoneBoundaryData);
+    const currentBoundaryHash = canonicalBoundaryHash(currentZoneBoundaryData, zoneBoundaryId);
     const approvedBoundaryHash = currentZone.get("approvedBoundaryHash");
     const submittedBoundaryHash = currentZone.get("submittedBoundaryHash");
     if (!["approved", "active"].includes(String(currentZone.get("workflowStatus"))) ||
@@ -863,7 +884,7 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
       const boundaryRef=db.doc(`service_location_boundaries/${boundaryId}`), boundarySnap=await tx.get(boundaryRef), boundary=asBoundary(boundarySnap.data());
       if (!boundarySnap.exists || boundary.locationId!==locationId || boundary.locationType!=="zone" ||
           boundary.verificationStatus!=="verified" ||
-          canonicalBoundaryHash(boundary)!==target.get("deactivationApprovedBoundaryHash")) {
+          canonicalBoundaryHash(boundary, boundaryId)!==target.get("deactivationApprovedBoundaryHash")) {
         throw new HttpsError("failed-precondition","Zone boundary changed; Founder approval is no longer valid.");
       }
     }
