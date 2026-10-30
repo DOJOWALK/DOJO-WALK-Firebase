@@ -482,7 +482,7 @@ export const requestServiceZoneDeactivation = onCall({ region: "asia-south1" }, 
     if(typeof boundaryId!=="string") throw new HttpsError("failed-precondition","Verified Zone boundary is missing.");
     const bRef=db.doc(`service_location_boundaries/${boundaryId}`), bSnap=await tx.get(bRef), b=asBoundary(bSnap.data());
     if(!bSnap.exists || b.locationId!==zoneId || b.locationType!=="zone" || b.verificationStatus!=="verified") throw new HttpsError("failed-precondition","Current Zone boundary must be verified.");
-    const hash=canonicalBoundaryHash(b), revision=Number(d.revision??1);
+    const hash=canonicalBoundaryHash(b, boundaryId), revision=Number(d.revision??1);
     tx.update(zoneRef,{workflowStatus:"deactivation_submitted",deactivationRequestedRevision:revision,deactivationRequestedBoundaryHash:hash,deactivationRequestedBy:uid,deactivationRequestNotes:notes.trim(),deactivationRequestedAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});
     tx.create(db.collection("service_zone_approval_audit").doc(),{zoneId,revision,boundaryHash:hash,actorUid:uid,action:"deactivation_submitted",notes:notes.trim(),createdAt:FieldValue.serverTimestamp()});
     return {ok:true,zoneId,revision,workflowStatus:"deactivation_submitted"};
