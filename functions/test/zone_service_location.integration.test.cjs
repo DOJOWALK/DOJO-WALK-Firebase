@@ -379,12 +379,21 @@ test("Zone activation requires privileged auth, verified contained boundary and 
     try {
       await boundaryRef.update({ points: points(28.521, 77.321, 28.541, 77.341) });
       const changed = await boundaryRef.get();
-      const changedHash = createHash("sha256").update(JSON.stringify(changed.get("points").map((point) => [point.latitude, point.longitude]))).digest("hex");
-      assert.notEqual(
-        changedHash,
-        (await db.doc(`service_zones/${ids.reviewZone}`).get()).get("approvedBoundaryHash"),
-        "changed boundary must not retain the Founder-approved hash",
-      );
+      const changedHash = createHash("sha256").update(JSON.stringify(changed.get("points").map((point) => [
+        typeof point.latitude === "number" ? point.latitude : point._latitude,
+        typeof point.longitude === "number" ? point.longitude : point._longitude,
+      ]))).digest("hex");
+      const zoneAfterBoundaryEdit = await db.doc(`service_zones/${ids.reviewZone}`).get();
+      assert.equal(zoneAfterBoundaryEdit.get("verifiedBoundaryId"), ids.reviewBoundary,
+        "activation must be bound to the exact boundary edited by this test");
+      assert.notEqual(changedHash, zoneAfterBoundaryEdit.get("approvedBoundaryHash"),
+        "changed boundary must not retain the Founder-approved hash");
+      assert.notEqual(changedHash, zoneAfterBoundaryEdit.get("submittedBoundaryHash"),
+        "changed boundary must not retain the submitted hash");
+      assert.equal(changedHash, createHash("sha256").update(JSON.stringify(changed.get("points").map((point) => [
+        typeof point.latitude === "number" ? point.latitude : point._latitude,
+        typeof point.longitude === "number" ? point.longitude : point._longitude,
+      ]))).digest("hex"), "stored changed coordinates must hash deterministically");
       await expectCode(activate(ids.central, ids.reviewZone), "failed-precondition");
       assert.equal((await db.doc(`service_zones/${ids.reviewZone}`).get()).get("isServiceActive"), false);
     } finally {
