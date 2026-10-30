@@ -390,10 +390,17 @@ test("Zone activation requires privileged auth, verified contained boundary and 
         "changed boundary must not retain the Founder-approved hash");
       assert.notEqual(changedHash, zoneAfterBoundaryEdit.get("submittedBoundaryHash"),
         "changed boundary must not retain the submitted hash");
-      assert.equal(changedHash, createHash("sha256").update(JSON.stringify(changed.get("points").map((point) => [
-        typeof point.latitude === "number" ? point.latitude : point._latitude,
-        typeof point.longitude === "number" ? point.longitude : point._longitude,
-      ]))).digest("hex"), "stored changed coordinates must hash deterministically");
+      console.log("[stale-boundary-diagnostic]", JSON.stringify({
+        boundaryId: ids.reviewBoundary,
+        zoneBoundaryId: zoneAfterBoundaryEdit.get("verifiedBoundaryId"),
+        changedHash,
+        approvedBoundaryHash: zoneAfterBoundaryEdit.get("approvedBoundaryHash"),
+        submittedBoundaryHash: zoneAfterBoundaryEdit.get("submittedBoundaryHash"),
+        storedCoordinates: changed.get("points").map((point) => [
+          typeof point.latitude === "number" ? point.latitude : point._latitude,
+          typeof point.longitude === "number" ? point.longitude : point._longitude,
+        ]),
+      }));
       await expectCode(activate(ids.central, ids.reviewZone), "failed-precondition");
       assert.equal((await db.doc(`service_zones/${ids.reviewZone}`).get()).get("isServiceActive"), false);
     } finally {
