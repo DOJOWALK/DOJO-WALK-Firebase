@@ -135,7 +135,7 @@ test("Zone activation requires privileged auth, verified contained boundary and 
       verificationStatus: "pending",
     }),
     db.doc(`service_location_boundaries/${ids.reviewOutsideBoundary}`).set({
-      ...verifiedBoundary(ids.reviewZone, "zone", points(28.55, 77.35, 28.62, 77.38)),
+      ...verifiedBoundary(ids.outsideZone, "zone", points(28.55, 77.35, 28.62, 77.38)),
       verificationStatus: "pending",
     }),
     db.doc(`service_zones/${ids.outsideZone}`).set({
