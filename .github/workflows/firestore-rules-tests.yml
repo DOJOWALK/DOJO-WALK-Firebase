@@ -51,4 +51,4 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Run Firestore Rules tests in emulator
-        run: npx firebase-tools emulators:exec --only firestore --project demo-dojo-walker-lifecycle-rules "npm test"
+        run: npx firebase emulators:exec --only firestore --project demo-dojo-walker-lifecycle-rules "npm test"
