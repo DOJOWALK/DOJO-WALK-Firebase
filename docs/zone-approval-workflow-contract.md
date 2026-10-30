@@ -12,7 +12,7 @@ Status: implementation is present on PR #39. The PR description records the late
 ## Zone workflow fields
 - workflowStatus: draft | submitted | changes_required | rejected | approved | active | deactivation_submitted | deactivation_approved | reactivation_submitted | suspended | deactivated
 - revision: monotonically increasing integer, incremented whenever approval-relevant Zone details or verified boundary changes.
-- boundaryHash: SHA-256 of canonical verified polygon coordinates and boundary identity; computed server-side.
+- boundaryHash: SHA-256 of canonical verified polygon coordinates, boundary identity, and verification provenance; computed server-side.
 - submittedRevision, submittedBoundaryHash, submittedBy, submittedAt
 - approvalStatus, approvedRevision, approvedBoundaryHash, approvedBy, approvedAt, decisionNote
 - isServiceActive remains the runtime switch; approval does not itself activate service.
@@ -37,7 +37,7 @@ Status: implementation is present on PR #39. The PR description records the late
 - Boundary change after approval invalidates approval.
 - Direct activation callable bypass is impossible.
 - State/District/City inactive flags alone do not block Zone activation when parents exist and ancestry/boundaries are valid.
-- Parent ancestry mismatch, missing parent, invalid/unverified polygon, or polygon outside City blocks submission and activation.
+- Parent ancestry mismatch, missing parent, or invalid/unverified Zone polygon blocks submission and activation. City polygon presence or geometric containment is not a prerequisite under POL-038 Option B.
 - Emergency suspension records actor, reason, timestamp, and Founder notification marker; it never grants activation.
 - Repeated decisions and activation requests cannot create duplicate or inconsistent transitions.
 
@@ -49,7 +49,7 @@ Status: implementation is present on PR #39. The PR description records the late
 
 ## Callable implementation map (PR #39)
 - `saveServiceLocationWithNameIndex`: Central Admin Zone draft create/edit; saves bump the revision and invalidate prior approval. Active Zones must be deactivated through the Founder-approved path before editing.
-- `reviewServiceLocationBoundary`: verifies the Zone polygon against the parent City polygon; a newly verified Zone boundary bumps revision and invalidates prior approval.
+- `reviewServiceLocationBoundary`: verifies the Zone polygon and checks parent City hierarchy existence; City polygon containment is not required under POL-038 Option B; a newly verified Zone boundary bumps revision and invalidates prior approval.
 - `submitServiceZoneForFounderReview`: Central Admin submission with server-computed SHA-256 boundary hash.
 - `decideServiceZoneFounderApproval`: Founder-only approve/reject/request-changes decisions; also approves a submitted deactivation request.
 - `activateServiceZone`: Central Admin activation only when the current revision and boundary hash have Founder approval.
