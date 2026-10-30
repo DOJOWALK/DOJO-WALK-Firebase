@@ -623,275 +623,70 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in is required.");
   const uid = request.auth.uid;
   const { locationType, locationId, isActive } = request.data ?? {};
-  const validTypes = ["country", "state", "district", "city", "area", "locality", "zone"];
-  if (!validTypes.includes(locationType) ||
+  if (locationType !== "zone" ||
       typeof locationId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(locationId) ||
       typeof isActive !== "boolean") {
-    throw new HttpsError("invalid-argument", "Provide locationType, locationId and boolean isActive.");
+    throw new HttpsError("invalid-argument", "Provide locationType='zone', a valid locationId and boolean isActive.");
   }
-  // Only Zones have service activation/deactivation status. Parent hierarchy
-  // records (Country/State/District/City) are references, and legacy Area/
-  // Locality status paths must not remain callable through this generic API.
-  // Zone activation uses activateServiceZone; deactivation still requires
-  // current Founder approval and is audited below.
-  if (locationType !== "zone") {
-    throw new HttpsError(
-      "failed-precondition",
-      "Only Zone has service activation/deactivation status. Use the Zone approval workflow.",
-    );
-  }
-  const actorRef = db.doc(`admin_users/${uid}`);
-  const actor = await actorRef.get();
-  if (!actor.exists || actor.get("isActive") !== true ||
-      (locationType === "zone" && !isActive ? actor.get("role") !== "central_admin" : actor.get("role") !== "super_admin")) {
-    throw new HttpsError("permission-denied", locationType === "zone" && !isActive ? "An active Central Admin account is required for approved Zone deactivation." : "An active super_admin account is required.");
-  }
-  if ((locationType === "city" || locationType === "area") && isActive) {
-    throw new HttpsError("failed-precondition", "Use activateServiceLocation to activate a City or Area.");
-  }
-  if (locationType === "zone" && isActive) {
-    throw new HttpsError("failed-precondition", "Use activateServiceZone to activate a Zone after boundary verification.");
-  }
-  if (["state", "district", "city"].includes(locationType)) {
-    throw new HttpsError("failed-precondition", "State, District and City are reference hierarchy records; only Zone has service activation status.");
+  // Zone activation is exclusively handled by activateServiceZone. This
+  // callable is retained only for Founder-approved Zone deactivation.
+  if (isActive) {
+    throw new HttpsError("failed-precondition", "Use activateServiceZone to activate a Zone after boundary verification and Founder approval.");
   }
 
-  const collectionByType: Record<string, string> = {
-    country: "service_countries", state: "service_states", district: "service_districts", city: "service_cities",
-    area: "service_areas", locality: "service_localities", zone: "service_zones",
-  };
-  const targetRef = db.doc(`${collectionByType[locationType]}/${locationId}`);
-  const statusField = locationType === "country" || locationType === "state" ? "isActive" : "isServiceActive";
-  const parentFieldByType: Record<string, string> = {
-    country: "", state: "countryId", district: "stateId", city: "stateId", area: "cityId", locality: "areaId", zone: "",
-  };
-  const parentCollectionByType: Record<string, string> = {
-    state: "service_countries", district: "service_states", city: "service_states", area: "service_cities", locality: "service_areas",
-  };
-  const childConfig: Record<string, { collection: string; field: string; activeField: string } | null> = {
-    country: { collection: "service_states", field: "countryId", activeField: "isActive" },
-    state: { collection: "service_cities", field: "stateId", activeField: "isServiceActive" },
-    district: { collection: "service_cities", field: "districtId", activeField: "isServiceActive" },
-    city: { collection: "service_areas", field: "cityId", activeField: "isServiceActive" },
-    area: { collection: "service_localities", field: "areaId", activeField: "isServiceActive" },
-    locality: null,
-    zone: null,
-  };
+  const actorRef = db.doc(`admin_users/${uid}`);
+  const targetRef = db.doc(`service_zones/${locationId}`);
+  const initialActor = await actorRef.get();
+  if (!initialActor.exists || initialActor.get("isActive") !== true ||
+      initialActor.get("role") !== "central_admin") {
+    throw new HttpsError("permission-denied", "An active Central Admin account is required for approved Zone deactivation.");
+  }
 
   await db.runTransaction(async (tx) => {
-    const [currentActor, target] = await Promise.all([tx.get(actorRef), tx.get(targetRef)]);
-    if (!currentActor.exists || currentActor.get("isActive") !== true ||
-        (locationType === "zone" && !isActive ? currentActor.get("role") !== "central_admin" : currentActor.get("role") !== "super_admin")) {
-      throw new HttpsError("permission-denied", "Admin access changed during validation.");
+    const [actor, target] = await Promise.all([tx.get(actorRef), tx.get(targetRef)]);
+    if (!actor.exists || actor.get("isActive") !== true || actor.get("role") !== "central_admin") {
+      throw new HttpsError("permission-denied", "Central Admin access changed during validation.");
     }
-    if (!target.exists) throw new HttpsError("not-found", "Service location was not found.");
-    if (target.get(statusField) === isActive) return;
-    if (locationType === "zone" && !isActive) {
-      const revision=Number(target.get("revision")??1), boundaryId=target.get("verifiedBoundaryId");
-      if (target.get("workflowStatus")!=="deactivation_approved" ||
-          target.get("deactivationApprovedRevision")!==revision ||
-          typeof boundaryId!=="string" ||
-          target.get("deactivationApprovedBoundaryHash")!==target.get("deactivationRequestedBoundaryHash")) {
-        throw new HttpsError("failed-precondition","Founder approval for the current Zone revision is required before deactivation.");
-      }
-      const boundaryRef=db.doc(`service_location_boundaries/${boundaryId}`), boundarySnap=await tx.get(boundaryRef), boundary=asBoundary(boundarySnap.data());
-      if (!boundarySnap.exists || boundary.locationId!==locationId || boundary.locationType!=="zone" ||
-          boundary.verificationStatus!=="verified" ||
-          canonicalBoundaryHash(boundary)!==target.get("deactivationApprovedBoundaryHash")) {
-        throw new HttpsError("failed-precondition","Zone boundary changed; Founder approval is no longer valid.");
-      }
+    if (!target.exists) throw new HttpsError("not-found", "Zone was not found.");
+    if (target.get("isServiceActive") !== true) return;
+
+    const revision = Number(target.get("revision") ?? 1);
+    const boundaryId = target.get("verifiedBoundaryId");
+    const approvedHash = target.get("deactivationApprovedBoundaryHash");
+    if (target.get("workflowStatus") !== "deactivation_approved" ||
+        target.get("deactivationApprovedRevision") !== revision ||
+        typeof boundaryId !== "string" || !boundaryId ||
+        typeof approvedHash !== "string" || !approvedHash ||
+        approvedHash !== target.get("deactivationRequestedBoundaryHash")) {
+      throw new HttpsError("failed-precondition", "Founder approval for the current Zone revision is required before deactivation.");
     }
 
-    const parentField = parentFieldByType[locationType];
-    let parentRef: FirebaseFirestore.DocumentReference | undefined;
-    let parentSnap: FirebaseFirestore.DocumentSnapshot | undefined;
-    if (parentField) {
-      const parentId = target.get(parentField);
-      if (typeof parentId !== "string" || !parentId) {
-        throw new HttpsError("failed-precondition", "Required parent location is missing.");
-      }
-      parentRef = db.doc(`${parentCollectionByType[locationType]}/${parentId}`);
-      parentSnap = await tx.get(parentRef);
-      if (!parentSnap.exists) throw new HttpsError("failed-precondition", "Parent location was not found.");
-      const parentStatusField = locationType === "state" || locationType === "district" ? "isActive" : "isServiceActive";
-      if (isActive && parentSnap.get(parentStatusField) !== true) {
-        throw new HttpsError("failed-precondition", "Parent location must be active first.");
-      }
-    }
-
-    // Resolve District's Country before any transaction writes. Firestore
-    // transactions require every read to finish before the first write.
-    let districtCountryRef: FirebaseFirestore.DocumentReference | undefined;
-    if (locationType === "district" && isActive && parentSnap) {
-      const countryId = parentSnap.get("countryId");
-      if (typeof countryId !== "string" || !countryId) {
-        throw new HttpsError("failed-precondition", "District State parent is invalid.");
-      }
-      districtCountryRef = db.doc(`service_countries/${countryId}`);
-      const districtCountrySnap = await tx.get(districtCountryRef);
-      if (!districtCountrySnap.exists || districtCountrySnap.get("isActive") !== true) {
-        throw new HttpsError("failed-precondition", "District Country must be active first.");
-      }
-    }
-
-    // For Locality activation, validate the complete persisted ancestry and
-    // read every ancestor in this transaction before writing any guard field.
-    let countryRef: FirebaseFirestore.DocumentReference | undefined;
-    let stateRef: FirebaseFirestore.DocumentReference | undefined;
-    let cityRef: FirebaseFirestore.DocumentReference | undefined;
-    let countrySnap: FirebaseFirestore.DocumentSnapshot | undefined;
-    let stateSnap: FirebaseFirestore.DocumentSnapshot | undefined;
-    let citySnap: FirebaseFirestore.DocumentSnapshot | undefined;
-    if (locationType === "locality" && isActive) {
-      const countryId = target.get("countryId");
-      const stateId = target.get("stateId");
-      const cityId = target.get("cityId");
-      const areaId = target.get("areaId");
-      if ([countryId, stateId, cityId, areaId].some((v) => typeof v !== "string" || !v)) {
-        throw new HttpsError("failed-precondition", "Locality must reference Country, State, City and Area.");
-      }
-      countryRef = db.doc(`service_countries/${countryId}`);
-      stateRef = db.doc(`service_states/${stateId}`);
-      cityRef = db.doc(`service_cities/${cityId}`);
-      [countrySnap, stateSnap, citySnap] = await Promise.all([
-        tx.get(countryRef), tx.get(stateRef), tx.get(cityRef),
-      ]);
-      if (!countrySnap.exists || countrySnap.get("isActive") !== true) {
-        throw new HttpsError("failed-precondition", "Locality Country must be active.");
-      }
-      if (!stateSnap.exists || stateSnap.get("isActive") !== true || stateSnap.get("countryId") !== countryId) {
-        throw new HttpsError("failed-precondition", "Locality State must be active and belong to its Country.");
-      }
-      if (!citySnap.exists || citySnap.get("isServiceActive") !== true ||
-          citySnap.get("countryId") !== countryId || citySnap.get("stateId") !== stateId) {
-        throw new HttpsError("failed-precondition", "Locality City must be active and match its Country/State.");
-      }
-      if (!parentSnap?.exists || parentSnap.get("isServiceActive") !== true ||
-          parentSnap.get("countryId") !== countryId || parentSnap.get("stateId") !== stateId ||
-          parentSnap.get("cityId") !== cityId) {
-        throw new HttpsError("failed-precondition", "Locality Area must be active and match its parent hierarchy.");
-      }
-    }
-
-    const child = childConfig[locationType];
-    if (!isActive && child) {
-      const children = await tx.get(db.collection(child.collection)
-        .where(child.field, "==", locationId)
-        .where(child.activeField, "==", true).limit(1));
-      if (!children.empty) {
-        throw new HttpsError("failed-precondition", "Deactivate active child locations first.");
-      }
-      // Zones are canonical descendants of State → District → City. They are
-      // stored separately from legacy Areas, so explicitly block deactivation
-      // of any ancestor while an active Zone still references it.
-      const zoneParentFieldByType: Record<string, string> = {
-        state: "stateId",
-        district: "districtId",
-        city: "cityId",
-      };
-      const zoneParentField = zoneParentFieldByType[locationType];
-      if (zoneParentField) {
-        const activeZones = await tx.get(
-          db.collection("service_zones")
-            .where(zoneParentField, "==", locationId)
-            .where("isServiceActive", "==", true)
-            .limit(1),
-        );
-        if (!activeZones.empty) {
-          throw new HttpsError("failed-precondition", "Deactivate active descendant Zones first.");
-        }
-      }
-      // District is a direct child of State in the canonical hierarchy.
-      // The client-side Admin guard is only UX; enforce this invariant here
-      // so direct callable requests cannot deactivate a State with active Districts.
-      if (locationType === "state") {
-        const districts = await tx.get(db.collection("service_districts")
-          .where("stateId", "==", locationId)
-          .where("isServiceActive", "==", true).limit(1));
-        if (!districts.empty) {
-          throw new HttpsError("failed-precondition", "Deactivate active Districts first.");
-        }
-      }
-      if (locationType === "district") {
-        const cities = await tx.get(db.collection("service_cities").where("districtId", "==", locationId).where("isServiceActive", "==", true).limit(1));
-        const areas = await tx.get(db.collection("service_areas").where("districtId", "==", locationId).where("isServiceActive", "==", true).limit(1));
-        if (!cities.empty || !areas.empty) throw new HttpsError("failed-precondition", "Deactivate active District descendants first.");
-      } else if (locationType === "country") {
-        // Check every State referencing this Country, not only active States:
-        // stale/legacy data must not allow Country deactivation while a Zone
-        // remains active beneath a State that was incorrectly marked inactive.
-        const states = await tx.get(db.collection("service_states").where("countryId", "==", locationId));
-        const cities = await tx.get(db.collection("service_cities").where("countryId", "==", locationId).where("isServiceActive", "==", true).limit(1));
-        const areas = await tx.get(db.collection("service_areas").where("countryId", "==", locationId).where("isServiceActive", "==", true).limit(1));
-        let activeZoneFound = false;
-        for (const stateDoc of states.docs) {
-          const zones = await tx.get(db.collection("service_zones")
-            .where("stateId", "==", stateDoc.id)
-            .where("isServiceActive", "==", true)
-            .limit(1));
-          if (!zones.empty) {
-            activeZoneFound = true;
-            break;
-          }
-        }
-        if (!states.empty && states.docs.some((doc) => doc.get("isActive") === true) ||
-            !cities.empty || !areas.empty || activeZoneFound) {
-          throw new HttpsError("failed-precondition", "Deactivate active descendant locations first.");
-        }
-      } else if (locationType === "state") {
-        const areas = await tx.get(db.collection("service_areas").where("stateId", "==", locationId).where("isServiceActive", "==", true).limit(1));
-        if (!areas.empty) throw new HttpsError("failed-precondition", "Deactivate active descendant locations first.");
-      }
-    }
-
-    if (isActive && locationType === "city" && parentRef) {
-      const countryId = target.get("countryId");
-      if (typeof countryId !== "string" || parentSnap?.get("countryId") !== countryId) {
-        throw new HttpsError("failed-precondition", "City State must belong to the City Country.");
-      }
-      countryRef = db.doc(`service_countries/${countryId}`);
-      countrySnap = await tx.get(countryRef);
-      if (!countrySnap.exists || countrySnap.get("isActive") !== true) {
-        throw new HttpsError("failed-precondition", "City Country must be active first.");
-      }
+    const boundaryRef = db.doc(`service_location_boundaries/${boundaryId}`);
+    const boundarySnap = await tx.get(boundaryRef);
+    const boundary = asBoundary(boundarySnap.data());
+    if (!boundarySnap.exists || boundary.locationId !== locationId ||
+        boundary.locationType !== "zone" || boundary.verificationStatus !== "verified" ||
+        canonicalBoundaryHash(boundary) !== approvedHash) {
+      throw new HttpsError("failed-precondition", "Zone boundary changed; Founder approval is no longer valid.");
     }
 
     tx.update(targetRef, {
-      [statusField]: isActive,
-      ...(locationType === "zone" && !isActive ? { workflowStatus: "deactivated" } : {}),
+      isServiceActive: false,
+      workflowStatus: "deactivated",
       activationGuardAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
-    if (isActive && locationType === "state" && parentRef) {
-      tx.update(parentRef, { activationGuardAt: FieldValue.serverTimestamp() });
-    }
-    if (isActive && locationType === "district" && parentRef && districtCountryRef) {
-      tx.update(parentRef, { activationGuardAt: FieldValue.serverTimestamp() });
-      tx.update(districtCountryRef, { activationGuardAt: FieldValue.serverTimestamp() });
-    }
-    if (isActive && locationType === "city" && parentRef) {
-      tx.update(countryRef!, { activationGuardAt: FieldValue.serverTimestamp() });
-      tx.update(parentRef, { activationGuardAt: FieldValue.serverTimestamp() });
-    }
-    if (isActive && locationType === "locality") {
-      // Parent Area and all ancestors are guard-written to serialize with
-      // concurrent Area/City/State/Country deactivation.
-      tx.update(parentRef!, { activationGuardAt: FieldValue.serverTimestamp() });
-      tx.update(cityRef!, { activationGuardAt: FieldValue.serverTimestamp() });
-      tx.update(stateRef!, { activationGuardAt: FieldValue.serverTimestamp() });
-      tx.update(countryRef!, { activationGuardAt: FieldValue.serverTimestamp() });
-    }
-
     const auditRef = db.collection("service_location_status_audit").doc();
     tx.create(auditRef, {
-      actorUid: uid, locationId, locationType,
-      result: isActive ? "activated" : "deactivated",
+      actorUid: uid,
+      locationId,
+      locationType: "zone",
+      result: "deactivated",
       createdAt: FieldValue.serverTimestamp(),
     });
   });
-  return { ok: true, locationId, locationType, isActive };
+  return { ok: true, locationId, locationType: "zone", isActive: false };
 });
-
 
 /**
  * Save a service location and its canonical name index atomically.
