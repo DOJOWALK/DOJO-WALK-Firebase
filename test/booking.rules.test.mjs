@@ -6,7 +6,7 @@ import {
   assertSucceeds,
   assertFails,
 } from '@firebase/rules-unit-testing';
-import { doc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 const projectId = 'demo-dojo-booking-rules';
 let env;
@@ -61,7 +61,7 @@ function validOneTimeBooking(overrides = {}) {
 test('authenticated customer can create a valid one-time booking request', async () => {
   const db = env.authenticatedContext('customer-1').firestore();
   await assertSucceeds(
-    db && (await import('firebase/firestore')).setDoc(
+    setDoc(
       doc(db, 'bookings/booking-test-001'),
       validOneTimeBooking(),
     ),
@@ -70,7 +70,6 @@ test('authenticated customer can create a valid one-time booking request', async
 
 test('unauthenticated client cannot create a booking', async () => {
   const db = env.unauthenticatedContext().firestore();
-  const { setDoc } = await import('firebase/firestore');
   await assertFails(
     setDoc(doc(db, 'bookings/booking-test-001'), validOneTimeBooking()),
   );
