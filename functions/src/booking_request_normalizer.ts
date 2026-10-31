@@ -28,8 +28,8 @@ function assertDateKey(value: unknown, field: string): asserts value is string {
   }
 }
 function normalizeWalks(value: unknown, field: string): NormalizedWalkOccurrence[] {
-  if (!Array.isArray(value) || value.length < 1 || value.length > 3) {
-    throw new BookingRequestValidationError(`${field} must contain 1–3 walks.`);
+  if (!Array.isArray(value) || value.length < 1) {
+    throw new BookingRequestValidationError(`${field} must contain at least one walk.`);
   }
   const seenTimes = new Set<string>();
   return value.map((item, index) => {
