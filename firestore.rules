@@ -709,6 +709,43 @@ service cloud.firestore {
     // BOOKING VALIDATION HELPERS
     // =====================================================
 
+    function validBookingDuration() {
+      return request.resource.data.duration is string
+        && request.resource.data.duration.matches(
+          '^(2[0-9]|[3-5][0-9]|60) minutes$'
+        );
+    }
+
+    function validPickupCoordinates() {
+      let address = request.resource.data.pickupAddress;
+      let hasLatitude = 'latitude' in address;
+      let hasLongitude = 'longitude' in address;
+      return (!hasLatitude && !hasLongitude)
+        || (hasLatitude && hasLongitude
+          && ((address.latitude == null && address.longitude == null)
+            || (address.latitude is number && address.longitude is number
+              && address.latitude >= -90 && address.latitude <= 90
+              && address.longitude >= -180 && address.longitude <= 180)));
+    }
+
+    function validWalkScheduleItem(walk) {
+      return walk is map
+        && walk.duration is int
+        && walk.duration >= 20
+        && walk.duration <= 60
+        && walk.time is string
+        && walk.time.size() > 0;
+    }
+
+    function validWalkScheduleList(walks) {
+      return walks is list
+        && walks.size() >= 1
+        && walks.size() <= 3
+        && validWalkScheduleItem(walks[0])
+        && (walks.size() < 2 || validWalkScheduleItem(walks[1]))
+        && (walks.size() < 3 || validWalkScheduleItem(walks[2]));
+    }
+
     function validBookingBase(bookingId) {
       return request.resource.data.keys().hasAll([
         'bookingId',
@@ -782,8 +819,9 @@ service cloud.firestore {
       && request.resource.data.pickupAddressId is string
       && request.resource.data.pickupAddressId.size() > 0
       && request.resource.data.pickupAddress is map
+      && validPickupCoordinates()
       && request.resource.data.scheduledAt is timestamp
-      && request.resource.data.duration is string
+      && validBookingDuration()
       && request.resource.data.preferredTime is string
       && request.resource.data.status == 'pending'
       && request.resource.data.walkerId == null
@@ -792,7 +830,7 @@ service cloud.firestore {
       && request.resource.data.walkCount is int
       && request.resource.data.walkCount >= 1
       && request.resource.data.walkCount <= 3
-      && request.resource.data.walkSchedules is list
+      && validWalkScheduleList(request.resource.data.walkSchedules)
       && request.resource.data.walkSchedules.size()
         == request.resource.data.walkCount;
     }
@@ -820,7 +858,7 @@ service cloud.firestore {
         && request.resource.data.walksPerDay <= 3
         && request.resource.data.walkCount == request.resource.data.walksPerDay
         && request.resource.data.planStatus == 'pending_confirmation'
-        && request.resource.data.dailyWalkTemplate is list
+        && validWalkScheduleList(request.resource.data.dailyWalkTemplate)
         && request.resource.data.dailyWalkTemplate.size() == request.resource.data.walkCount
         && !('selectedDates' in request.resource.data)
         && !('dateSchedules' in request.resource.data);
