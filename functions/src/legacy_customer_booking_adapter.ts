@@ -89,17 +89,19 @@ export function adaptLegacyCustomerBooking(
     });
   }
 
-  if (!Array.isArray(legacy.selectedDates) ||
-      !Array.isArray(legacy.dateSchedules) ||
-      legacy.selectedDates.length === 0 ||
-      legacy.selectedDates.length !== legacy.dateSchedules.length) {
+  const selectedDates = legacy.selectedDates;
+  const legacyDateSchedules = legacy.dateSchedules;
+  if (!Array.isArray(selectedDates) ||
+      !Array.isArray(legacyDateSchedules) ||
+      selectedDates.length === 0 ||
+      selectedDates.length !== legacyDateSchedules.length) {
     throw new Error("Legacy selectedDates and dateSchedules must be non-empty and have matching lengths.");
   }
-  const dateSchedules = legacy.dateSchedules.map((day, index) => {
+  const dateSchedules = legacyDateSchedules.map((day, index) => {
     if (!isRecord(day) || !legacyDateTimestamp(day.date)) {
       throw new Error(`Legacy dateSchedules[${index}].date must be a Timestamp.`);
     }
-    const dateKey = legacy.selectedDates![index];
+    const dateKey = selectedDates[index];
     if (typeof dateKey !== "string") {
       throw new Error(`Legacy selectedDates[${index}] must be YYYY-MM-DD.`);
     }
