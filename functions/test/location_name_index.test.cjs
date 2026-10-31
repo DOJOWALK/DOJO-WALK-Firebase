@@ -132,9 +132,9 @@ test("supports the canonical Zone index tuple with State, District, and City par
 
 test("validates a Zone payload with exactly State, District, and City parent IDs", () => {
   assert.deepEqual(validateServiceLocationPayload("zone", {
-    stateId: " up ", districtId: " gautam-nagar ", cityId: " noida ", name: " Gaur City 2 ",
+    stateId: " up ", districtId: " gautam-nagar ", cityId: " noida ", name: " Gaur City 2 ", timeZone: " Asia/Kolkata ",
   }), {
-    stateId: "up", districtId: "gautam-nagar", cityId: "noida", name: "Gaur City 2",
+    stateId: "up", districtId: "gautam-nagar", cityId: "noida", name: "Gaur City 2", timeZone: "Asia/Kolkata",
   });
 });
 
@@ -154,4 +154,32 @@ test("rejects malformed or missing Zone parent IDs", () => {
   assert.throws(() => validateServiceLocationPayload("zone", {
     stateId: "up", districtId: "district-1", name: "Zone A",
   }), /LOCATION_INDEX_PARENT_INVALID/);
+});
+
+
+test("requires a Zone IANA timezone", () => {
+  assert.throws(() => validateServiceLocationPayload("zone", {
+    stateId: "up", districtId: "district-1", cityId: "city-1", name: "Zone A",
+  }), /LOCATION_TIME_ZONE_REQUIRED/);
+});
+
+test("rejects unsupported Zone timezone identifiers", () => {
+  assert.throws(() => validateServiceLocationPayload("zone", {
+    stateId: "up", districtId: "district-1", cityId: "city-1", name: "Zone A", timeZone: "IST",
+  }), /LOCATION_TIME_ZONE_INVALID/);
+  assert.throws(() => validateServiceLocationPayload("zone", {
+    stateId: "up", districtId: "district-1", cityId: "city-1", name: "Zone A", timeZone: "+05:30",
+  }), /LOCATION_TIME_ZONE_INVALID/);
+});
+
+test("normalizes a valid Zone IANA timezone without accepting client activation metadata", () => {
+  const normalized = validateServiceLocationPayload("zone", {
+    stateId: "up", districtId: "district-1", cityId: "city-1", name: "Zone A", timeZone: " Asia/Kolkata ",
+  });
+  assert.equal(normalized.timeZone, "Asia/Kolkata");
+  assert.equal("isServiceActive" in normalized, false);
+  assert.throws(() => validateServiceLocationPayload("zone", {
+    stateId: "up", districtId: "district-1", cityId: "city-1", name: "Zone A",
+    timeZone: "Asia/Kolkata", boundaryVerified: true,
+  }), /LOCATION_PAYLOAD_FIELD_INVALID/);
 });
