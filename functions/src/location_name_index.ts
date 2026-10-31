@@ -107,8 +107,11 @@ export function validateServiceLocationPayload(
       throw new Error("LOCATION_TIME_ZONE_REQUIRED");
     }
     const timeZone = record.timeZone.trim();
+    // Require a region/city-style IANA identifier; reject abbreviations and raw UTC offsets.
+    if (!/^[A-Za-z_+-]+\/[A-Za-z0-9_+\-/]+$/.test(timeZone)) {
+      throw new Error("LOCATION_TIME_ZONE_INVALID");
+    }
     try {
-      // Runtime IANA database validates canonical timezone identifiers; do not infer a default.
       new Intl.DateTimeFormat("en-US", { timeZone }).format(0);
     } catch {
       throw new Error("LOCATION_TIME_ZONE_INVALID");

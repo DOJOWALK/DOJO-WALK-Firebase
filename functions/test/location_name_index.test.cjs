@@ -149,10 +149,10 @@ test("rejects legacy Area/Locality and activation fields in Zone payloads", () =
 
 test("rejects malformed or missing Zone parent IDs", () => {
   assert.throws(() => validateServiceLocationPayload("zone", {
-    stateId: "up", districtId: "district/1", cityId: "city-1", name: "Zone A",
+    stateId: "up", districtId: "district/1", cityId: "city-1", name: "Zone A", timeZone: "Asia/Kolkata",
   }), /LOCATION_INDEX_PARENT_INVALID/);
   assert.throws(() => validateServiceLocationPayload("zone", {
-    stateId: "up", districtId: "district-1", name: "Zone A",
+    stateId: "up", districtId: "district-1", name: "Zone A", timeZone: "Asia/Kolkata",
   }), /LOCATION_INDEX_PARENT_INVALID/);
 });
 
