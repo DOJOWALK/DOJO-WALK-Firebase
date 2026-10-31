@@ -79,14 +79,16 @@ test("rejects duration below 20 or above 60 and non-integer duration", () => {
   }
 });
 
-test("rejects more than three walks on a date", () => {
-  assert.throws(() => normalizeBookingRequest({
+test("accepts more than three walks on a date when each schedule entry is valid", () => {
+  const result = normalizeBookingRequest({
     bookingPlan: "one_time", serviceDateKey: "2026-11-02",
     walkSchedules: [
       { time: "06:00", duration: 30 }, { time: "10:00", duration: 30 },
       { time: "16:00", duration: 30 }, { time: "20:00", duration: 30 },
     ],
-  }), /1–3 walks/);
+  });
+  assert.equal(result.occurrences.length, 4);
+  assert.deepEqual(result.occurrences.map((walk) => walk.walkNumber), [1, 2, 3, 4]);
 });
 
 test("rejects duplicate date entries and duplicate times within a date", () => {
