@@ -127,3 +127,34 @@ Current source inspection found:
 - Existing Firebase callable code is in `functions/src/index.ts`; no booking callable was present in the inspected main version.
 
 **Gate:** This document records the approved architecture direction only. It is a Draft contract. Do not implement a breaking cutover or deploy until open decisions are resolved and the coordinated test matrix passes.
+
+
+## 11. Customer source-of-truth path and callable feasibility check — 2026-10-31
+
+Read-only inspection of Customer PR #29 branch `chore/remove-app-language-file` confirms:
+
+- Selected pet is read from `users/{auth.uid}/pets/{dogId}`.
+- Saved addresses are managed by Customer's AddressService at `users/{auth.uid}/addresses/{addressId}`. The address model stores label, flatHouse, buildingSociety, area, landmark, city, pincode, pickupInstructions, and optional latitude/longitude.
+- Customer currently submits the full address map supplied by the UI, but the server callable should ignore that map as authority and load the saved address document by the authenticated UID and supplied address ID.
+- The Customer writer creates a client-side booking document ID, reads the pet document, derives `petDetails` from that record, and directly writes the parent booking.
+- Choose-Dates sends all `dateSchedules` as Timestamp date plus nested `walks` entries containing walkNumber, time and integer duration. The Customer UI validates each selected date and each walk (20–60 minutes; 1–3 walks/day), but the callable must repeat every validation.
+- Regular sends `dailyWalkTemplate`, `frequency: daily`, `walksPerWeek: 7`, `walksPerDay`, and `planStatus: pending_confirmation`. The inspected writer does not send a service end date or bounded calendar period.
+- Immediate requests use `preferredTime: ASAP` and client `scheduledAt: DateTime.now()`; this is not a customer-selected fixed walk start time.
+
+### Callable implementation gate — do not bypass
+
+The following are now source-confirmed: pet path, saved-address path, address fields, Choose-Dates nested schedule shape, and current Regular/Immediate payload limitations.
+
+A callable that creates assignable tasks immediately would still be unsafe because:
+1. Regular has no confirmed end date/booking period, so a finite task series cannot be generated correctly.
+2. Immediate has no fixed start time; it must remain a request awaiting availability/operations confirmation, not become a scheduled Partner task from the client clock.
+3. Canonical task statuses and Admin/Partner transition mapping remain unapproved.
+4. Timezone policy and service-zone timezone source remain unapproved.
+5. Idempotency key format and retention remain unapproved.
+6. Existing Customer PR #29 uses client-generated parent ID and has no idempotency key; migration behavior must be coordinated before changing its writer.
+
+### Safe next implementation slice
+
+Implement and test a pure server-side request validator / occurrence normalizer first, with no Firestore writes. It should reject malformed input and return normalized One-Time / Choose-Dates occurrences; Regular and Immediate should be explicitly marked as awaiting bounded period / operations confirmation until the missing inputs are approved. Then add the callable transaction only after the contract gate is approved.
+
+**No callable, app code, Firestore Rules, live data, or production deployment was changed by this audit.**
