@@ -53,7 +53,7 @@ function validOneTimeBooking(overrides = {}) {
     cancelRequest: null,
     createdAt: serverTimestamp(),
     walkCount: 1,
-    walkSchedules: [{ scheduledAt: new Date('2026-11-01T06:30:00.000Z') }],
+    walkSchedules: [{ time: '06:30', duration: 30 }],
     ...overrides,
   };
 }
@@ -111,7 +111,7 @@ test('booking rejects a walk count that does not match its schedule list', async
       doc(db, 'bookings/booking-test-001'),
       validOneTimeBooking({
         walkCount: 2,
-        walkSchedules: [{ scheduledAt: new Date('2026-11-01T06:30:00.000Z') }],
+        walkSchedules: [{ time: '06:30', duration: 30 }],
       }),
     ),
   );
@@ -231,4 +231,74 @@ test('booking rejects incomplete, non-numeric, or out-of-range pickup coordinate
       ),
     );
   }
+});
+
+test('booking rejects invalid duration or missing time in each primary walk schedule', async () => {
+  const db = env.authenticatedContext('customer-1').firestore();
+  const invalidSchedules = [
+    [{ time: '06:30', duration: 19 }],
+    [{ time: '06:30', duration: 61 }],
+    [{ time: '', duration: 30 }],
+    [{ duration: 30 }],
+    [{ time: '06:30', duration: '30' }],
+  ];
+
+  for (let index = 0; index < invalidSchedules.length; index += 1) {
+    const bookingId = `booking-primary-walk-invalid-${index}`;
+    await assertFails(
+      setDoc(
+        doc(db, `bookings/${bookingId}`),
+        validOneTimeBooking({
+          bookingId,
+          walkSchedules: invalidSchedules[index],
+        }),
+      ),
+    );
+  }
+});
+
+test('regular booking rejects an invalid duration in its daily walk template', async () => {
+  const db = env.authenticatedContext('customer-1').firestore();
+  const regularBooking = {
+    ...validOneTimeBooking({
+      bookingId: 'booking-regular-invalid-template',
+      bookingPlan: 'regular',
+      serviceType: 'regular_walk',
+      serviceName: 'Regular Daily Walk',
+      frequency: 'daily',
+      walksPerWeek: 7,
+      walksPerDay: 1,
+      planStatus: 'pending_confirmation',
+      dailyWalkTemplate: [{ time: '06:30', duration: 19 }],
+    }),
+  };
+
+  await assertFails(
+    setDoc(
+      doc(db, 'bookings/booking-regular-invalid-template'),
+      regularBooking,
+    ),
+  );
+});
+
+test('regular booking accepts a valid daily walk template', async () => {
+  const db = env.authenticatedContext('customer-1').firestore();
+  const regularBooking = validOneTimeBooking({
+    bookingId: 'booking-regular-valid-template',
+    bookingPlan: 'regular',
+    serviceType: 'regular_walk',
+    serviceName: 'Regular Daily Walk',
+    frequency: 'daily',
+    walksPerWeek: 7,
+    walksPerDay: 1,
+    planStatus: 'pending_confirmation',
+    dailyWalkTemplate: [{ time: '06:30', duration: 30 }],
+  });
+
+  await assertSucceeds(
+    setDoc(
+      doc(db, 'bookings/booking-regular-valid-template'),
+      regularBooking,
+    ),
+  );
 });
