@@ -78,3 +78,11 @@ test("rejects legacy schedule durations outside approved 20–60 minute range", 
     walkSchedules: [{ time: "6:00 AM", duration: 15 }],
   }, () => "2026-11-01"), /20 to 60 minutes/);
 });
+
+test("rejects partial numeric time components instead of silently falling back to display text", () => {
+  assert.throws(() => adaptLegacyCustomerBooking({
+    bookingPlan: "one_time",
+    scheduledAt: timestamp("2026-11-01T00:00:00.000Z"),
+    walkSchedules: [{ time: "6:30 AM", duration: 30, startHour: 6 }],
+  }, () => "2026-11-01"), /both startHour and startMinute/);
+});
