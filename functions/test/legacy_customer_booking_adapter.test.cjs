@@ -86,3 +86,13 @@ test("rejects partial numeric time components instead of silently falling back t
     walkSchedules: [{ time: "6:30 AM", duration: 30, startHour: 6 }],
   }, () => "2026-11-01"), /both startHour and startMinute/);
 });
+
+test("validates Choose-Dates Timestamp against explicit selected date when resolver is supplied", () => {
+  assert.throws(() => adaptLegacyCustomerBooking({
+    bookingPlan: "customize",
+    selectedDates: ["2026-11-01"],
+    dateSchedules: [{ date: timestamp("2026-11-02T00:00:00.000Z"), walks: [
+      { time: "6:00 AM", duration: 30 },
+    ] }],
+  }, () => "2026-11-02"), /does not match selectedDates/);
+});
