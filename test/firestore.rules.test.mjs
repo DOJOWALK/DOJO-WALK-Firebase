@@ -7,7 +7,7 @@ import {
   assertSucceeds,
   assertFails,
 } from '@firebase/rules-unit-testing';
-import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, serverTimestamp, query, where } from 'firebase/firestore';
 
 const projectId = 'demo-dojo-rules-tests';
 let env;
@@ -30,6 +30,15 @@ beforeEach(async () => {
     const db = context.firestore();
     await setDoc(doc(db, 'admin_users/super-active'), {
       role: 'super_admin', isActive: true,
+    });
+    await setDoc(doc(db, 'admin_users/central-active'), {
+      role: 'central_admin', isActive: true,
+    });
+    await setDoc(doc(db, 'admin_users/founder-active'), {
+      role: 'founder', isActive: true,
+    });
+    await setDoc(doc(db, 'admin_users/founder-inactive'), {
+      role: 'founder', isActive: false,
     });
     await setDoc(doc(db, 'admin_users/super-inactive'), {
       role: 'super_admin', isActive: false,
@@ -136,6 +145,15 @@ test('unauthenticated reads and writes to service locations are denied', async (
     name: 'India', code: 'IN', isActive: false,
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   }));
+});
+
+test('Central Admin can read the parent hierarchy needed to create Zones', async () => {
+  const db = env.authenticatedContext('central-active').firestore();
+
+  await assertSucceeds(getDoc(doc(db, 'service_states/up')));
+  await assertSucceeds(getDocs(collection(db, 'service_states')));
+  await assertSucceeds(getDocs(collection(db, 'service_districts')));
+  await assertSucceeds(getDocs(collection(db, 'service_cities')));
 });
 
 test('even an active super_admin must use the trusted callable to create a country', async () => {
@@ -264,6 +282,32 @@ test('active City boundary reference cannot be rebound by a client transaction',
   }));
 });
 
+
+test('Zone boundary draft writes belong to Central Admin, not technical Super Admin', async () => {
+  const boundaryData = {
+    locationId: 'zone-draft-1',
+    locationType: 'zone',
+    points: [
+      { lat: 28.5, lng: 77.3 },
+      { lat: 28.6, lng: 77.3 },
+      { lat: 28.6, lng: 77.4 },
+    ],
+    sourceType: 'governmentGis',
+    sourceName: 'Test official source',
+    sourceReference: 'TEST-ZONE-REF',
+    verificationStatus: 'pending',
+    verifiedBy: null,
+    verifiedAt: null,
+    verificationNotes: null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+  const superDb = env.authenticatedContext('super-active').firestore();
+  await assertFails(setDoc(doc(superDb, 'service_location_boundaries/super-zone-draft'), boundaryData));
+
+  const centralDb = env.authenticatedContext('central-active').firestore();
+  await assertSucceeds(setDoc(doc(centralDb, 'service_location_boundaries/central-zone-draft'), boundaryData));
+});
 
 test('clients cannot directly verify or reject a pending boundary', async () => {
   await env.withSecurityRulesDisabled(async (context) => {
@@ -756,6 +800,77 @@ test('service District reads are super_admin-only and direct client writes are d
 });
 
 
+
+test('super_admin cannot grant Founder authority by changing any admin role', async () => {
+  const db = env.authenticatedContext('super-active').firestore();
+  await assertFails(updateDoc(doc(db, 'admin_users/super-active'), { role: 'founder' }));
+  await assertFails(updateDoc(doc(db, 'admin_users/central-active'), { role: 'founder' }));
+  await assertFails(updateDoc(doc(db, 'admin_users/founder-active'), { role: 'super_admin' }));
+  // Founder approval authority must not be disabled or renamed by a client-side admin edit.
+  await assertFails(updateDoc(doc(db, 'admin_users/founder-active'), { isActive: false }));
+  await assertFails(updateDoc(doc(db, 'admin_users/founder-active'), { name: 'Changed Founder' }));
+  await assertSucceeds(updateDoc(doc(db, 'admin_users/central-active'), { isActive: false }));
+});
+
+test('service Zones are readable by active Zone workflow roles and never directly writable by clients', async () => {
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'service_zones/zone-1'), {
+      stateId: 'up',
+      districtId: 'gbn',
+      cityId: 'city-parent',
+      name: 'Gaur City 2 Zone',
+      isServiceActive: false,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+  });
+
+  const superDb = env.authenticatedContext('super-active').firestore();
+  const inactiveDb = env.authenticatedContext('super-inactive').firestore();
+  const supportDb = env.authenticatedContext('support-active').firestore();
+  const adminDb = env.authenticatedContext('location-active').firestore();
+  const unauthenticatedDb = env.unauthenticatedContext().firestore();
+
+  await assertSucceeds(getDoc(doc(superDb, 'service_zones/zone-1')));
+  await assertSucceeds(getDocs(collection(superDb, 'service_zones')));
+  const centralWorkflowDb = env.authenticatedContext('central-active').firestore();
+  const founderWorkflowDb = env.authenticatedContext('founder-active').firestore();
+  await assertSucceeds(getDoc(doc(centralWorkflowDb, 'service_zones/zone-1')));
+  await assertSucceeds(getDocs(collection(centralWorkflowDb, 'service_zones')));
+  await assertSucceeds(getDoc(doc(founderWorkflowDb, 'service_zones/zone-1')));
+  await assertSucceeds(getDocs(collection(founderWorkflowDb, 'service_zones')));
+  await assertFails(getDoc(doc(inactiveDb, 'service_zones/zone-1')));
+  await assertFails(getDocs(collection(inactiveDb, 'service_zones')));
+  await assertFails(getDoc(doc(supportDb, 'service_zones/zone-1')));
+  await assertFails(getDocs(collection(supportDb, 'service_zones')));
+  await assertFails(getDoc(doc(adminDb, 'service_zones/zone-1')));
+  await assertFails(getDoc(doc(unauthenticatedDb, 'service_zones/zone-1')));
+
+  const zoneRef = doc(superDb, 'service_zones/zone-1');
+  await assertFails(setDoc(doc(superDb, 'service_zones/client-created-zone'), {
+    stateId: 'up', districtId: 'gbn', cityId: 'city-parent',
+    name: 'Client Created Zone', isServiceActive: false,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(zoneRef, {
+    name: 'Tampered Zone', updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(zoneRef, {
+    isServiceActive: true, updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(zoneRef, {
+    verifiedBoundaryId: 'forged-boundary', updatedAt: serverTimestamp(),
+  }));
+  await assertFails(deleteDoc(zoneRef));
+
+  const supportZoneRef = doc(supportDb, 'service_zones/support-created-zone');
+  await assertFails(setDoc(supportZoneRef, {
+    stateId: 'up', districtId: 'gbn', cityId: 'city-parent',
+    name: 'Support Created Zone', isServiceActive: false,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  }));
+});
+
 test('trusted service location import run state is inaccessible to direct client reads and writes', async () => {
   const db = env.authenticatedContext('super-active').firestore();
   const runRef = doc(db, 'service_location_import_runs/direct-client-run');
@@ -780,4 +895,40 @@ test('trusted service location import run state is inaccessible to direct client
   await assertFails(getDoc(doc(db, 'service_location_import_runs/server-created')));
   await assertFails(updateDoc(doc(db, 'service_location_import_runs/server-created'), { status: 'completed' }));
   await assertFails(deleteDoc(doc(db, 'service_location_import_runs/server-created')));
+});
+
+
+test('Founder inbox notifications are readable and acknowledgeable only by an active Founder', async () => {
+  await env.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'founder_notifications/zone-emergency-1'), {
+      targetRole: 'founder',
+      notificationType: 'emergency_zone_suspension',
+      zoneId: 'zone-1',
+      title: 'Emergency Zone suspension',
+      message: 'Safety incident reported.',
+      status: 'unread',
+      createdAt: new Date('2026-10-27T00:00:00Z'),
+    });
+  });
+
+  const founderDb = env.authenticatedContext('founder-active').firestore();
+  const founderItem = doc(founderDb, 'founder_notifications/zone-emergency-1');
+  await assertSucceeds(getDoc(founderItem));
+  const inbox = await assertSucceeds(getDocs(query(
+    collection(founderDb, 'founder_notifications'),
+    where('targetRole', '==', 'founder'),
+  )));
+  assert.equal(inbox.size, 1);
+  await assertSucceeds(updateDoc(founderItem, { status: 'read' }));
+  await assertFails(updateDoc(founderItem, { message: 'Tamper attempt' }));
+
+  const centralDb = env.authenticatedContext('central-active').firestore();
+  await assertFails(getDoc(doc(centralDb, 'founder_notifications/zone-emergency-1')));
+  await assertFails(getDocs(query(
+    collection(centralDb, 'founder_notifications'),
+    where('targetRole', '==', 'founder'),
+  )));
+
+  const inactiveFounderDb = env.authenticatedContext('founder-inactive').firestore();
+  await assertFails(getDoc(doc(inactiveFounderDb, 'founder_notifications/zone-emergency-1')));
 });

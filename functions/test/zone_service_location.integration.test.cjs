@@ -1,0 +1,759 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const { randomUUID, createHash } = require("node:crypto");
+
+if (!process.env.FIRESTORE_EMULATOR_HOST) {
+  throw new Error("Zone callable tests require FIRESTORE_EMULATOR_HOST; refusing to run without the Firestore Emulator.");
+}
+
+const { GeoPoint, getFirestore } = require("firebase-admin/firestore");
+const { activateServiceZone, reviewServiceLocationBoundary, saveServiceLocationWithNameIndex, setServiceLocationStatus, submitServiceZoneForFounderReview, decideServiceZoneFounderApproval, requestServiceZoneDeactivation, suspendServiceZoneForEmergency, requestServiceZoneReactivation } = require("../lib/index");
+const db = getFirestore();
+const suffix = randomUUID().replace(/-/g, "").slice(0, 12);
+const ids = Object.fromEntries([
+  "admin", "central", "founder", "support", "basicAdmin", "inactiveAdmin", "unknownRole", "authTestZone", "country", "state", "district", "city", "zone",
+  "cityBoundary", "zoneBoundary", "outsideZone", "outsideBoundary", "createdZone", "reviewZone", "reviewBoundary", "reviewOutsideBoundary", "rejectedZone", "rejectedBoundary", "suspendedBoundary", "emergencyNotification",
+].map((key) => [key, `zone-it-${key}-${suffix}`]));
+
+const points = (south, west, north, east) => [
+  new GeoPoint(south, west),
+  new GeoPoint(south, east),
+  new GeoPoint(north, east),
+  new GeoPoint(north, west),
+  new GeoPoint(south, west),
+];
+
+function verifiedBoundary(locationId, locationType, polygonPoints) {
+  return {
+    locationId, locationType, points: polygonPoints,
+    verificationStatus: "verified",
+    sourceName: "Synthetic integration fixture",
+    sourceReference: "TEST-ONLY",
+    verifiedBy: ids.admin,
+    verifiedAt: new Date(),
+  };
+}
+
+async function save(uid, payload, locationId = ids.createdZone) {
+  return saveServiceLocationWithNameIndex.run({
+    ...(uid ? { auth: { uid, token: { uid } } } : {}),
+    data: { locationType: "zone", locationId, payload },
+  });
+}
+async function reviewBoundary(uid, boundaryId, decision = "verified") {
+  return reviewServiceLocationBoundary.run({
+    ...(uid ? { auth: { uid, token: { uid } } } : {}),
+    data: { boundaryId, decision, notes: "Integration test review" },
+  });
+}
+async function activate(uid, zoneId = ids.zone) {
+  return activateServiceZone.run({
+    ...(uid ? { auth: { uid, token: { uid } } } : {}),
+    data: { zoneId },
+  });
+}
+async function submitZone(uid, zoneId = ids.zone) {
+  return submitServiceZoneForFounderReview.run({
+    ...(uid ? { auth: { uid, token: { uid } } } : {}), data: { zoneId },
+  });
+}
+async function approveZone(zoneId = ids.zone) {
+  const ref = db.doc(`service_zones/${zoneId}`);
+  const zone = await ref.get();
+  await ref.set({ revision: zone.get("revision") || 1, workflowStatus: "draft", isServiceActive: false }, { merge: true });
+  await submitZone(ids.central, zoneId);
+  return decideServiceZoneFounderApproval.run({ auth: { uid: ids.founder, token: { uid: ids.founder } }, data: { zoneId, decision: "approve", notes: "Approved after review" } });
+}
+async function status(uid, locationType, locationId, isActive) {
+  return setServiceLocationStatus.run({
+    ...(uid ? { auth: { uid, token: { uid } } } : {}),
+    data: { locationType, locationId, isActive },
+  });
+}
+async function expectCode(promise, code) {
+  await assert.rejects(promise, (error) => {
+    assert.equal(error.code, code, `Expected ${code}; got ${error.code}: ${error.message}`);
+    return true;
+  });
+}
+
+test("Zone activation requires privileged auth, verified contained boundary and active ancestry; deactivation is audited", async (t) => {
+  const paths = [
+    `admin_users/${ids.admin}`, `admin_users/${ids.central}`, `admin_users/${ids.founder}`, `admin_users/${ids.support}`, `admin_users/${ids.basicAdmin}`, `admin_users/${ids.inactiveAdmin}`, `admin_users/${ids.unknownRole}`,
+    `service_countries/${ids.country}`, `service_states/${ids.state}`,
+    `service_districts/${ids.district}`, `service_cities/${ids.city}`,
+    `service_zones/${ids.zone}`, `service_zones/${ids.outsideZone}`, `service_zones/${ids.createdZone}`, `service_zones/${ids.authTestZone}`, `service_zones/${ids.reviewZone}`, `service_zones/${ids.rejectedZone}`,
+    `service_location_boundaries/${ids.cityBoundary}`,
+    `service_location_boundaries/${ids.zoneBoundary}`,
+    `service_location_boundaries/${ids.outsideBoundary}`, `service_location_boundaries/${ids.reviewBoundary}`, `service_location_boundaries/${ids.reviewOutsideBoundary}`, `service_location_boundaries/${ids.rejectedBoundary}`, `service_location_boundaries/${ids.suspendedBoundary}`,
+  ];
+  t.after(async () => {
+    await Promise.all(paths.map((path) => db.doc(path).delete().catch(() => undefined)));
+    for (const collection of ["service_location_activation_audit", "service_location_status_audit", "service_location_boundary_review_audit", "service_zone_approval_audit"]) {
+      const snap = await db.collection(collection).where("locationId", "in", [ids.zone, ids.outsideZone, ids.reviewZone, ids.city]).get().catch(() => ({ docs: [] }));
+      await Promise.all(snap.docs.map((doc) => doc.ref.delete().catch(() => undefined)));
+    }
+  });
+
+  await Promise.all([
+    db.doc(`admin_users/${ids.admin}`).set({ role: "super_admin", isActive: true }),
+    db.doc(`admin_users/${ids.central}`).set({ role: "central_admin", isActive: true }),
+    db.doc(`admin_users/${ids.founder}`).set({ role: "founder", isActive: true }),
+    db.doc(`admin_users/${ids.support}`).set({ role: "support", isActive: true }),
+    db.doc(`admin_users/${ids.basicAdmin}`).set({ role: "admin", isActive: true }),
+    db.doc(`admin_users/${ids.inactiveAdmin}`).set({ role: "super_admin", isActive: false }),
+    db.doc(`admin_users/${ids.unknownRole}`).set({ role: "mystery_role", isActive: true }),
+    db.doc(`service_countries/${ids.country}`).set({ isActive: true }),
+    db.doc(`service_states/${ids.state}`).set({ countryId: ids.country, isActive: true }),
+    db.doc(`service_districts/${ids.district}`).set({ stateId: ids.state, countryId: ids.country, isServiceActive: true }),
+    db.doc(`service_cities/${ids.city}`).set({
+      stateId: ids.state, districtId: ids.district, countryId: ids.country,
+      isServiceActive: true, verifiedBoundaryId: ids.cityBoundary,
+    }),
+    db.doc(`service_location_boundaries/${ids.cityBoundary}`).set(
+      verifiedBoundary(ids.city, "city", points(28.50, 77.30, 28.60, 77.40)),
+    ),
+    db.doc(`service_zones/${ids.zone}`).set({
+      stateId: ids.state, districtId: ids.district, cityId: ids.city,
+      isServiceActive: false, verifiedBoundaryId: ids.zoneBoundary,
+    }),
+    db.doc(`service_location_boundaries/${ids.zoneBoundary}`).set(
+      verifiedBoundary(ids.zone, "zone", points(28.52, 77.32, 28.54, 77.34)),
+    ),
+    db.doc(`service_zones/${ids.reviewZone}`).set({
+      stateId: ids.state, districtId: ids.district, cityId: ids.city,
+      name: "Review Zone", isServiceActive: false,
+    }),
+    db.doc(`service_zones/${ids.rejectedZone}`).set({
+      stateId: ids.state, districtId: ids.district, cityId: ids.city, isServiceActive: false, verifiedBoundaryId: ids.rejectedBoundary,
+    }),
+    db.doc(`service_location_boundaries/${ids.rejectedBoundary}`).set(
+      verifiedBoundary(ids.rejectedZone, "zone", points(28.52, 77.32, 28.54, 77.34)),
+    ),
+    db.doc(`service_location_boundaries/${ids.reviewBoundary}`).set({
+      ...verifiedBoundary(ids.reviewZone, "zone", points(28.52, 77.32, 28.54, 77.34)),
+      verificationStatus: "pending",
+    }),
+    db.doc(`service_location_boundaries/${ids.reviewOutsideBoundary}`).set({
+      ...verifiedBoundary(ids.outsideZone, "zone", points(28.55, 77.35, 28.62, 77.38)),
+      verificationStatus: "pending",
+    }),
+    db.doc(`service_zones/${ids.outsideZone}`).set({
+      stateId: ids.state, districtId: ids.district, cityId: ids.city,
+      isServiceActive: false, verifiedBoundaryId: ids.outsideBoundary,
+    }),
+    db.doc(`service_location_boundaries/${ids.outsideBoundary}`).set(
+      verifiedBoundary(ids.outsideZone, "zone", points(28.55, 77.35, 28.62, 77.38)),
+    ),
+  ]);
+
+  await t.test("Central Admin can create a draft Zone and ancestry is validated", async () => {
+    await expectCode(save(ids.support, {
+      stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Saved Zone",
+    }), "permission-denied");
+    await expectCode(save(ids.central, {
+      stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Saved Zone",
+      isServiceActive: true,
+    }), "invalid-argument");
+    await db.doc(`service_cities/${ids.city}`).update({ districtId: `wrong-district-${suffix}` });
+    await expectCode(save(ids.central, {
+      stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Saved Zone",
+    }), "failed-precondition");
+    await db.doc(`service_cities/${ids.city}`).update({ districtId: ids.district });
+
+    // Reject inconsistent Country ancestry during Zone save, not only later
+    // during activation.
+    const districtRef = db.doc(`service_districts/${ids.district}`);
+    await districtRef.update({ countryId: `wrong-country-${suffix}` });
+    await expectCode(save(ids.central, {
+      stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Saved Zone",
+    }), "failed-precondition");
+    await districtRef.update({ countryId: ids.country });
+
+    const cityRef = db.doc(`service_cities/${ids.city}`);
+    await cityRef.update({ countryId: `wrong-country-${suffix}` });
+    await expectCode(save(ids.central, {
+      stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Saved Zone",
+    }), "failed-precondition");
+    await cityRef.update({ countryId: ids.country });
+
+    const result = await save(ids.central, {
+      stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Saved Zone",
+    });
+    assert.equal(result.ok, true);
+    const created = await db.doc(`service_zones/${ids.createdZone}`).get();
+    assert.equal(created.exists, true);
+    assert.equal(created.get("isServiceActive"), false);
+    assert.equal(created.get("verifiedBoundaryId"), undefined);
+    assert.equal(created.get("workflowStatus"), "draft");
+    assert.equal(created.get("revision"), 1);
+    await expectCode(save(ids.admin, {
+      stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Super Admin draft",
+    }), "permission-denied");
+  });
+
+  await t.test("Only an active Central Admin can review a Zone boundary", async () => {
+    // Technical Super Admin, Founder, inactive admins and ordinary support
+    // accounts must not inherit Central Admin boundary-review authority.
+    for (const uid of [ids.admin, ids.founder, ids.inactiveAdmin, ids.support]) {
+      await expectCode(reviewBoundary(uid, ids.reviewBoundary), "permission-denied");
+      assert.equal(
+        (await db.doc(`service_location_boundaries/${ids.reviewBoundary}`).get()).get("verificationStatus"),
+        "pending",
+        `Boundary must remain pending after unauthorized review attempt by ${uid}`,
+      );
+    }
+  });
+
+  await t.test("Zone boundary review validates Zone geometry without City containment gate", async () => {
+    const cityRef = db.doc(`service_cities/${ids.city}`);
+    await cityRef.update({ isServiceActive: false });
+    try {
+      const result = await reviewBoundary(ids.central, ids.reviewBoundary);
+      assert.equal(result.ok, true);
+      assert.equal(result.decision, "verified");
+      const reviewed = await db.doc(`service_location_boundaries/${ids.reviewBoundary}`).get();
+      assert.equal(reviewed.get("verificationStatus"), "verified");
+      assert.equal((await db.doc(`service_zones/${ids.reviewZone}`).get()).get("verifiedBoundaryId"), ids.reviewBoundary);
+
+      // POL-038: City containment is reference/geographic validation, not a
+      // Zone verification or activation gate.
+      const outsideReview = await reviewBoundary(ids.central, ids.reviewOutsideBoundary);
+      assert.equal(outsideReview.ok, true);
+      assert.equal((await db.doc(`service_location_boundaries/${ids.reviewOutsideBoundary}`).get()).get("verificationStatus"), "verified");
+    } finally {
+      await cityRef.update({ isServiceActive: true });
+    }
+  });
+
+  await t.test("rejects unauthenticated and non-super-admin callers", async () => {
+    await expectCode(activate(undefined), "unauthenticated");
+    await expectCode(activate(ids.support), "permission-denied");
+  });
+
+  await t.test("Zone save fails closed for missing, inactive, ordinary-admin and unknown-role actors", async () => {
+    const payload = {
+      stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Authorization Test Zone",
+    };
+    await expectCode(save(undefined, payload, ids.authTestZone), "unauthenticated");
+    await expectCode(save(`missing-admin-${suffix}`, payload, ids.authTestZone), "permission-denied");
+    await expectCode(save(ids.inactiveAdmin, payload, ids.authTestZone), "permission-denied");
+    await expectCode(save(ids.basicAdmin, payload, ids.authTestZone), "permission-denied");
+    await expectCode(save(ids.unknownRole, payload, ids.authTestZone), "permission-denied");
+    assert.equal((await db.doc(`service_zones/${ids.authTestZone}`).get()).exists, false);
+  });
+
+  await t.test("rejects Zone activation through generic status callable", async () => {
+    // Only activateServiceZone may activate a Zone; the generic status
+    // callable must not become a route around Founder approval.
+    await expectCode(status(ids.admin, "zone", ids.zone, true), "failed-precondition");
+    await expectCode(status(ids.central, "zone", ids.zone, true), "permission-denied");
+    await expectCode(status(ids.founder, "zone", ids.zone, true), "permission-denied");
+
+    // Only Central Admin may execute a Founder-approved Zone deactivation.
+    // Technical Super Admin and Founder roles must not inherit this authority.
+    await expectCode(status(ids.admin, "zone", ids.zone, false), "permission-denied");
+    await expectCode(status(ids.founder, "zone", ids.zone, false), "permission-denied");
+    assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), false);
+  });
+
+  await t.test("Founder approval cannot be bypassed by Central Admin or technical Super Admin", async () => {
+    await expectCode(submitZone(ids.admin, ids.zone), "permission-denied");
+    await expectCode(decideServiceZoneFounderApproval.run({
+      auth: { uid: ids.admin, token: { uid: ids.admin } },
+      data: { zoneId: ids.zone, decision: "approve", notes: "Must be denied" },
+    }), "permission-denied");
+    await expectCode(decideServiceZoneFounderApproval.run({
+      auth: { uid: ids.central, token: { uid: ids.central } },
+      data: { zoneId: ids.zone, decision: "approve", notes: "Self approval must be denied" },
+    }), "permission-denied");
+    await expectCode(activate(ids.central, ids.zone), "failed-precondition");
+    assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), false);
+    await db.doc(`admin_users/${ids.founder}`).update({ isActive: false });
+    await expectCode(decideServiceZoneFounderApproval.run({
+      auth: { uid: ids.founder, token: { uid: ids.founder } },
+      data: { zoneId: ids.zone, decision: "approve", notes: "Inactive Founder must be denied" },
+    }), "permission-denied");
+    await db.doc(`admin_users/${ids.founder}`).update({ isActive: true });
+  });
+
+  await t.test("final Founder rejection blocks resubmission of the same Zone", async () => {
+    await submitZone(ids.central, ids.rejectedZone);
+    await decideServiceZoneFounderApproval.run({
+      auth: { uid: ids.founder, token: { uid: ids.founder } },
+      data: { zoneId: ids.rejectedZone, decision: "reject", notes: "Final rejection for test" },
+    });
+    const rejectedRef = db.doc(`service_zones/${ids.rejectedZone}`);
+    const rejectedBeforeEdit = await rejectedRef.get();
+    assert.equal(rejectedBeforeEdit.get("workflowStatus"), "rejected");
+    const revisionBeforeEdit = rejectedBeforeEdit.get("revision");
+    await expectCode(submitZone(ids.central, ids.rejectedZone), "failed-precondition");
+    // The save callable must not reset final rejection to draft or increment revision.
+    await expectCode(save(ids.central, {
+      stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Try to edit finally rejected Zone",
+    }, ids.rejectedZone), "failed-precondition");
+    const rejectedAfterEdit = await rejectedRef.get();
+    assert.equal(rejectedAfterEdit.get("workflowStatus"), "rejected");
+    assert.equal(rejectedAfterEdit.get("revision"), revisionBeforeEdit);
+  });
+
+  await t.test("standard submission and Founder decision replays are rejected", async () => {
+    await submitZone(ids.central, ids.reviewZone);
+    await expectCode(submitZone(ids.central, ids.reviewZone), "already-exists");
+    const decision = () => decideServiceZoneFounderApproval.run({
+      auth: { uid: ids.founder, token: { uid: ids.founder } },
+      data: { zoneId: ids.reviewZone, decision: "approve", notes: "Replay audit test" },
+    });
+    const approved = await decision();
+    assert.equal(approved.workflowStatus, "approved");
+    await expectCode(decision(), "failed-precondition");
+  });
+
+  await t.test("editing a submitted Zone invalidates the pending Founder decision and advances revision", async () => {
+    await submitZone(ids.central, ids.reviewZone);
+    const zoneRef = db.doc(`service_zones/${ids.reviewZone}`);
+    const submitted = await zoneRef.get();
+    const submittedRevision = submitted.get("revision");
+    assert.equal(submitted.get("workflowStatus"), "submitted");
+    assert.equal(submitted.get("submittedRevision"), submittedRevision);
+    assert.equal(typeof submitted.get("submittedBoundaryHash"), "string");
+
+    // Simulate stale metadata left by an earlier deactivation/reactivation
+    // request; editing must clear it along with the prior submission.
+    await zoneRef.update({
+      deactivationRequestedRevision: submittedRevision,
+      deactivationRequestedBoundaryHash: "stale-deactivation-hash",
+      deactivationRequestedBy: ids.central,
+      deactivationRequestReason: "stale request",
+      deactivationRequestedAt: new Date(),
+      deactivationApprovedBy: ids.founder,
+      deactivationApprovedRevision: submittedRevision,
+      deactivationApprovedBoundaryHash: "stale-approved-hash",
+      deactivationApprovedAt: new Date(),
+      reactivationRequestedRevision: submittedRevision,
+      reactivationRequestedBoundaryHash: "stale-reactivation-hash",
+      reactivationRequestedBy: ids.central,
+      reactivationRequestReason: "stale reactivation",
+      reactivationRequestedAt: new Date(),
+      founderDecision: "approve",
+      founderDecisionNotes: "old decision",
+      founderDecisionBy: ids.founder,
+      founderDecisionAt: new Date(),
+    });
+
+    await save(ids.central, {
+      stateId: ids.state, districtId: ids.district, cityId: ids.city,
+      name: "Renamed Review Zone",
+    }, ids.reviewZone);
+
+    const edited = await zoneRef.get();
+    assert.equal(edited.get("workflowStatus"), "draft");
+    assert.equal(edited.get("revision"), submittedRevision + 1);
+    assert.equal(edited.get("approvalUid"), undefined);
+    assert.equal(edited.get("approvedRevision"), undefined);
+    assert.equal(edited.get("approvedBoundaryHash"), undefined);
+    assert.equal(edited.get("submittedBoundaryHash"), undefined);
+    for (const field of [
+      "submittedRevision", "submittedBy",
+      "deactivationRequestedRevision", "deactivationRequestedBoundaryHash",
+      "deactivationRequestedBy", "deactivationRequestReason", "deactivationRequestNotes", "deactivationRequestedAt",
+      "deactivationApprovedBy", "deactivationApprovedRevision",
+      "deactivationApprovedBoundaryHash", "deactivationApprovedAt",
+      "reactivationRequestedRevision", "reactivationRequestedBoundaryHash",
+      "reactivationRequestedBy", "reactivationRequestReason", "reactivationRequestedAt",
+      "founderDecision", "founderDecisionNotes", "founderDecisionBy", "founderDecisionAt",
+    ]) {
+      assert.equal(edited.get(field), undefined, `stale workflow field ${field} must be cleared`);
+    }
+    await expectCode(decideServiceZoneFounderApproval.run({
+      auth: { uid: ids.founder, token: { uid: ids.founder } },
+      data: { zoneId: ids.reviewZone, decision: "approve", notes: "Old submission must no longer be approvable" },
+    }), "failed-precondition");
+  });
+
+  await t.test("stale boundary hash invalidates Founder approval", async () => {
+    await approveZone(ids.reviewZone);
+    const boundaryRef = db.doc(`service_location_boundaries/${ids.reviewBoundary}`);
+    const boundary = await boundaryRef.get();
+    const originalPoints = boundary.get("points");
+    try {
+      await boundaryRef.update({ points: points(28.521, 77.321, 28.541, 77.341) });
+      const changed = await boundaryRef.get();
+      const changedHash = createHash("sha256").update(JSON.stringify(changed.get("points").map((point) => [
+        typeof point.latitude === "number" ? point.latitude : point._latitude,
+        typeof point.longitude === "number" ? point.longitude : point._longitude,
+      ]))).digest("hex");
+      const zoneAfterBoundaryEdit = await db.doc(`service_zones/${ids.reviewZone}`).get();
+      assert.equal(zoneAfterBoundaryEdit.get("verifiedBoundaryId"), ids.reviewBoundary,
+        "activation must be bound to the exact boundary edited by this test");
+      assert.notEqual(changedHash, zoneAfterBoundaryEdit.get("approvedBoundaryHash"),
+        "changed boundary must not retain the Founder-approved hash");
+      assert.notEqual(changedHash, zoneAfterBoundaryEdit.get("submittedBoundaryHash"),
+        "changed boundary must not retain the submitted hash");
+      console.log("[stale-boundary-diagnostic]", JSON.stringify({
+        boundaryId: ids.reviewBoundary,
+        zoneBoundaryId: zoneAfterBoundaryEdit.get("verifiedBoundaryId"),
+        changedHash,
+        approvedBoundaryHash: zoneAfterBoundaryEdit.get("approvedBoundaryHash"),
+        submittedBoundaryHash: zoneAfterBoundaryEdit.get("submittedBoundaryHash"),
+        storedCoordinates: changed.get("points").map((point) => [
+          typeof point.latitude === "number" ? point.latitude : point._latitude,
+          typeof point.longitude === "number" ? point.longitude : point._longitude,
+        ]),
+      }));
+      await expectCode(activate(ids.central, ids.reviewZone), "failed-precondition");
+      assert.equal((await db.doc(`service_zones/${ids.reviewZone}`).get()).get("isServiceActive"), false);
+    } finally {
+      await boundaryRef.update({ points: originalPoints });
+    }
+  });
+
+  await t.test("Founder approval is invalidated when boundary identity or verification provenance changes", async () => {
+    await approveZone(ids.reviewZone);
+    const zoneRef = db.doc(`service_zones/${ids.reviewZone}`);
+    const originalZone = await zoneRef.get();
+    const originalBoundaryId = originalZone.get("verifiedBoundaryId");
+    const originalBoundaryRef = db.doc(`service_location_boundaries/${originalBoundaryId}`);
+    const originalBoundary = await originalBoundaryRef.get();
+    const alternateBoundaryId = `${ids.reviewBoundary}-identity-copy`;
+    const alternateBoundaryRef = db.doc(`service_location_boundaries/${alternateBoundaryId}`);
+    try {
+      // Same boundary content under a different document identity must not
+      // inherit the Founder approval bound to the original boundary document.
+      await alternateBoundaryRef.set(originalBoundary.data());
+      await zoneRef.update({ verifiedBoundaryId: alternateBoundaryId });
+      await expectCode(activate(ids.central, ids.reviewZone), "failed-precondition");
+      await zoneRef.update({ verifiedBoundaryId: originalBoundaryId });
+
+      // Verification provenance is part of the approval fingerprint too.
+      const originalSourceReference = originalBoundary.get("sourceReference");
+      await originalBoundaryRef.update({ sourceReference: `${originalSourceReference}-changed` });
+      await expectCode(activate(ids.central, ids.reviewZone), "failed-precondition");
+      await originalBoundaryRef.update({ sourceReference: originalSourceReference });
+    } finally {
+      await zoneRef.update({ verifiedBoundaryId: originalBoundaryId });
+      await alternateBoundaryRef.delete();
+      await originalBoundaryRef.update({ sourceReference: originalBoundary.get("sourceReference") });
+    }
+    assert.equal((await zoneRef.get()).get("isServiceActive"), false);
+  });
+
+  await t.test("Founder cannot decide a submission after its boundary changes", async () => {
+    await submitZone(ids.central, ids.reviewZone);
+    const boundaryRef = db.doc(`service_location_boundaries/${ids.reviewBoundary}`);
+    const before = await boundaryRef.get();
+    const originalPoints = before.get("points");
+    try {
+      await boundaryRef.update({ points: points(28.522, 77.322, 28.542, 77.342) });
+      await expectCode(decideServiceZoneFounderApproval.run({
+        auth: { uid: ids.founder, token: { uid: ids.founder } },
+        data: { zoneId: ids.reviewZone, decision: "approve", notes: "Stale submission must be rejected" },
+      }), "failed-precondition");
+      const unchanged = await db.doc(`service_zones/${ids.reviewZone}`).get();
+      assert.equal(unchanged.get("workflowStatus"), "submitted");
+      assert.equal(unchanged.get("approvalUid"), undefined);
+    } finally {
+      await boundaryRef.update({ points: originalPoints });
+    }
+    // Restore the fixture to an approved state for the following revision test.
+    await approveZone(ids.reviewZone);
+  });
+
+  await t.test("Zone revision changes invalidate an otherwise valid Founder approval", async () => {
+    const zoneRef = db.doc(`service_zones/${ids.reviewZone}`);
+    const before = await zoneRef.get();
+    const currentRevision = before.get("revision");
+    assert.equal(before.get("workflowStatus"), "approved");
+    assert.equal(before.get("approvedRevision"), currentRevision);
+    await zoneRef.update({ revision: currentRevision + 1 });
+    await expectCode(activate(ids.central, ids.reviewZone), "failed-precondition");
+    const after = await zoneRef.get();
+    assert.equal(after.get("isServiceActive"), false);
+    assert.equal(after.get("approvedRevision"), currentRevision);
+    assert.notEqual(after.get("approvedRevision"), after.get("revision"));
+  });
+
+  await t.test("activates a verified Zone without parent service-active flags and writes activation audit", async () => {
+    const cityRef = db.doc(`service_cities/${ids.city}`);
+    await Promise.all([
+      db.doc(`service_states/${ids.state}`).update({ isActive: false }),
+      db.doc(`service_districts/${ids.district}`).update({ isServiceActive: false }),
+      cityRef.update({ isServiceActive: false, verifiedBoundaryId: null }),
+    ]);
+    await approveZone(ids.zone);
+    // Missing City boundary must not block a verified, Founder-approved Zone.
+    const result = await activate(ids.central);
+    assert.equal(result.ok, true);
+    await Promise.all([
+      db.doc(`service_states/${ids.state}`).update({ isActive: true }),
+      db.doc(`service_districts/${ids.district}`).update({ isServiceActive: true }),
+      cityRef.update({ isServiceActive: true, verifiedBoundaryId: ids.cityBoundary }),
+    ]);
+    assert.equal(result.locationType, "zone");
+    assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), true);
+    assert.ok((await db.doc(`service_countries/${ids.country}`).get()).get("activationGuardAt"));
+    assert.ok((await db.doc(`service_states/${ids.state}`).get()).get("activationGuardAt"));
+    assert.ok((await db.doc(`service_districts/${ids.district}`).get()).get("activationGuardAt"));
+    assert.ok((await db.doc(`service_cities/${ids.city}`).get()).get("activationGuardAt"));
+    // Country deactivation must also respect active State descendants.
+    await expectCode(status(ids.admin, "country", ids.country, false), "failed-precondition");
+    assert.equal((await db.doc(`service_countries/${ids.country}`).get()).get("isActive"), true);
+    // A City cannot be deactivated while an active Zone still depends on it.
+    // The City has no legacy active Area in this fixture, so this specifically
+    // exercises the canonical Zone-descendant guard.
+    await expectCode(status(ids.admin, "city", ids.city, false), "failed-precondition");
+    assert.equal((await db.doc(`service_cities/${ids.city}`).get()).get("isServiceActive"), true);
+
+    // Isolate ancestor guards from ordinary active-child checks. Simulate
+    // stale legacy data where City and then State are already marked inactive
+    // but the canonical Zone remains active.
+    await db.doc(`service_cities/${ids.city}`).update({ isServiceActive: false });
+    await db.doc(`service_states/${ids.state}`).update({ isActive: false });
+    await expectCode(status(ids.admin, "country", ids.country, false), "failed-precondition");
+    assert.equal((await db.doc(`service_countries/${ids.country}`).get()).get("isActive"), true);
+    await db.doc(`service_states/${ids.state}`).update({ isActive: true });
+    await expectCode(status(ids.admin, "district", ids.district, false), "failed-precondition");
+    await expectCode(status(ids.admin, "state", ids.state, false), "failed-precondition");
+    assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), true);
+    await db.doc(`service_cities/${ids.city}`).update({ isServiceActive: true });
+
+    const audit = await db.collection("service_location_activation_audit")
+      .where("locationId", "==", ids.zone).get();
+    assert.ok(audit.docs.some((doc) => doc.get("result") === "activated" && doc.get("locationType") === "zone"));
+  });
+
+  await t.test("rejects service status changes for every non-Zone location type", async () => {
+    const legacyAndParentTypes = [
+      ["country", ids.country],
+      ["state", ids.state],
+      ["district", ids.district],
+      ["city", ids.city],
+      ["area", ids.city],
+      ["locality", ids.city],
+    ];
+    for (const [locationType, locationId] of legacyAndParentTypes) {
+      await expectCode(status(ids.admin, locationType, locationId, true), "failed-precondition");
+      await expectCode(status(ids.admin, locationType, locationId, false), "failed-precondition");
+    }
+    assert.equal((await db.doc(`service_countries/${ids.country}`).get()).get("isActive"), true);
+    assert.equal((await db.doc(`service_states/${ids.state}`).get()).get("isActive"), true);
+    assert.equal((await db.doc(`service_districts/${ids.district}`).get()).get("isServiceActive"), true);
+    assert.equal((await db.doc(`service_cities/${ids.city}`).get()).get("isServiceActive"), true);
+  });
+
+  await t.test("activates a verified Founder-approved Zone outside City polygon because City containment is not an activation gate", async () => {
+    await approveZone(ids.outsideZone);
+    const result = await activate(ids.central, ids.outsideZone);
+    assert.equal(result.ok, true);
+    assert.equal((await db.doc(`service_zones/${ids.outsideZone}`).get()).get("isServiceActive"), true);
+  });
+
+  await t.test("rejects inactive privileged account and mismatched City ancestry", async () => {
+    // The preceding happy-path test activated this Zone; reset it so this test
+    // proves the failed ancestry check cannot activate an inactive Zone.
+    await requestServiceZoneDeactivation.run({ auth: { uid: ids.central, token: { uid: ids.central } }, data: { zoneId: ids.zone, notes: "Test deactivation request" } });
+    await expectCode(requestServiceZoneDeactivation.run({ auth: { uid: ids.central, token: { uid: ids.central } }, data: { zoneId: ids.zone, notes: "Duplicate request must be rejected" } }), "failed-precondition");
+    const deactivationChanges = await decideServiceZoneFounderApproval.run({
+      auth: { uid: ids.founder, token: { uid: ids.founder } },
+      data: { zoneId: ids.zone, decision: "changes_required", notes: "Please clarify the service continuity plan." },
+    });
+    assert.equal(deactivationChanges.workflowStatus, "active");
+    assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), true);
+    assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("approvedRevision"), 1);
+    await expectCode(decideServiceZoneFounderApproval.run({ auth: { uid: ids.founder, token: { uid: ids.founder } }, data: { zoneId: ids.zone, decision: "changes_required", notes: "Replay of old decision must fail" } }), "failed-precondition");
+    await requestServiceZoneDeactivation.run({ auth: { uid: ids.central, token: { uid: ids.central } }, data: { zoneId: ids.zone, notes: "Updated deactivation request after clarification" } });
+    await decideServiceZoneFounderApproval.run({ auth: { uid: ids.founder, token: { uid: ids.founder } }, data: { zoneId: ids.zone, decision: "deactivate", notes: "Founder approved deactivation for test" } });
+    const zoneRef = db.doc(`service_zones/${ids.zone}`);
+    const approvedZone = await zoneRef.get();
+    const approvedRevision = approvedZone.get("revision");
+    assert.equal(approvedZone.get("workflowStatus"), "deactivation_approved");
+    assert.equal(approvedZone.get("isServiceActive"), true);
+
+    // A revision change after Founder approval must invalidate deactivation.
+    await zoneRef.update({ revision: approvedRevision + 1 });
+    await expectCode(status(ids.central, "zone", ids.zone, false), "failed-precondition");
+    assert.equal((await zoneRef.get()).get("isServiceActive"), true);
+    await zoneRef.update({ revision: approvedRevision });
+
+    // A boundary geometry change after Founder approval must also invalidate it.
+    const zoneBoundaryRef = db.doc(`service_location_boundaries/${ids.zoneBoundary}`);
+    const zoneBoundaryBefore = await zoneBoundaryRef.get();
+    const originalZonePoints = zoneBoundaryBefore.get("points");
+    try {
+      await zoneBoundaryRef.update({ points: points(28.521, 77.321, 28.541, 77.341) });
+      await expectCode(status(ids.central, "zone", ids.zone, false), "failed-precondition");
+      assert.equal((await zoneRef.get()).get("isServiceActive"), true);
+      assert.equal((await zoneRef.get()).get("workflowStatus"), "deactivation_approved");
+    } finally {
+      await zoneBoundaryRef.update({ points: originalZonePoints });
+    }
+    const deactivated = await status(ids.central, "zone", ids.zone, false);
+    assert.equal(deactivated.alreadyInRequestedState, false);
+    assert.equal((await zoneRef.get()).get("isServiceActive"), false);
+    await expectCode(decideServiceZoneFounderApproval.run({ auth: { uid: ids.founder, token: { uid: ids.founder } }, data: { zoneId: ids.zone, decision: "deactivate", notes: "Replay after deactivation must fail" } }), "failed-precondition");
+    await db.doc(`admin_users/${ids.central}`).update({ isActive: false });
+    await expectCode(activate(ids.central), "permission-denied");
+    await db.doc(`admin_users/${ids.central}`).update({ isActive: true });
+
+    const cityRef = db.doc(`service_cities/${ids.city}`);
+    // Country ancestry must match at both District and City levels.
+    await cityRef.update({ countryId: `wrong-country-${suffix}` });
+    await expectCode(activate(ids.central), "failed-precondition");
+    await cityRef.update({ countryId: ids.country });
+
+    await db.doc(`service_districts/${ids.district}`).update({ countryId: `wrong-country-${suffix}` });
+    await expectCode(activate(ids.central), "failed-precondition");
+    await db.doc(`service_districts/${ids.district}`).update({ countryId: ids.country });
+
+    await cityRef.update({ districtId: `wrong-district-${suffix}` });
+    await expectCode(activate(ids.central), "failed-precondition");
+    await cityRef.update({ districtId: ids.district });
+    assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), false);
+  });
+
+
+  await t.test("repeated Zone deactivation is idempotent and does not duplicate audit", async () => {
+    // The preceding test has already exercised the approved deactivation
+    // transition. This fixture is intentionally inactive here, so this test
+    // verifies a no-op replay rather than pretending a new transition occurs.
+    assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), false);
+    const auditBeforeReplay = await db.collection("service_location_status_audit")
+      .where("locationId", "==", ids.zone).get();
+    assert.ok(auditBeforeReplay.docs.length > 0);
+
+    const replay = await status(ids.central, "zone", ids.zone, false);
+    assert.equal(replay.ok, true);
+    assert.equal(replay.alreadyInRequestedState, true);
+    const auditAfterReplay = await db.collection("service_location_status_audit")
+      .where("locationId", "==", ids.zone).get();
+    assert.equal(auditAfterReplay.docs.length, auditBeforeReplay.docs.length);
+    assert.equal((await db.doc(`service_zones/${ids.zone}`).get()).get("isServiceActive"), false);
+  });
+
+  await t.test("Central Admin can emergency-suspend a Zone with reason, audit and Founder inbox notification", async () => {
+    const zoneRef = db.doc(`service_zones/${ids.zone}`);
+    await zoneRef.set({ isServiceActive: true, workflowStatus: "active", revision: 7, approvedRevision: 7, approvedBoundaryHash: "old-hash", approvalUid: ids.founder }, { merge: true });
+    const result = await suspendServiceZoneForEmergency.run({
+      auth: { uid: ids.central, token: { uid: ids.central } },
+      data: { zoneId: ids.zone, reason: "Safety incident reported; stop new service immediately.", severity: "SEV-1" },
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.workflowStatus, "suspended");
+    assert.equal(result.founderNotificationQueued, true);
+    const suspended = await zoneRef.get();
+    assert.equal(suspended.get("isServiceActive"), false);
+    assert.equal(suspended.get("workflowStatus"), "suspended");
+    assert.equal(suspended.get("approvedRevision"), undefined);
+    assert.equal(suspended.get("emergencySuspensionSeverity"), "SEV-1");
+    const suspendedRevision = suspended.get("revision");
+    await expectCode(save(ids.central, {
+      stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Attempt to bypass reactivation",
+    }, ids.zone), "failed-precondition");
+    const stillSuspended = await zoneRef.get();
+    assert.equal(stillSuspended.get("workflowStatus"), "suspended");
+    assert.equal(stillSuspended.get("revision"), suspendedRevision);
+    const suspendedBoundaryRef = db.doc(`service_location_boundaries/${ids.suspendedBoundary}`);
+    await suspendedBoundaryRef.set({
+      locationId: ids.zone, locationType: "zone", points: points(0.2, 0.2, 0.3, 0.3),
+      verificationStatus: "pending", sourceName: "Suspended-boundary bypass test", sourceReference: "TEST-ONLY",
+    });
+    await expectCode(reviewBoundary(ids.central, ids.suspendedBoundary, "verified"), "failed-precondition");
+    assert.equal((await zoneRef.get()).get("workflowStatus"), "suspended");
+    assert.equal((await zoneRef.get()).get("revision"), suspendedRevision);
+    assert.equal((await suspendedBoundaryRef.get()).get("verificationStatus"), "pending");
+    const notificationsBeforeReplay = await db.collection("founder_notifications")
+      .where("zoneId", "==", ids.zone).where("notificationType", "==", "emergency_zone_suspension").get();
+    const replaySuspension = await suspendServiceZoneForEmergency.run({
+      auth: { uid: ids.central, token: { uid: ids.central } },
+      data: { zoneId: ids.zone, reason: "Duplicate request must not create another incident.", severity: "SEV-1" },
+    });
+    assert.equal(replaySuspension.alreadySuspended, true);
+    const notificationsAfterReplay = await db.collection("founder_notifications")
+      .where("zoneId", "==", ids.zone).where("notificationType", "==", "emergency_zone_suspension").get();
+    assert.equal(notificationsAfterReplay.size, notificationsBeforeReplay.size);
+    const audit = await db.collection("service_zone_approval_audit").where("zoneId", "==", ids.zone).where("action", "==", "emergency_suspended").get();
+    assert.ok(audit.docs.some((doc) => doc.get("actorUid") === ids.central));
+    const notifications = await db.collection("founder_notifications").where("zoneId", "==", ids.zone).where("notificationType", "==", "emergency_zone_suspension").get();
+    assert.ok(notifications.docs.some((doc) => doc.get("targetRole") === "founder" && doc.get("status") === "unread"));
+    await expectCode(activate(ids.central, ids.zone), "failed-precondition");
+    await expectCode(suspendServiceZoneForEmergency.run({
+      auth: { uid: ids.admin, token: { uid: ids.admin } },
+      data: { zoneId: ids.zone, reason: "Unauthorized attempt", severity: "SEV-1" },
+    }), "permission-denied");
+    await expectCode(suspendServiceZoneForEmergency.run({
+      auth: { uid: ids.inactiveAdmin, token: { uid: ids.inactiveAdmin } },
+      data: { zoneId: ids.zone, reason: "Inactive account must not suspend", severity: "SEV-1" },
+    }), "permission-denied");
+    await expectCode(suspendServiceZoneForEmergency.run({
+      auth: { uid: ids.central, token: { uid: ids.central } },
+      data: { zoneId: ids.zone, reason: "Missing severity must be rejected." },
+    }), "invalid-argument");
+    await expectCode(suspendServiceZoneForEmergency.run({
+      auth: { uid: ids.central, token: { uid: ids.central } },
+      data: { zoneId: ids.zone, reason: "   ", severity: "SEV-2" },
+    }), "invalid-argument");
+    await expectCode(suspendServiceZoneForEmergency.run({
+      auth: { uid: ids.central, token: { uid: ids.central } },
+      data: { zoneId: ids.zone, reason: "Invalid severity test", severity: "SEV-5" },
+    }), "invalid-argument");
+    await expectCode(suspendServiceZoneForEmergency.run({
+      auth: { uid: ids.central, token: { uid: ids.central } },
+      data: { zoneId: ids.createdZone, reason: "A draft Zone must not be emergency-suspended.", severity: "SEV-2" },
+    }), "failed-precondition");
+
+    await expectCode(activate(ids.central, ids.zone), "failed-precondition");
+    const reactivation = await requestServiceZoneReactivation.run({
+      auth: { uid: ids.central, token: { uid: ids.central } },
+      data: { zoneId: ids.zone, reason: "Safety review completed; requesting fresh approval." },
+    });
+    assert.equal(reactivation.workflowStatus, "reactivation_submitted");
+    assert.equal(reactivation.revision, 8);
+    await expectCode(save(ids.central, {
+      stateId: ids.state, districtId: ids.district, cityId: ids.city, name: "Attempt to edit submitted reactivation",
+    }, ids.zone), "failed-precondition");
+    const stillSubmittedReactivation = await zoneRef.get();
+    assert.equal(stillSubmittedReactivation.get("workflowStatus"), "reactivation_submitted");
+    assert.equal(stillSubmittedReactivation.get("revision"), 8);
+    await expectCode(reviewBoundary(ids.central, ids.suspendedBoundary, "verified"), "failed-precondition");
+    assert.equal((await zoneRef.get()).get("workflowStatus"), "reactivation_submitted");
+    assert.equal((await db.doc(`service_location_boundaries/${ids.suspendedBoundary}`).get()).get("verificationStatus"), "pending");
+    // The ordinary approval submission must not downgrade reactivation_submitted
+    // to submitted, otherwise Founder could use generic "approve" instead of
+    // the required explicit "reactivate" decision.
+    await expectCode(submitServiceZoneForFounderReview.run({
+      auth: { uid: ids.central, token: { uid: ids.central } },
+      data: { zoneId: ids.zone },
+    }), "failed-precondition");
+    assert.equal((await zoneRef.get()).get("workflowStatus"), "reactivation_submitted");
+    await expectCode(activate(ids.central, ids.zone), "failed-precondition");
+    const reactivationChanges = await decideServiceZoneFounderApproval.run({
+      auth: { uid: ids.founder, token: { uid: ids.founder } },
+      data: { zoneId: ids.zone, decision: "changes_required", notes: "Attach the completed safety review." },
+    });
+    assert.equal(reactivationChanges.workflowStatus, "suspended");
+    assert.equal((await zoneRef.get()).get("isServiceActive"), false);
+    const resubmittedReactivation = await requestServiceZoneReactivation.run({
+      auth: { uid: ids.central, token: { uid: ids.central } },
+      data: { zoneId: ids.zone, reason: "Safety review attached; requesting approval again." },
+    });
+    assert.equal(resubmittedReactivation.workflowStatus, "reactivation_submitted");
+    assert.equal(resubmittedReactivation.revision, 9);
+    const founderDecision = await decideServiceZoneFounderApproval.run({
+      auth: { uid: ids.founder, token: { uid: ids.founder } },
+      data: { zoneId: ids.zone, decision: "reactivate", notes: "Reviewed safety evidence; reactivation approved." },
+    });
+    assert.equal(founderDecision.workflowStatus, "approved");
+    // Founder decisions are bound to the current submitted workflow state; replaying the same approval must fail.
+    await expectCode(decideServiceZoneFounderApproval.run({
+      auth: { uid: ids.founder, token: { uid: ids.founder } },
+      data: { zoneId: ids.zone, decision: "reactivate", notes: "Replay attempt must be rejected." },
+    }), "failed-precondition");
+    await expectCode(decideServiceZoneFounderApproval.run({
+      auth: { uid: ids.founder, token: { uid: ids.founder } },
+      data: { zoneId: ids.zone, decision: "approve", notes: "Wrong workflow decision must be rejected." },
+    }), "failed-precondition");
+    const reactivated = await activate(ids.central, ids.zone);
+    assert.equal(reactivated.ok, true);
+    assert.equal((await zoneRef.get()).get("isServiceActive"), true);
+  });
+});

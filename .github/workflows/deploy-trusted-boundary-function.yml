@@ -65,11 +65,14 @@ jobs:
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
           echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/firebase-service-account.json" >> "$GITHUB_ENV"
 
-      - name: Deploy trusted location callables only
-        run: npx --yes firebase-tools deploy --only functions:reviewServiceLocationBoundary,functions:activateServiceLocation,functions:setServiceLocationStatus,functions:manageServiceLocationImportRun,functions:saveServiceLocationWithNameIndex --project dojo-platform-b68a3 --non-interactive --force
+      - name: Deploy trusted location and Zone workflow callables only
+        run: >-
+          npx --yes firebase-tools deploy
+          --only functions:reviewServiceLocationBoundary,functions:activateServiceLocation,functions:setServiceLocationStatus,functions:manageServiceLocationImportRun,functions:saveServiceLocationWithNameIndex,functions:submitServiceZoneForFounderReview,functions:decideServiceZoneFounderApproval,functions:activateServiceZone,functions:requestServiceZoneDeactivation,functions:suspendServiceZoneForEmergency,functions:requestServiceZoneReactivation
+          --project dojo-platform-b68a3 --non-interactive --force
 
       - name: Post-deploy reminder
         run: |
           echo "Function deployment command completed."
-          echo "Verify all five deployed callables (reviewServiceLocationBoundary, activateServiceLocation, setServiceLocationStatus, manageServiceLocationImportRun, saveServiceLocationWithNameIndex), region asia-south1, logs, and authorized/unauthorized behavior before deploying Firestore Rules."
+          echo "Verify the deployed legacy location callables and Zone workflow callables (reviewServiceLocationBoundary, activateServiceLocation, setServiceLocationStatus, manageServiceLocationImportRun, saveServiceLocationWithNameIndex, submitServiceZoneForFounderReview, decideServiceZoneFounderApproval, activateServiceZone, requestServiceZoneDeactivation, suspendServiceZoneForEmergency, requestServiceZoneReactivation), region asia-south1, logs, and authorized/unauthorized behavior before deploying Firestore Rules."
           echo "This workflow does not deploy Firestore Rules or activate/import any locations."

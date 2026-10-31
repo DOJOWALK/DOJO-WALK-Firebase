@@ -26,6 +26,33 @@ service cloud.firestore {
         && get(adminPath()).data.get('role', '') == 'super_admin';
     }
 
+    function isZoneWorkflowUser() {
+      return signedIn()
+        && exists(adminPath())
+        && get(adminPath()).data.get('isActive', false) == true
+        && get(adminPath()).data.get('role', '') in [
+          'super_admin',
+          'central_admin',
+          'founder'
+        ];
+    }
+
+    // Zone setup and boundary draft edits belong to Central Admin only.
+    // Super Admin retains technical/read access but cannot operate Zone setup.
+    function isZoneOperator() {
+      return signedIn()
+        && exists(adminPath())
+        && get(adminPath()).data.get('isActive', false) == true
+        && get(adminPath()).data.get('role', '') == 'central_admin';
+    }
+
+    function isActiveFounder() {
+      return signedIn()
+        && exists(adminPath())
+        && get(adminPath()).data.get('isActive', false) == true
+        && get(adminPath()).data.get('role', '') == 'founder';
+    }
+
     function validTimestamp(value) {
       return value is timestamp;
     }
@@ -192,18 +219,21 @@ service cloud.firestore {
 
       allow create, delete: if false;
 
+      // Founder authority must not be disabled or modified by the technical Super Admin through client rules.
       allow update: if isAdmin()
+        && resource.data.get('role', '') != 'founder'
         && request.resource.data.diff(resource.data)
           .affectedKeys()
           .hasOnly([
             'name',
             'email',
-            'role',
             'isActive',
             'updatedAt'
           ])
         && request.resource.data.get('role', '') in [
           'super_admin',
+          'central_admin',
+          'founder',
           'admin',
           'support'
         ]
@@ -1055,7 +1085,8 @@ service cloud.firestore {
         && data.locationType in [
           'city',
           'area',
-          'locality'
+          'locality',
+          'zone'
         ];
     }
 
@@ -1145,7 +1176,7 @@ service cloud.firestore {
     function validBoundaryCreate() {
       let d = request.resource.data;
 
-      return isAdmin()
+      return isZoneOperator()
         && d.keys().hasAll([
           'locationId',
           'locationType',
@@ -1185,7 +1216,7 @@ service cloud.firestore {
     function validBoundaryDraftUpdate() {
       let d = request.resource.data;
 
-      return isAdmin()
+      return isZoneOperator()
         && resource.data.verificationStatus in [
           'pending',
           'rejected'
@@ -1271,7 +1302,7 @@ service cloud.firestore {
     }
 
     match /service_location_boundaries/{boundaryId} {
-      allow get, list: if isAdmin();
+      allow get, list: if isZoneWorkflowUser();
 
       allow create: if validBoundaryCreate();
 
@@ -1314,7 +1345,8 @@ service cloud.firestore {
     // =====================================================
 
     match /service_states/{stateId} {
-      allow get, list: if isAdmin();
+      // Central Admin must read the reference hierarchy to create Zones.
+      allow get, list: if isZoneWorkflowUser();
 
       allow create: if false;
 
@@ -1330,7 +1362,8 @@ service cloud.firestore {
     // District hierarchy records are read-only to Admin clients. All mutations
     // must go through the trusted callable so name indexes remain consistent.
     match /service_districts/{districtId} {
-      allow get, list: if isAdmin();
+      // Central Admin must read the reference hierarchy to create Zones.
+      allow get, list: if isZoneWorkflowUser();
 
       allow create: if false;
 
@@ -1344,7 +1377,8 @@ service cloud.firestore {
     // =====================================================
 
     match /service_cities/{cityId} {
-      allow get, list: if isAdmin();
+      // Central Admin must read the reference hierarchy to create Zones.
+      allow get, list: if isZoneWorkflowUser();
 
       allow create: if false;
 
@@ -1373,6 +1407,22 @@ service cloud.firestore {
 
     match /service_localities/{localityId} {
       allow get, list: if isAdmin();
+
+      allow create: if false;
+
+      allow update: if false;
+
+      allow delete: if false;
+    }
+
+    // =====================================================
+    // SERVICE ZONES
+    // =====================================================
+
+    // Zone records are read-only to clients; creation, boundary verification,
+    // activation and audit changes must use trusted server callables.
+    match /service_zones/{zoneId} {
+      allow get, list: if isZoneWorkflowUser();
 
       allow create: if false;
 
@@ -1537,6 +1587,21 @@ service cloud.firestore {
         && validOptionalBool(request.resource.data, 'afterIsActive');
 
       allow update, delete: if false;
+    }
+
+    // Founder-only inbox access. Creation is server-only; Founder may read
+    // Founder-targeted notifications and mark an unread item as read.
+    match /founder_notifications/{notificationId} {
+      allow get: if isActiveFounder()
+        && resource.data.get('targetRole', '') == 'founder';
+      allow list: if isActiveFounder()
+        && resource.data.get('targetRole', '') == 'founder';
+      allow update: if isActiveFounder()
+        && resource.data.get('targetRole', '') == 'founder'
+        && resource.data.get('status', '') == 'unread'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && request.resource.data.status == 'read';
+      allow create, delete: if false;
     }
 
     // =====================================================

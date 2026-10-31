@@ -28,6 +28,37 @@ function asNameIndexSnapshot(snapshot: FirebaseFirestore.DocumentSnapshot): Name
 function asBoundary(data: FirebaseFirestore.DocumentData | undefined): BoundaryDoc {
   return (data ?? {}) as BoundaryDoc;
 }
+function canonicalBoundaryHash(boundary: BoundaryDoc, boundaryId: string): string {
+  const points = Array.isArray(boundary.points) ? boundary.points.map((p: any) => {
+    const lat = typeof p?.latitude === "number" ? p.latitude : p?._latitude;
+    const lng = typeof p?.longitude === "number" ? p.longitude : p?._longitude;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new HttpsError("failed-precondition", "Boundary coordinates are invalid.");
+    return [lat, lng];
+  }) : [];
+  if (points.length < 4) throw new HttpsError("failed-precondition", "A valid polygon is required.");
+  const sourceName = typeof boundary.sourceName === "string" ? boundary.sourceName.trim() : "";
+  const sourceReference = typeof boundary.sourceReference === "string" ? boundary.sourceReference.trim() : "";
+  const verifiedBy = typeof boundary.verifiedBy === "string" ? boundary.verifiedBy.trim() : "";
+  if (!boundaryId || !boundary.locationId || !boundary.locationType ||
+      !sourceName || !sourceReference || !verifiedBy || !isValidVerificationTimestamp(boundary.verifiedAt)) {
+    throw new HttpsError("failed-precondition", "Boundary identity and verification provenance are required for approval.");
+  }
+  const verifiedAt = boundary.verifiedAt instanceof Date
+    ? boundary.verifiedAt
+    : (boundary.verifiedAt as { toDate: () => Date }).toDate();
+  const approvalFingerprint = {
+    boundaryId,
+    locationId: boundary.locationId,
+    locationType: boundary.locationType,
+    verificationStatus: boundary.verificationStatus,
+    sourceName,
+    sourceReference,
+    verifiedBy,
+    verifiedAt: verifiedAt.toISOString(),
+    points,
+  };
+  return createHash("sha256").update(JSON.stringify(approvalFingerprint)).digest("hex");
+}
 
 function isValidVerificationTimestamp(value: unknown): boolean {
   if (value instanceof Date) return Number.isFinite(value.getTime());
@@ -46,7 +77,7 @@ function requireVerifiedBoundary(
   boundaryData: FirebaseFirestore.DocumentData | undefined,
   boundaryId: string,
   locationId: string,
-  locationType: "city" | "area",
+  locationType: "city" | "area" | "zone",
 ): BoundaryDoc {
   const boundary = asBoundary(boundaryData);
   if (boundary.locationId !== locationId || boundary.locationType !== locationType ||
@@ -86,8 +117,8 @@ export const reviewServiceLocationBoundary = onCall({ region: "asia-south1" }, a
   const actorRef = db.doc(`admin_users/${uid}`);
   const boundaryRef = db.doc(`service_location_boundaries/${boundaryId}`);
   const actor = await actorRef.get();
-  if (!actor.exists || actor.get("isActive") !== true || actor.get("role") !== "super_admin") {
-    throw new HttpsError("permission-denied", "An active super_admin account is required.");
+  if (!actor.exists || actor.get("isActive") !== true || actor.get("role") !== "central_admin") {
+    throw new HttpsError("permission-denied", "An active Central Admin account is required to review boundaries.");
   }
 
   // Read the boundary once to identify its owning document. All values that
@@ -97,12 +128,14 @@ export const reviewServiceLocationBoundary = onCall({ region: "asia-south1" }, a
   const initial = initialBoundary.data()!;
   const locationType = initial.locationType;
   const locationId = initial.locationId;
-  if ((locationType !== "city" && locationType !== "area") ||
+  if ((locationType !== "city" && locationType !== "area" && locationType !== "zone") ||
       typeof locationId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(locationId)) {
-    throw new HttpsError("failed-precondition", "Only City and Area boundaries with valid owner IDs can be reviewed.");
+    throw new HttpsError("failed-precondition", "Only City, Area and Zone boundaries with valid owner IDs can be reviewed.");
   }
 
-  const locationRef = db.doc(`${locationType === "city" ? "service_cities" : "service_areas"}/${locationId}`);
+  const ownerCollection = locationType === "city" ? "service_cities"
+    : locationType === "area" ? "service_areas" : "service_zones";
+  const locationRef = db.doc(`${ownerCollection}/${locationId}`);
   const auditRef = db.collection("service_location_boundary_review_audit").doc();
 
   return db.runTransaction(async (tx) => {
@@ -110,11 +143,15 @@ export const reviewServiceLocationBoundary = onCall({ region: "asia-south1" }, a
       tx.get(actorRef), tx.get(boundaryRef), tx.get(locationRef),
     ]);
     if (!currentActor.exists || currentActor.get("isActive") !== true ||
-        currentActor.get("role") !== "super_admin") {
-      throw new HttpsError("permission-denied", "Admin access changed during review.");
+        currentActor.get("role") !== "central_admin") {
+      throw new HttpsError("permission-denied", "Central Admin access changed during boundary review.");
     }
     if (!currentBoundary.exists || !currentLocation.exists) {
       throw new HttpsError("not-found", "Boundary or owning location was not found.");
+    }
+    if (locationType === "zone" &&
+        ["suspended", "reactivation_submitted"].includes(String(currentLocation.get("workflowStatus")))) {
+      throw new HttpsError("failed-precondition", "An emergency-suspended Zone must complete the Founder-approved reactivation workflow before its boundary can be changed.");
     }
     const boundary = asBoundary(currentBoundary.data());
     if (boundary.locationId !== locationId || boundary.locationType !== locationType ||
@@ -133,29 +170,34 @@ export const reviewServiceLocationBoundary = onCall({ region: "asia-south1" }, a
           throw new Error("Boundary source name and reference are required.");
         }
         polygonFromBoundary(boundary);
-        if (locationType === "area") {
+        if (locationType === "area" || locationType === "zone") {
           const cityId = currentLocation.get("cityId");
           if (typeof cityId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(cityId)) {
-            throw new Error("Area must reference a valid parent City.");
+            throw new Error("Area or Zone must reference a valid parent City.");
           }
           const cityRef = db.doc(`service_cities/${cityId}`);
           const citySnapshot = await tx.get(cityRef);
-          if (!citySnapshot.exists || citySnapshot.get("isServiceActive") !== true) {
-            throw new Error("Parent City must exist and be active before Area verification.");
+          if (!citySnapshot.exists) {
+            throw new Error("Parent City must exist before Area/Zone verification.");
           }
-          const cityBoundaryId = citySnapshot.get("verifiedBoundaryId");
-          if (typeof cityBoundaryId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(cityBoundaryId)) {
-            throw new Error("Parent City must reference a verified boundary.");
+          // POL-038: Zone is the service boundary. City geometry is reference
+          // data only and must not block verification of a valid Zone polygon.
+          // Keep the legacy Area containment check, but do not make it a Zone gate.
+          if (locationType === "area") {
+            const cityBoundaryId = citySnapshot.get("verifiedBoundaryId");
+            if (typeof cityBoundaryId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(cityBoundaryId)) {
+              throw new Error("Parent City must reference a verified boundary.");
+            }
+            const cityBoundarySnapshot = await tx.get(db.doc(`service_location_boundaries/${cityBoundaryId}`));
+            parentBoundary = asBoundary(cityBoundarySnapshot.data());
+            if (!cityBoundarySnapshot.exists ||
+                parentBoundary.locationId !== cityId ||
+                parentBoundary.locationType !== "city" ||
+                parentBoundary.verificationStatus !== "verified") {
+              throw new Error("Parent City boundary is not verified for that City.");
+            }
+            assertAreaCoveredByCity(boundary, parentBoundary);
           }
-          const cityBoundarySnapshot = await tx.get(db.doc(`service_location_boundaries/${cityBoundaryId}`));
-          parentBoundary = asBoundary(cityBoundarySnapshot.data());
-          if (!cityBoundarySnapshot.exists ||
-              parentBoundary.locationId !== cityId ||
-              parentBoundary.locationType !== "city" ||
-              parentBoundary.verificationStatus !== "verified") {
-            throw new Error("Parent City boundary is not verified for that City.");
-          }
-          assertAreaCoveredByCity(boundary, parentBoundary);
         }
       } catch (error) {
         throw new HttpsError("failed-precondition", error instanceof Error ? error.message : "Boundary geometry validation failed.");
@@ -175,6 +217,19 @@ export const reviewServiceLocationBoundary = onCall({ region: "asia-south1" }, a
       // Bind the reviewed polygon to its owning inactive location atomically.
       tx.update(locationRef, {
         verifiedBoundaryId: boundaryId,
+        ...(locationType === "zone" ? {
+          revision: Number(currentLocation.get("revision") ?? 0) + 1,
+          workflowStatus: "draft",
+          approvalUid: FieldValue.delete(),
+          approvedRevision: FieldValue.delete(),
+          approvedBoundaryHash: FieldValue.delete(),
+          submittedBoundaryHash: FieldValue.delete(),
+          approvedAt: FieldValue.delete(),
+          submittedAt: FieldValue.delete(),
+          deactivationApprovedRevision: FieldValue.delete(),
+          deactivationApprovedBoundaryHash: FieldValue.delete(),
+          deactivationApprovedAt: FieldValue.delete(),
+        } : {}),
         updatedAt: timestamp,
       });
     }
@@ -202,6 +257,9 @@ export const activateServiceLocation = onCall({ region: "asia-south1" }, async (
   if ((locationType !== "city" && locationType !== "area") ||
       typeof locationId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(locationId)) {
     throw new HttpsError("invalid-argument", "Provide a valid locationType and locationId.");
+  }
+  if (locationType === "city") {
+    throw new HttpsError("failed-precondition", "City is a reference hierarchy record. Only Zone can be activated for customer service.");
   }
 
   const actorRef = db.doc(`admin_users/${uid}`);
@@ -365,6 +423,382 @@ export const activateServiceLocation = onCall({ region: "asia-south1" }, async (
 
 
 /**
+ * Activate a Zone only after its own boundary has been verified and confirmed
+ * to fit inside its currently active parent City's verified boundary.
+ * This is intentionally separate from the legacy City/Area activation path:
+ * Zone's canonical schema is State → District → City and does not require
+ * legacy countryId fields on the Zone document.
+ */
+/**
+ * Central Admin submits the current Zone revision for Founder review.
+ * The submission is bound to the exact verified boundary hash.
+ */
+export const submitServiceZoneForFounderReview = onCall({ region: "asia-south1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in is required.");
+  const uid = request.auth.uid, zoneId = request.data?.zoneId;
+  if (typeof zoneId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(zoneId)) throw new HttpsError("invalid-argument", "Provide a valid zoneId.");
+  const actorRef = db.doc(`admin_users/${uid}`), zoneRef = db.doc(`service_zones/${zoneId}`);
+  const actor = await actorRef.get();
+  if (!actor.exists || actor.get("isActive") !== true || actor.get("role") !== "central_admin") throw new HttpsError("permission-denied", "An active Central Admin account is required.");
+  return db.runTransaction(async tx => {
+    const [a,z] = await Promise.all([tx.get(actorRef), tx.get(zoneRef)]);
+    if (!a.exists || a.get("isActive") !== true || a.get("role") !== "central_admin") throw new HttpsError("permission-denied", "Central Admin access changed.");
+    if (!z.exists) throw new HttpsError("not-found", "Zone was not found.");
+    const data=z.data()!, boundaryId=data.verifiedBoundaryId;
+    if (data.isServiceActive === true) throw new HttpsError("failed-precondition", "Deactivate the Zone before resubmission.");
+    if (data.workflowStatus === "suspended" || data.workflowStatus === "reactivation_submitted") {
+      throw new HttpsError("failed-precondition", "An emergency-suspended Zone must use the dedicated Founder-approved reactivation workflow.");
+    }
+    if (data.workflowStatus === "submitted") throw new HttpsError("already-exists", "This Zone revision is already submitted.");
+    if (data.workflowStatus === "rejected") throw new HttpsError("failed-precondition", "Founder rejected this Zone. Create a new Zone draft or obtain a changes-required decision before resubmitting.");
+    if (typeof boundaryId !== "string") throw new HttpsError("failed-precondition", "A verified Zone boundary is required.");
+    const bRef=db.doc(`service_location_boundaries/${boundaryId}`), bSnap=await tx.get(bRef), b=asBoundary(bSnap.data());
+    if (!bSnap.exists || b.locationId!==zoneId || b.locationType!=="zone" || b.verificationStatus!=="verified") throw new HttpsError("failed-precondition", "The current Zone boundary must be verified.");
+    polygonFromBoundary(b);
+    const revision=Number.isInteger(data.revision)&&data.revision>0?data.revision:1, hash=canonicalBoundaryHash(b, boundaryId);
+    tx.update(zoneRef,{revision,workflowStatus:"submitted",submittedRevision:revision,submittedBoundaryHash:hash,submittedBy:uid,submittedAt:FieldValue.serverTimestamp(),approvalUid:FieldValue.delete(),approvedRevision:FieldValue.delete(),approvedBoundaryHash:FieldValue.delete(),approvedAt:FieldValue.delete(),updatedAt:FieldValue.serverTimestamp()});
+    tx.create(db.collection("service_zone_approval_audit").doc(),{zoneId,revision,boundaryHash:hash,actorUid:uid,action:"submitted",createdAt:FieldValue.serverTimestamp()});
+    return {ok:true,zoneId,revision,boundaryHash:hash,workflowStatus:"submitted"};
+  });
+});
+
+/** Only an active Founder can approve, reject, or request changes on the submitted revision. */
+/** Central Admin requests deactivation; Founder must approve before execution. */
+export const requestServiceZoneDeactivation = onCall({ region: "asia-south1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in is required.");
+  const uid=request.auth.uid, zoneId=request.data?.zoneId, notes=request.data?.notes;
+  if(typeof zoneId!=="string" || !/^[A-Za-z0-9_-]{1,150}$/.test(zoneId)) throw new HttpsError("invalid-argument","Provide a valid zoneId.");
+  if(typeof notes!=="string" || !notes.trim() || notes.trim().length>2000) throw new HttpsError("invalid-argument","A deactivation reason is required (max 2000 characters).");
+  const actorRef=db.doc(`admin_users/${uid}`), zoneRef=db.doc(`service_zones/${zoneId}`);
+  const actor=await actorRef.get();
+  if(!actor.exists || actor.get("isActive")!==true || actor.get("role")!=="central_admin") throw new HttpsError("permission-denied","An active Central Admin account is required.");
+  return db.runTransaction(async tx=>{
+    const [a,z]=await Promise.all([tx.get(actorRef),tx.get(zoneRef)]);
+    if(!a.exists || a.get("isActive")!==true || a.get("role")!=="central_admin") throw new HttpsError("permission-denied","Central Admin access changed.");
+    if(!z.exists) throw new HttpsError("not-found","Zone was not found.");
+    const d=z.data()!;
+    if(d.isServiceActive!==true || d.workflowStatus!=="active") throw new HttpsError("failed-precondition","Only an active Zone can be submitted for deactivation.");
+    const boundaryId=d.verifiedBoundaryId;
+    if(typeof boundaryId!=="string") throw new HttpsError("failed-precondition","Verified Zone boundary is missing.");
+    const bRef=db.doc(`service_location_boundaries/${boundaryId}`), bSnap=await tx.get(bRef), b=asBoundary(bSnap.data());
+    if(!bSnap.exists || b.locationId!==zoneId || b.locationType!=="zone" || b.verificationStatus!=="verified") throw new HttpsError("failed-precondition","Current Zone boundary must be verified.");
+    const hash=canonicalBoundaryHash(b, boundaryId), revision=Number(d.revision??1);
+    tx.update(zoneRef,{workflowStatus:"deactivation_submitted",deactivationRequestedRevision:revision,deactivationRequestedBoundaryHash:hash,deactivationRequestedBy:uid,deactivationRequestNotes:notes.trim(),deactivationRequestedAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});
+    tx.create(db.collection("service_zone_approval_audit").doc(),{zoneId,revision,boundaryHash:hash,actorUid:uid,action:"deactivation_submitted",notes:notes.trim(),createdAt:FieldValue.serverTimestamp()});
+    return {ok:true,zoneId,revision,workflowStatus:"deactivation_submitted"};
+  });
+});
+
+/** Emergency safety stop: Central Admin may suspend a Zone immediately with a mandatory reason. This does not grant activation/reactivation authority. */
+export const suspendServiceZoneForEmergency = onCall({ region: "asia-south1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in is required.");
+  const uid = request.auth.uid;
+  const { zoneId, reason, severity } = request.data ?? {};
+  if (typeof zoneId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(zoneId)) {
+    throw new HttpsError("invalid-argument", "Provide a valid zoneId.");
+  }
+  if (typeof reason !== "string" || !reason.trim() || reason.trim().length > 2000) {
+    throw new HttpsError("invalid-argument", "An emergency suspension reason is required (max 2000 characters).");
+  }
+  const allowedSeverity = ["SEV-1", "SEV-2", "SEV-3", "SEV-4"];
+  if (typeof severity !== "string" || !allowedSeverity.includes(severity)) {
+    throw new HttpsError("invalid-argument", "A valid severity is required: SEV-1, SEV-2, SEV-3 or SEV-4.");
+  }
+  const actorRef = db.doc(`admin_users/${uid}`);
+  const zoneRef = db.doc(`service_zones/${zoneId}`);
+  const actor = await actorRef.get();
+  if (!actor.exists || actor.get("isActive") !== true || actor.get("role") !== "central_admin") {
+    throw new HttpsError("permission-denied", "An active Central Admin account is required.");
+  }
+  return db.runTransaction(async (tx) => {
+    const [currentActor, zone] = await Promise.all([tx.get(actorRef), tx.get(zoneRef)]);
+    if (!currentActor.exists || currentActor.get("isActive") !== true || currentActor.get("role") !== "central_admin") {
+      throw new HttpsError("permission-denied", "Central Admin access changed.");
+    }
+    if (!zone.exists) throw new HttpsError("not-found", "Zone was not found.");
+    const data = zone.data()!;
+    if (data.isServiceActive !== true && data.workflowStatus === "suspended") {
+      return { ok: true, zoneId, workflowStatus: "suspended", alreadySuspended: true };
+    }
+    if (data.isServiceActive !== true || data.workflowStatus !== "active") {
+      throw new HttpsError("failed-precondition", "Only an active Zone can be emergency-suspended.");
+    }
+    const now = FieldValue.serverTimestamp();
+    const auditRef = db.collection("service_zone_approval_audit").doc();
+    const notificationRef = db.collection("founder_notifications").doc();
+    tx.update(zoneRef, {
+      isServiceActive: false,
+      workflowStatus: "suspended",
+      emergencySuspensionReason: reason.trim(),
+      emergencySuspensionSeverity: severity ?? "SEV-2",
+      emergencySuspendedBy: uid,
+      emergencySuspendedAt: now,
+      updatedAt: now,
+      // Do not retain a usable activation approval after an emergency stop.
+      approvalUid: FieldValue.delete(),
+      approvedRevision: FieldValue.delete(),
+      approvedBoundaryHash: FieldValue.delete(),
+      approvedAt: FieldValue.delete(),
+    });
+    tx.create(auditRef, {
+      zoneId,
+      revision: Number(data.revision ?? 1),
+      actorUid: uid,
+      action: "emergency_suspended",
+      reason: reason.trim(),
+      severity: severity ?? "SEV-2",
+      createdAt: now,
+    });
+    // Durable Founder-facing inbox item. A push/email delivery channel is not configured here.
+    tx.create(notificationRef, {
+      targetRole: "founder",
+      notificationType: "emergency_zone_suspension",
+      title: "Emergency Zone suspension",
+      message: reason.trim(),
+      zoneId,
+      severity: severity ?? "SEV-2",
+      createdBy: uid,
+      status: "unread",
+      createdAt: now,
+    });
+    return { ok: true, zoneId, workflowStatus: "suspended", founderNotificationQueued: true };
+  });
+});
+
+/** Submit an emergency-suspended Zone for a fresh Founder reactivation decision. */
+export const requestServiceZoneReactivation = onCall({ region: "asia-south1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in is required.");
+  const uid = request.auth.uid, { zoneId, reason } = request.data ?? {};
+  if (typeof zoneId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(zoneId)) {
+    throw new HttpsError("invalid-argument", "Provide a valid zoneId.");
+  }
+  if (typeof reason !== "string" || !reason.trim() || reason.trim().length > 2000) {
+    throw new HttpsError("invalid-argument", "A reactivation reason is required (max 2000 characters).");
+  }
+  const actorRef = db.doc(`admin_users/${uid}`);
+  const zoneRef = db.doc(`service_zones/${zoneId}`);
+  const actor = await actorRef.get();
+  if (!actor.exists || actor.get("isActive") !== true || actor.get("role") !== "central_admin") {
+    throw new HttpsError("permission-denied", "An active Central Admin account is required.");
+  }
+  return db.runTransaction(async (tx) => {
+    const [currentActor, zone] = await Promise.all([tx.get(actorRef), tx.get(zoneRef)]);
+    if (!currentActor.exists || currentActor.get("isActive") !== true || currentActor.get("role") !== "central_admin") {
+      throw new HttpsError("permission-denied", "Central Admin access changed.");
+    }
+    if (!zone.exists) throw new HttpsError("not-found", "Zone was not found.");
+    const data = zone.data()!;
+    if (data.isServiceActive === true || data.workflowStatus !== "suspended") {
+      throw new HttpsError("failed-precondition", "Only an inactive emergency-suspended Zone can be submitted for reactivation.");
+    }
+    const boundaryId = data.verifiedBoundaryId;
+    if (typeof boundaryId !== "string") throw new HttpsError("failed-precondition", "Verified Zone boundary is missing.");
+    const boundaryRef = db.doc(`service_location_boundaries/${boundaryId}`);
+    const boundarySnap = await tx.get(boundaryRef);
+    const boundary = asBoundary(boundarySnap.data());
+    if (!boundarySnap.exists || boundary.locationId !== zoneId || boundary.locationType !== "zone" ||
+        boundary.verificationStatus !== "verified") {
+      throw new HttpsError("failed-precondition", "A currently verified Zone boundary is required for reactivation.");
+    }
+    const revision = Number(data.revision ?? 1) + 1;
+    const boundaryHash = canonicalBoundaryHash(boundary, boundaryId);
+    const now = FieldValue.serverTimestamp();
+    tx.update(zoneRef, {
+      revision,
+      workflowStatus: "reactivation_submitted",
+      reactivationRequestedRevision: revision,
+      reactivationRequestedBoundaryHash: boundaryHash,
+      reactivationRequestedBy: uid,
+      reactivationRequestReason: reason.trim(),
+      reactivationRequestedAt: now,
+      updatedAt: now,
+      approvalUid: FieldValue.delete(),
+      approvedRevision: FieldValue.delete(),
+      approvedBoundaryHash: FieldValue.delete(),
+      approvedAt: FieldValue.delete(),
+    });
+    tx.create(db.collection("service_zone_approval_audit").doc(), {
+      zoneId, revision, boundaryHash, actorUid: uid, action: "reactivation_submitted",
+      reason: reason.trim(), createdAt: now,
+    });
+    return { ok: true, zoneId, revision, workflowStatus: "reactivation_submitted" };
+  });
+});
+export const decideServiceZoneFounderApproval = onCall({ region: "asia-south1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in is required.");
+  const uid=request.auth.uid, {zoneId,decision,notes}=request.data??{};
+  if (typeof zoneId!=="string" || !/^[A-Za-z0-9_-]{1,150}$/.test(zoneId)) throw new HttpsError("invalid-argument","Provide a valid zoneId.");
+  if (!["approve","reject","changes_required","deactivate","reactivate"].includes(decision)) throw new HttpsError("invalid-argument","Decision must be approve, reject, changes_required, deactivate or reactivate.");
+  if (typeof notes!=="string" || notes.trim().length>2000 || (decision!=="approve"&&!notes.trim())) throw new HttpsError("invalid-argument","A note is required for rejection/changes (max 2000 characters).");
+  const actorRef=db.doc(`admin_users/${uid}`), zoneRef=db.doc(`service_zones/${zoneId}`);
+  const actor=await actorRef.get();
+  if (!actor.exists || actor.get("isActive")!==true || actor.get("role")!=="founder") throw new HttpsError("permission-denied","An active Founder account is required.");
+  return db.runTransaction(async tx=>{
+    const [a,z]=await Promise.all([tx.get(actorRef),tx.get(zoneRef)]);
+    if (!a.exists || a.get("isActive")!==true || a.get("role")!=="founder") throw new HttpsError("permission-denied","Founder access changed.");
+    if (!z.exists) throw new HttpsError("not-found","Zone was not found.");
+    const d=z.data()!;
+    const isDeactivation=decision==="deactivate";
+    const isReactivation=decision==="reactivate";
+    const requestStatus = d.workflowStatus;
+    const isStandardSubmission = requestStatus === "submitted";
+    const isDeactivationSubmission = requestStatus === "deactivation_submitted";
+    const isReactivationSubmission = requestStatus === "reactivation_submitted";
+    const decisionMatchesSubmission =
+      (decision === "approve" && isStandardSubmission) ||
+      (decision === "deactivate" && isDeactivationSubmission) ||
+      (decision === "reactivate" && isReactivationSubmission) ||
+      (["reject", "changes_required"].includes(decision) &&
+        (isStandardSubmission || isDeactivationSubmission || isReactivationSubmission));
+    if (!decisionMatchesSubmission) {
+      throw new HttpsError("failed-precondition", "This decision is not valid for the Zone's current submitted workflow state.");
+    }
+    const expectedRevision = isDeactivationSubmission
+      ? d.deactivationRequestedRevision
+      : isReactivationSubmission
+        ? d.reactivationRequestedRevision
+        : d.submittedRevision;
+    const expectedHash = isDeactivationSubmission
+      ? d.deactivationRequestedBoundaryHash
+      : isReactivationSubmission
+        ? d.reactivationRequestedBoundaryHash
+        : d.submittedBoundaryHash;
+    if (!Number.isInteger(expectedRevision) || typeof expectedHash !== "string") {
+      throw new HttpsError("failed-precondition", "The submitted Zone revision or boundary hash is missing.");
+    }
+    if(Number(d.revision??1)!==expectedRevision) throw new HttpsError("failed-precondition","Zone revision changed; submit the current revision again.");
+    const boundaryId=d.verifiedBoundaryId;
+    if(typeof boundaryId!=="string") throw new HttpsError("failed-precondition","Verified boundary reference is missing.");
+    const bRef=db.doc(`service_location_boundaries/${boundaryId}`), bSnap=await tx.get(bRef), b=asBoundary(bSnap.data());
+    if(!bSnap.exists || b.locationId!==zoneId || b.locationType!=="zone" || b.verificationStatus!=="verified" || canonicalBoundaryHash(b, boundaryId)!==expectedHash) throw new HttpsError("failed-precondition","Submitted boundary changed; Central Admin must resubmit.");
+    const status = decision === "deactivate"
+      ? "deactivation_approved"
+      : (decision === "approve" || decision === "reactivate")
+        ? "approved"
+        : isDeactivationSubmission
+          ? "active"
+          : isReactivationSubmission
+            ? "suspended"
+            : decision === "reject"
+              ? "rejected"
+              : "changes_required";
+    tx.update(zoneRef,{workflowStatus:status,founderDecision:decision,founderDecisionNotes:notes.trim(),founderDecisionBy:uid,founderDecisionAt:FieldValue.serverTimestamp(),
+      ...((decision==="approve"||decision==="reactivate")?{approvalUid:uid,approvedRevision:expectedRevision,approvedBoundaryHash:expectedHash,approvedAt:FieldValue.serverTimestamp()}:
+        decision==="deactivate"?{deactivationApprovedBy:uid,deactivationApprovedRevision:expectedRevision,deactivationApprovedBoundaryHash:expectedHash,deactivationApprovedAt:FieldValue.serverTimestamp()}:
+        (isDeactivationSubmission||isReactivationSubmission)?{}:
+        {approvalUid:FieldValue.delete(),approvedRevision:FieldValue.delete(),approvedBoundaryHash:FieldValue.delete(),approvedAt:FieldValue.delete()}),
+      updatedAt:FieldValue.serverTimestamp()});
+    tx.create(db.collection("service_zone_approval_audit").doc(),{zoneId,revision:expectedRevision,boundaryHash:expectedHash,actorUid:uid,action:decision,notes:notes.trim(),createdAt:FieldValue.serverTimestamp()});
+    return {ok:true,zoneId,revision:expectedRevision,workflowStatus:status};
+  });
+});
+
+export const activateServiceZone = onCall({ region: "asia-south1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in is required.");
+  const uid = request.auth.uid;
+  const zoneId = request.data?.zoneId;
+  if (typeof zoneId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(zoneId)) {
+    throw new HttpsError("invalid-argument", "Provide a valid zoneId.");
+  }
+
+  const actorRef = db.doc(`admin_users/${uid}`);
+  const zoneRef = db.doc(`service_zones/${zoneId}`);
+  const actor = await actorRef.get();
+  if (!actor.exists || actor.get("isActive") !== true || actor.get("role") !== "central_admin") {
+    throw new HttpsError("permission-denied", "An active Central Admin account is required to activate a Zone.");
+  }
+  const zone = await zoneRef.get();
+  if (!zone.exists) throw new HttpsError("not-found", "Zone was not found.");
+
+  const stateId = zone.get("stateId");
+  const districtId = zone.get("districtId");
+  const cityId = zone.get("cityId");
+  if (![stateId, districtId, cityId].every((v) => typeof v === "string" && /^[A-Za-z0-9_-]{1,150}$/.test(v))) {
+    throw new HttpsError("failed-precondition", "Zone must reference valid State, District and City IDs.");
+  }
+
+  const stateRef = db.doc(`service_states/${stateId}`);
+  const districtRef = db.doc(`service_districts/${districtId}`);
+  const cityRef = db.doc(`service_cities/${cityId}`);
+  const stateSnapshot = await stateRef.get();
+  if (!stateSnapshot.exists) {
+    throw new HttpsError("failed-precondition", "Parent State was not found.");
+  }
+  const countryId = stateSnapshot.get("countryId");
+  if (typeof countryId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(countryId)) {
+    throw new HttpsError("failed-precondition", "Parent State must reference a valid Country.");
+  }
+  const countryRef = db.doc(`service_countries/${countryId}`);
+  const zoneBoundaryId = zone.get("verifiedBoundaryId");
+  if (typeof zoneBoundaryId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(zoneBoundaryId)) {
+    throw new HttpsError("failed-precondition", "Zone must have a verified boundary before activation.");
+  }
+  const zoneBoundaryRef = db.doc(`service_location_boundaries/${zoneBoundaryId}`);
+  const city = await cityRef.get();
+  if (!city.exists) throw new HttpsError("failed-precondition", "Parent City was not found.");
+  const initialZoneBoundary = await zoneBoundaryRef.get();
+  const zoneBoundary = requireVerifiedBoundary(initialZoneBoundary.data(), zoneBoundaryId, zoneId, "zone");
+
+  await db.runTransaction(async (tx) => {
+    const [currentActor, currentZone, currentCountry, currentState, currentDistrict, currentCity, currentZoneBoundary] =
+      await Promise.all([
+        tx.get(actorRef), tx.get(zoneRef), tx.get(countryRef), tx.get(stateRef), tx.get(districtRef), tx.get(cityRef),
+        tx.get(zoneBoundaryRef),
+      ]);
+    if (!currentActor.exists || currentActor.get("isActive") !== true || currentActor.get("role") !== "central_admin") {
+      throw new HttpsError("permission-denied", "Central Admin access changed during validation.");
+    }
+    if (!currentZone.exists || currentZone.get("stateId") !== stateId ||
+        currentZone.get("districtId") !== districtId || currentZone.get("cityId") !== cityId ||
+        currentZone.get("verifiedBoundaryId") !== zoneBoundaryId) {
+      throw new HttpsError("aborted", "Zone ancestry or boundary reference changed. Retry.");
+    }
+    if (!currentCountry.exists) throw new HttpsError("failed-precondition", "Parent Country must exist.");
+    if (!currentState.exists || currentState.get("countryId") !== countryId) throw new HttpsError("failed-precondition", "Parent State must exist and belong to its Country.");
+    if (!currentDistrict.exists || currentDistrict.get("stateId") !== stateId || currentDistrict.get("countryId") !== countryId) throw new HttpsError("failed-precondition", "Parent District must exist and belong to the selected Country/State.");
+    if (!currentCity.exists || currentCity.get("countryId") !== countryId || currentCity.get("stateId") !== stateId ||
+        currentCity.get("districtId") !== districtId) {
+      throw new HttpsError("failed-precondition", "Parent City must exist and match the selected hierarchy.");
+    }
+    const currentZoneBoundaryData = requireVerifiedBoundary(currentZoneBoundary.data(), zoneBoundaryId, zoneId, "zone");
+    const currentBoundaryHash = canonicalBoundaryHash(currentZoneBoundaryData, zoneBoundaryId);
+    const approvedBoundaryHash = currentZone.get("approvedBoundaryHash");
+    const submittedBoundaryHash = currentZone.get("submittedBoundaryHash");
+    if (!["approved", "active"].includes(String(currentZone.get("workflowStatus"))) ||
+        typeof currentZone.get("approvalUid") !== "string" ||
+        currentZone.get("approvalUid").length === 0 ||
+        currentZone.get("approvedRevision") !== currentZone.get("revision") ||
+        typeof approvedBoundaryHash !== "string" ||
+        approvedBoundaryHash !== currentBoundaryHash ||
+        typeof submittedBoundaryHash !== "string" ||
+        submittedBoundaryHash !== currentBoundaryHash) {
+      throw new HttpsError("failed-precondition", "Current Zone revision and boundary require current Founder approval before activation.");
+    }
+    if (JSON.stringify(currentZoneBoundaryData.points) !== JSON.stringify(zoneBoundary.points)) {
+      throw new HttpsError("aborted", "Zone boundary changed during validation. Retry.");
+    }
+    // POL-038: City boundary is reference/geographic data, not a service
+    // activation prerequisite. Only the verified Zone polygon is authoritative.
+    if (currentZone.get("isServiceActive") === true) return;
+    const auditRef = db.collection("service_location_activation_audit").doc();
+    tx.update(zoneRef, { isServiceActive: true, workflowStatus: "active", updatedAt: FieldValue.serverTimestamp() });
+    // Guard-write every ancestor, including Country, so activation conflicts
+    // transactionally with concurrent deactivation at any level.
+    tx.update(countryRef, { activationGuardAt: FieldValue.serverTimestamp() });
+    tx.update(stateRef, { activationGuardAt: FieldValue.serverTimestamp() });
+    tx.update(districtRef, { activationGuardAt: FieldValue.serverTimestamp() });
+    tx.update(cityRef, { activationGuardAt: FieldValue.serverTimestamp() });
+    tx.create(auditRef, {
+      actorUid: uid, locationId: zoneId, locationType: "zone", boundaryId: zoneBoundaryId,
+      result: "activated", createdAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  return { ok: true, zoneId, locationType: "zone" };
+});
+
+
+/**
  * Server-authoritative status changes for Country, State, City, Area and Locality.
  * City/Area activation remains geometry-validated by activateServiceLocation.
  * Every descendant activation writes all ancestor guard fields in the same
@@ -374,29 +808,47 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in is required.");
   const uid = request.auth.uid;
   const { locationType, locationId, isActive } = request.data ?? {};
-  const validTypes = ["country", "state", "district", "city", "area", "locality"];
+  const validTypes = ["country", "state", "district", "city", "area", "locality", "zone"];
   if (!validTypes.includes(locationType) ||
       typeof locationId !== "string" || !/^[A-Za-z0-9_-]{1,150}$/.test(locationId) ||
       typeof isActive !== "boolean") {
     throw new HttpsError("invalid-argument", "Provide locationType, locationId and boolean isActive.");
   }
+  // Only Zones have service activation/deactivation status. Parent hierarchy
+  // records (Country/State/District/City) are references, and legacy Area/
+  // Locality status paths must not remain callable through this generic API.
+  // Zone activation uses activateServiceZone; deactivation still requires
+  // current Founder approval and is audited below.
+  if (locationType !== "zone") {
+    throw new HttpsError(
+      "failed-precondition",
+      "Only Zone has service activation/deactivation status. Use the Zone approval workflow.",
+    );
+  }
   const actorRef = db.doc(`admin_users/${uid}`);
   const actor = await actorRef.get();
-  if (!actor.exists || actor.get("isActive") !== true || actor.get("role") !== "super_admin") {
-    throw new HttpsError("permission-denied", "An active super_admin account is required.");
+  if (!actor.exists || actor.get("isActive") !== true ||
+      (locationType === "zone" && !isActive ? actor.get("role") !== "central_admin" : actor.get("role") !== "super_admin")) {
+    throw new HttpsError("permission-denied", locationType === "zone" && !isActive ? "An active Central Admin account is required for approved Zone deactivation." : "An active super_admin account is required.");
   }
   if ((locationType === "city" || locationType === "area") && isActive) {
     throw new HttpsError("failed-precondition", "Use activateServiceLocation to activate a City or Area.");
   }
+  if (locationType === "zone" && isActive) {
+    throw new HttpsError("failed-precondition", "Use activateServiceZone to activate a Zone after boundary verification.");
+  }
+  if (["state", "district", "city"].includes(locationType)) {
+    throw new HttpsError("failed-precondition", "State, District and City are reference hierarchy records; only Zone has service activation status.");
+  }
 
   const collectionByType: Record<string, string> = {
     country: "service_countries", state: "service_states", district: "service_districts", city: "service_cities",
-    area: "service_areas", locality: "service_localities",
+    area: "service_areas", locality: "service_localities", zone: "service_zones",
   };
   const targetRef = db.doc(`${collectionByType[locationType]}/${locationId}`);
   const statusField = locationType === "country" || locationType === "state" ? "isActive" : "isServiceActive";
   const parentFieldByType: Record<string, string> = {
-    country: "", state: "countryId", district: "stateId", city: "stateId", area: "cityId", locality: "areaId",
+    country: "", state: "countryId", district: "stateId", city: "stateId", area: "cityId", locality: "areaId", zone: "",
   };
   const parentCollectionByType: Record<string, string> = {
     state: "service_countries", district: "service_states", city: "service_states", area: "service_cities", locality: "service_areas",
@@ -408,15 +860,34 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
     city: { collection: "service_areas", field: "cityId", activeField: "isServiceActive" },
     area: { collection: "service_localities", field: "areaId", activeField: "isServiceActive" },
     locality: null,
+    zone: null,
   };
 
-  await db.runTransaction(async (tx) => {
+  const transactionResult = await db.runTransaction(async (tx) => {
     const [currentActor, target] = await Promise.all([tx.get(actorRef), tx.get(targetRef)]);
-    if (!currentActor.exists || currentActor.get("isActive") !== true || currentActor.get("role") !== "super_admin") {
+    if (!currentActor.exists || currentActor.get("isActive") !== true ||
+        (locationType === "zone" && !isActive ? currentActor.get("role") !== "central_admin" : currentActor.get("role") !== "super_admin")) {
       throw new HttpsError("permission-denied", "Admin access changed during validation.");
     }
     if (!target.exists) throw new HttpsError("not-found", "Service location was not found.");
-    if (target.get(statusField) === isActive) return;
+    if (target.get(statusField) === isActive) {
+      return { alreadyInRequestedState: true };
+    }
+    if (locationType === "zone" && !isActive) {
+      const revision=Number(target.get("revision")??1), boundaryId=target.get("verifiedBoundaryId");
+      if (target.get("workflowStatus")!=="deactivation_approved" ||
+          target.get("deactivationApprovedRevision")!==revision ||
+          typeof boundaryId!=="string" ||
+          target.get("deactivationApprovedBoundaryHash")!==target.get("deactivationRequestedBoundaryHash")) {
+        throw new HttpsError("failed-precondition","Founder approval for the current Zone revision is required before deactivation.");
+      }
+      const boundaryRef=db.doc(`service_location_boundaries/${boundaryId}`), boundarySnap=await tx.get(boundaryRef), boundary=asBoundary(boundarySnap.data());
+      if (!boundarySnap.exists || boundary.locationId!==locationId || boundary.locationType!=="zone" ||
+          boundary.verificationStatus!=="verified" ||
+          canonicalBoundaryHash(boundary, boundaryId)!==target.get("deactivationApprovedBoundaryHash")) {
+        throw new HttpsError("failed-precondition","Zone boundary changed; Founder approval is no longer valid.");
+      }
+    }
 
     const parentField = parentFieldByType[locationType];
     let parentRef: FirebaseFirestore.DocumentReference | undefined;
@@ -497,6 +968,26 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
       if (!children.empty) {
         throw new HttpsError("failed-precondition", "Deactivate active child locations first.");
       }
+      // Zones are canonical descendants of State → District → City. They are
+      // stored separately from legacy Areas, so explicitly block deactivation
+      // of any ancestor while an active Zone still references it.
+      const zoneParentFieldByType: Record<string, string> = {
+        state: "stateId",
+        district: "districtId",
+        city: "cityId",
+      };
+      const zoneParentField = zoneParentFieldByType[locationType];
+      if (zoneParentField) {
+        const activeZones = await tx.get(
+          db.collection("service_zones")
+            .where(zoneParentField, "==", locationId)
+            .where("isServiceActive", "==", true)
+            .limit(1),
+        );
+        if (!activeZones.empty) {
+          throw new HttpsError("failed-precondition", "Deactivate active descendant Zones first.");
+        }
+      }
       // District is a direct child of State in the canonical hierarchy.
       // The client-side Admin guard is only UX; enforce this invariant here
       // so direct callable requests cannot deactivate a State with active Districts.
@@ -513,9 +1004,27 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
         const areas = await tx.get(db.collection("service_areas").where("districtId", "==", locationId).where("isServiceActive", "==", true).limit(1));
         if (!cities.empty || !areas.empty) throw new HttpsError("failed-precondition", "Deactivate active District descendants first.");
       } else if (locationType === "country") {
+        // Check every State referencing this Country, not only active States:
+        // stale/legacy data must not allow Country deactivation while a Zone
+        // remains active beneath a State that was incorrectly marked inactive.
+        const states = await tx.get(db.collection("service_states").where("countryId", "==", locationId));
         const cities = await tx.get(db.collection("service_cities").where("countryId", "==", locationId).where("isServiceActive", "==", true).limit(1));
         const areas = await tx.get(db.collection("service_areas").where("countryId", "==", locationId).where("isServiceActive", "==", true).limit(1));
-        if (!cities.empty || !areas.empty) throw new HttpsError("failed-precondition", "Deactivate active descendant locations first.");
+        let activeZoneFound = false;
+        for (const stateDoc of states.docs) {
+          const zones = await tx.get(db.collection("service_zones")
+            .where("stateId", "==", stateDoc.id)
+            .where("isServiceActive", "==", true)
+            .limit(1));
+          if (!zones.empty) {
+            activeZoneFound = true;
+            break;
+          }
+        }
+        if (!states.empty && states.docs.some((doc) => doc.get("isActive") === true) ||
+            !cities.empty || !areas.empty || activeZoneFound) {
+          throw new HttpsError("failed-precondition", "Deactivate active descendant locations first.");
+        }
       } else if (locationType === "state") {
         const areas = await tx.get(db.collection("service_areas").where("stateId", "==", locationId).where("isServiceActive", "==", true).limit(1));
         if (!areas.empty) throw new HttpsError("failed-precondition", "Deactivate active descendant locations first.");
@@ -536,6 +1045,7 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
 
     tx.update(targetRef, {
       [statusField]: isActive,
+      ...(locationType === "zone" && !isActive ? { workflowStatus: "deactivated" } : {}),
       activationGuardAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
@@ -565,8 +1075,9 @@ export const setServiceLocationStatus = onCall({ region: "asia-south1" }, async 
       result: isActive ? "activated" : "deactivated",
       createdAt: FieldValue.serverTimestamp(),
     });
+    return { alreadyInRequestedState: false };
   });
-  return { ok: true, locationId, locationType, isActive };
+  return { ok: true, locationId, locationType, isActive, ...transactionResult };
 });
 
 
@@ -580,7 +1091,7 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in is required.");
   const uid = request.auth.uid;
   const { locationType, locationId, payload } = request.data ?? {};
-  const validTypes: ServiceLocationType[] = ["country", "state", "district", "city", "area", "locality"];
+  const validTypes: ServiceLocationType[] = ["country", "state", "district", "city", "area", "locality", "zone"];
   if (!validTypes.includes(locationType)) {
     throw new HttpsError("invalid-argument", "A valid locationType is required.");
   }
@@ -604,6 +1115,7 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     city: ["countryId", "stateId", "districtId", "name"],
     area: ["countryId", "stateId", "cityId", "name"],
     locality: ["countryId", "stateId", "cityId", "areaId", "name", "pincode"],
+    zone: ["stateId", "districtId", "cityId", "name"],
   };
   for (const key of Object.keys(proposed)) {
     if (!mutableFields[type].includes(key)) {
@@ -622,6 +1134,7 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     city: proposed.districtId === undefined ? ["countryId", "stateId"] : ["countryId", "stateId", "districtId"],
     area: ["countryId", "stateId", "cityId"],
     locality: ["countryId", "stateId", "cityId", "areaId"],
+    zone: ["stateId", "districtId", "cityId"],
   };
   const parentIds = parentFieldsByType[type].map((field) => {
     const value = proposed[field];
@@ -631,9 +1144,11 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     return value.trim();
   });
   const parentRefs = parentIds.map((id, i) => {
-    const parentType: ServiceLocationType[] = type === "city" && proposed.districtId !== undefined
-      ? ["country", "state", "district"]
-      : ["country", "state", "city", "area"];
+    const parentType: ServiceLocationType[] = type === "zone"
+      ? ["state", "district", "city"]
+      : type === "city" && proposed.districtId !== undefined
+        ? ["country", "state", "district"]
+        : ["country", "state", "city", "area"];
     return db.collection(SERVICE_LOCATION_COLLECTIONS[parentType[i]]).doc(id);
   });
   const normalizedName = (proposed.name as string).trim().toLowerCase().replace(/\s+/g, " ");
@@ -644,15 +1159,31 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     const [actorSnap, targetSnap, ...parentSnaps] = await Promise.all([
       tx.get(actorRef), tx.get(docRef), ...parentRefs.map((ref) => tx.get(ref)),
     ]);
+    const actorRole = actorSnap.get("role");
     if (!actorSnap.exists || actorSnap.get("isActive") !== true ||
-        !["super_admin", "admin"].includes(actorSnap.get("role"))) {
+        !(["super_admin", "admin"].includes(actorRole) || (type === "zone" && actorRole === "central_admin"))) {
       throw new HttpsError("permission-denied", "An active admin account is required.");
+    }
+    if (type === "zone" && actorRole !== "central_admin") {
+      throw new HttpsError("permission-denied", "An active Central Admin account is required to create or edit Zones.");
     }
     // A supplied ID is also used by deterministic CSV imports for first-time
     // creates. Existing documents are updated only after the parent and name-index
     // checks below; absent documents with a supplied ID are created inactive.
     if (targetSnap.exists) {
       const current = targetSnap.data() ?? {};
+      if (type === "zone" && current.workflowStatus === "rejected") {
+        throw new HttpsError(
+          "failed-precondition",
+          "Founder final rejection is terminal for this Zone. Create a new Zone with a new ID; this rejected Zone cannot be edited or resubmitted.",
+        );
+      }
+      if (type === "zone" && current.isServiceActive === true) {
+        throw new HttpsError("failed-precondition", "An active Zone must complete Founder-approved deactivation before it can be edited.");
+      }
+      if (type === "zone" && ["suspended", "reactivation_submitted"].includes(String(current.workflowStatus))) {
+        throw new HttpsError("failed-precondition", "An emergency-suspended Zone must complete the Founder-approved reactivation workflow before it can be edited.");
+      }
       if (type === "city" && (current.districtId !== undefined) !== (proposed.districtId !== undefined)) {
         throw new HttpsError("failed-precondition", "Adding or removing a City District requires a separate migration.");
       }
@@ -669,6 +1200,18 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
       if (!parentSnaps[i].exists) throw new HttpsError("failed-precondition", "A required parent location does not exist.");
     }
     const parentData = parentSnaps.map((snap) => snap.data() ?? {});
+    if (type === "zone" && (
+      parentData[1].stateId !== parentIds[0] ||
+      parentData[1].countryId !== parentData[0].countryId ||
+      parentData[2].stateId !== parentIds[0] ||
+      parentData[2].countryId !== parentData[0].countryId ||
+      parentData[2].districtId !== parentIds[1]
+    )) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Zone State, District and City must belong to one consistent Country/State/District hierarchy.",
+      );
+    }
     if (type === "state" && parentData[0].name === undefined) {
       throw new HttpsError("failed-precondition", "Country parent is invalid.");
     }
@@ -814,6 +1357,32 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
       ...(targetSnap.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
       ...nowFields,
     };
+    if (type === "zone") {
+      locationData.revision = Number(old.revision ?? 0) + 1;
+      locationData.workflowStatus = "draft";
+      locationData.approvalUid = FieldValue.delete();
+      locationData.approvedRevision = FieldValue.delete();
+      locationData.approvedBoundaryHash = FieldValue.delete();
+      locationData.submittedBoundaryHash = FieldValue.delete();
+      locationData.submittedRevision = FieldValue.delete();
+      locationData.submittedBy = FieldValue.delete();
+      locationData.approvedAt = FieldValue.delete();
+      locationData.submittedAt = FieldValue.delete();
+      // An edit starts a new draft revision. Remove all workflow-specific
+      // request/decision metadata so stale deactivation or reactivation
+      // approvals cannot be mistaken for the newly edited Zone's state.
+      for (const field of [
+        "deactivationRequestedRevision", "deactivationRequestedBoundaryHash",
+        "deactivationRequestedBy", "deactivationRequestReason", "deactivationRequestNotes", "deactivationRequestedAt",
+        "deactivationApprovedBy", "deactivationApprovedRevision",
+        "deactivationApprovedBoundaryHash", "deactivationApprovedAt",
+        "reactivationRequestedRevision", "reactivationRequestedBoundaryHash",
+        "reactivationRequestedBy", "reactivationRequestReason", "reactivationRequestedAt",
+        "founderDecision", "founderDecisionNotes", "founderDecisionBy", "founderDecisionAt",
+      ]) {
+        locationData[field] = FieldValue.delete();
+      }
+    }
     if (targetSnap.exists) {
       // Do not permit client saves to change activation/boundary state.
       delete locationData.isActive;

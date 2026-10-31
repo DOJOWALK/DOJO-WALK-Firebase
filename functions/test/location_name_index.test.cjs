@@ -121,3 +121,37 @@ test("supports the District-aware City index tuple", () => {
   const expected = createHash("sha256").update(Buffer.from(tuple, "utf8")).digest("hex");
   assert.equal(serviceLocationNameIndexId("service_cities", parents, "Noida"), expected);
 });
+
+
+test("supports the canonical Zone index tuple with State, District, and City parents", () => {
+  const parents = ["up", "gautam-nagar", "noida"];
+  const tuple = JSON.stringify(["service_zones", parents, "gaur city 2"]);
+  const expected = createHash("sha256").update(Buffer.from(tuple, "utf8")).digest("hex");
+  assert.equal(serviceLocationNameIndexId("service_zones", parents, " Gaur   City 2 "), expected);
+});
+
+test("validates a Zone payload with exactly State, District, and City parent IDs", () => {
+  assert.deepEqual(validateServiceLocationPayload("zone", {
+    stateId: " up ", districtId: " gautam-nagar ", cityId: " noida ", name: " Gaur City 2 ",
+  }), {
+    stateId: "up", districtId: "gautam-nagar", cityId: "noida", name: "Gaur City 2",
+  });
+});
+
+test("rejects legacy Area/Locality and activation fields in Zone payloads", () => {
+  assert.throws(() => validateServiceLocationPayload("zone", {
+    stateId: "up", districtId: "district-1", cityId: "city-1", areaId: "area-1", name: "Zone A",
+  }), /LOCATION_PAYLOAD_FIELD_INVALID/);
+  assert.throws(() => validateServiceLocationPayload("zone", {
+    stateId: "up", districtId: "district-1", cityId: "city-1", name: "Zone A", isServiceActive: true,
+  }), /LOCATION_PAYLOAD_FIELD_INVALID/);
+});
+
+test("rejects malformed or missing Zone parent IDs", () => {
+  assert.throws(() => validateServiceLocationPayload("zone", {
+    stateId: "up", districtId: "district/1", cityId: "city-1", name: "Zone A",
+  }), /LOCATION_INDEX_PARENT_INVALID/);
+  assert.throws(() => validateServiceLocationPayload("zone", {
+    stateId: "up", districtId: "district-1", name: "Zone A",
+  }), /LOCATION_INDEX_PARENT_INVALID/);
+});
