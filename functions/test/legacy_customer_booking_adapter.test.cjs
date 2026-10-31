@@ -36,7 +36,7 @@ test("adapts Choose-Dates using explicit selectedDates keys and every nested wal
         { time: "7:15 PM", duration: 20 },
       ] },
     ],
-  });
+  }, (value) => value.toDate().toISOString().slice(0, 10));
   assert.equal(result.occurrences.length, 3);
   assert.deepEqual(result.occurrences.map((x) => [x.serviceDateKey, x.time]), [
     ["2026-11-01", "06:00"], ["2026-11-01", "18:30"], ["2026-11-03", "19:15"],
@@ -95,4 +95,14 @@ test("validates Choose-Dates Timestamp against explicit selected date when resol
       { time: "6:00 AM", duration: 30 },
     ] }],
   }, () => "2026-11-02"), /does not match selectedDates/);
+});
+
+test("refuses Choose-Dates Timestamp normalization without a service timezone resolver", () => {
+  assert.throws(() => adaptLegacyCustomerBooking({
+    bookingPlan: "customize",
+    selectedDates: ["2026-11-01"],
+    dateSchedules: [{ date: timestamp("2026-11-01T00:00:00.000Z"), walks: [
+      { time: "6:00 AM", duration: 30 },
+    ] }],
+  }), /timezone resolver is required/);
 });
