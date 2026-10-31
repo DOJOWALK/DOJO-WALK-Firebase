@@ -77,7 +77,6 @@ test('unauthenticated client cannot create a booking', async () => {
 
 test('customer cannot create a booking under another customer UID', async () => {
   const db = env.authenticatedContext('customer-1').firestore();
-  const { setDoc } = await import('firebase/firestore');
   await assertFails(
     setDoc(
       doc(db, 'bookings/booking-test-001'),
@@ -88,7 +87,6 @@ test('customer cannot create a booking under another customer UID', async () => 
 
 test('booking rejects an unsupported plan or mismatched service type', async () => {
   const db = env.authenticatedContext('customer-1').firestore();
-  const { setDoc } = await import('firebase/firestore');
   await assertFails(
     setDoc(
       doc(db, 'bookings/booking-test-001'),
@@ -108,7 +106,6 @@ test('booking rejects an unsupported plan or mismatched service type', async () 
 
 test('booking rejects a walk count that does not match its schedule list', async () => {
   const db = env.authenticatedContext('customer-1').firestore();
-  const { setDoc } = await import('firebase/firestore');
   await assertFails(
     setDoc(
       doc(db, 'bookings/booking-test-001'),
@@ -122,7 +119,6 @@ test('booking rejects a walk count that does not match its schedule list', async
 
 test('booking rejects unexpected fields outside the Firestore allow-list', async () => {
   const db = env.authenticatedContext('customer-1').firestore();
-  const { setDoc } = await import('firebase/firestore');
   await assertFails(
     setDoc(
       doc(db, 'bookings/booking-test-001'),
