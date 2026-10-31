@@ -20,6 +20,14 @@ function formatClock(hour: number, minute: number): string {
 function normalizeLegacyTime(walk: Record<string, unknown>, field: string): string {
   const hour = walk.startHour;
   const minute = walk.startMinute;
+  const hasHour = hour !== undefined && hour !== null;
+  const hasMinute = minute !== undefined && minute !== null;
+  if (hasHour !== hasMinute) {
+    throw new Error(`${field} must provide both startHour and startMinute, or neither.`);
+  }
+  if (hasHour && (!Number.isInteger(hour) || !Number.isInteger(minute))) {
+    throw new Error(`${field} startHour/startMinute must both be integers.`);
+  }
   if (Number.isInteger(hour) && Number.isInteger(minute)) {
     if ((hour as number) < 0 || (hour as number) > 23 ||
         (minute as number) < 0 || (minute as number) > 59) {
