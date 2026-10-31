@@ -97,9 +97,6 @@ export function adaptLegacyCustomerBooking(
     });
   }
 
-  if (!resolveServiceDateKey) {
-    throw new Error("Service timezone resolver is required for every legacy Choose-Dates Timestamp.");
-  }
   const selectedDates = legacy.selectedDates;
   const legacyDateSchedules = legacy.dateSchedules;
   if (!Array.isArray(selectedDates) ||
@@ -107,6 +104,9 @@ export function adaptLegacyCustomerBooking(
       selectedDates.length === 0 ||
       selectedDates.length !== legacyDateSchedules.length) {
     throw new Error("Legacy selectedDates and dateSchedules must be non-empty and have matching lengths.");
+  }
+  if (!resolveServiceDateKey) {
+    throw new Error("Service timezone resolver is required for every legacy Choose-Dates Timestamp.");
   }
   const dateSchedules = legacyDateSchedules.map((day, index) => {
     if (!isRecord(day) || !legacyDateTimestamp(day.date)) {
