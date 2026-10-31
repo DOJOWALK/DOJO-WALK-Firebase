@@ -97,6 +97,9 @@ export function adaptLegacyCustomerBooking(
     });
   }
 
+  if (!resolveServiceDateKey) {
+    throw new Error("Service timezone resolver is required for every legacy Choose-Dates Timestamp.");
+  }
   const selectedDates = legacy.selectedDates;
   const legacyDateSchedules = legacy.dateSchedules;
   if (!Array.isArray(selectedDates) ||
@@ -113,9 +116,9 @@ export function adaptLegacyCustomerBooking(
     if (typeof dateKey !== "string") {
       throw new Error(`Legacy selectedDates[${index}] must be YYYY-MM-DD.`);
     }
-    // selectedDates is the explicit service-local date. If a resolver is
-    // supplied, also verify the legacy Timestamp represents that same date.
-    if (resolveServiceDateKey && resolveServiceDateKey(day.date) !== dateKey) {
+    // selectedDates is the explicit service-local date; verify the legacy
+    // Timestamp represents that same date using the approved zone resolver.
+    if (resolveServiceDateKey(day.date) !== dateKey) {
       throw new Error(`Legacy dateSchedules[${index}].date does not match selectedDates[${index}] in the service timezone.`);
     }
     return {
