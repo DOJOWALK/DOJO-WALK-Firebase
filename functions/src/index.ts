@@ -604,6 +604,8 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     city: ["countryId", "stateId", "districtId", "name"],
     area: ["countryId", "stateId", "cityId", "name"],
     locality: ["countryId", "stateId", "cityId", "areaId", "name", "pincode"],
+    // Zone is intentionally excluded from this legacy callable; its dedicated lifecycle is not implemented here.
+    zone: [],
   };
   for (const key of Object.keys(proposed)) {
     if (!mutableFields[type].includes(key)) {
@@ -622,6 +624,8 @@ export const saveServiceLocationWithNameIndex = onCall({ region: "asia-south1" }
     city: proposed.districtId === undefined ? ["countryId", "stateId"] : ["countryId", "stateId", "districtId"],
     area: ["countryId", "stateId", "cityId"],
     locality: ["countryId", "stateId", "cityId", "areaId"],
+    // Zone is intentionally excluded from this legacy callable; its dedicated lifecycle is not implemented here.
+    zone: [],
   };
   const parentIds = parentFieldsByType[type].map((field) => {
     const value = proposed[field];
