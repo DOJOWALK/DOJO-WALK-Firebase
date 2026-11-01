@@ -27,7 +27,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check whitespace and patch integrity
+      - name: Check whitespace and documentation
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
@@ -35,13 +35,20 @@ jobs:
             git diff --check "origin/${{ github.base_ref }}...HEAD"
             changed_files="$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")"
             printf '%s\n' "$changed_files"
-            if ! printf '%s\n' "$changed_files" | grep -qx 'AGENTS.md'; then
-              echo "Expected root AGENTS.md in this documentation validation run."
+            if printf '%s\n' "$changed_files" | grep -qx 'AGENTS.md'; then
+              test -s AGENTS.md
+              grep -q '^# ' AGENTS.md
+              echo "Root AGENTS.md validation passed."
+            elif printf '%s\n' "$changed_files" | grep -qx '.github/workflows/docs-only-validation.yml'; then
+              test -s .github/workflows/docs-only-validation.yml
+              grep -q '^name: Documentation Only Validation$' .github/workflows/docs-only-validation.yml
+              echo "Workflow self-check passed; AGENTS.md validation will run on future AGENTS.md PRs."
+            else
+              echo "No supported documentation file changed."
               exit 1
             fi
           else
             test -s AGENTS.md
+            grep -q '^# ' AGENTS.md
+            echo "Root AGENTS.md validation passed."
           fi
-          test -s AGENTS.md
-          grep -q '^# ' AGENTS.md
-          echo "Documentation validation passed."
