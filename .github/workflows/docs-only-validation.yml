@@ -1,0 +1,47 @@
+name: Documentation Only Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "AGENTS.md"
+      - ".github/workflows/docs-only-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-docs:
+    name: Validate documentation-only changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Check whitespace and patch integrity
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch --no-tags origin "${{ github.base_ref }}"
+            git diff --check "origin/${{ github.base_ref }}...HEAD"
+            changed_files="$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")"
+            printf '%s\n' "$changed_files"
+            if ! printf '%s\n' "$changed_files" | grep -qx 'AGENTS.md'; then
+              echo "Expected root AGENTS.md in this documentation validation run."
+              exit 1
+            fi
+          else
+            test -s AGENTS.md
+          fi
+          test -s AGENTS.md
+          grep -q '^# ' AGENTS.md
+          echo "Documentation validation passed."
