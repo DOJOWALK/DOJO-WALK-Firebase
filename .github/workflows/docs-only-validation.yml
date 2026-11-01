@@ -1,0 +1,54 @@
+name: Documentation Only Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "AGENTS.md"
+      - ".github/workflows/docs-only-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-docs:
+    name: Validate documentation-only changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check whitespace and documentation
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git diff --check "${{ github.event.pull_request.base.sha }}...HEAD"
+            changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}...HEAD")"
+            printf '%s\n' "$changed_files"
+            if printf '%s\n' "$changed_files" | grep -qx 'AGENTS.md'; then
+              test -s AGENTS.md
+              grep -q '^# ' AGENTS.md
+              echo "Root AGENTS.md validation passed."
+            elif printf '%s\n' "$changed_files" | grep -qx '.github/workflows/docs-only-validation.yml'; then
+              test -s .github/workflows/docs-only-validation.yml
+              grep -q '^name: Documentation Only Validation$' .github/workflows/docs-only-validation.yml
+              echo "Workflow self-check passed; AGENTS.md validation will run on future AGENTS.md PRs."
+            else
+              echo "No supported documentation file changed."
+              exit 1
+            fi
+          else
+            test -s AGENTS.md
+            grep -q '^# ' AGENTS.md
+            echo "Root AGENTS.md validation passed."
+          fi
