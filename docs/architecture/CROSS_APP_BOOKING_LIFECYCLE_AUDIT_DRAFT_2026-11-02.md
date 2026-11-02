@@ -115,9 +115,11 @@ Observed behavior:
 6. Customer source still enforces a maximum of three walks per day in its submission validation, while the pure normalizer now accepts four. The UI cap and server DTO contract should be reconciled against an approved product limit before end-to-end integration; do not assume the normalizer test changes the Customer UI behavior.
 7. The reviewed PR scope explicitly excludes Firestore reads/writes, Auth/ownership checks, availability, pricing, idempotency, task creation, assignment, lifecycle changes, and deployment. Keep it separate from assignment implementation.
 
-Verification qualification:
-- The reviewed commit has a successful workflow-run record named `Trusted Location Geometry and Callable Tests` (run `41186165719`), but the combined commit status returned no status contexts. This is not sufficient evidence that a Functions build and the PR #47 normalizer/adapter tests ran on this exact head. Do not label PR #47 exact-head validation PASS without the relevant run/job evidence.
+Verification qualification (exact head rechecked):
+- Commit `4f732ac7589f300f01d7668e6bcb89707e95d965` has workflow run `41186165719` (`Trusted Location Geometry and Callable Tests`) completed successfully.
+- The job log confirms the workflow ran `npm run build`, then `firebase emulators:exec ... "npm test && cd functions && npm test"`. The Functions test script is `npm run build && node --test test/*.test.cjs`, so the PR #47 normalizer and legacy-adapter test files were included.
+- The job log reports **301 passed, 0 failed**. The combined commit-status endpoint returned no status contexts, but the workflow run and job log provide direct exact-head build/test evidence. PR #47's Functions build and automated test suite therefore PASS on this head; this is not an end-to-end Customer→Partner integration pass.
 - No production data, Rules, Functions deployment, app source, merge, or device test was performed as part of this audit.
 
 Required next step:
-- Keep PR #47 Draft. Define/approve the service-zone timezone resolver and canonical occurrence/Partner reader contract; then add exact Customer-writer fixture tests and an explicit integration test proving the normalized schedule reaches the Partner reader. Do not add duplicate `date`/`startTime` fields or persistence as an unreviewed workaround.
+- Keep PR #47 Draft. Define/approve the service-zone timezone resolver and canonical occurrence/Partner reader contract; add exact Customer-writer fixture coverage for the real one-time and choose-dates shapes, and an integration test proving normalized occurrences reach the Partner reader. Reconcile the current Customer UI's three-walk-per-day submission cap with the normalizer's acceptance of four or more; this is a source mismatch, not an approved policy decision. Do not add duplicate `date`/`startTime` fields or persistence as an unreviewed workaround.
