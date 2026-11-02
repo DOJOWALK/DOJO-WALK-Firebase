@@ -123,3 +123,42 @@ Verification qualification (exact head rechecked):
 
 Required next step:
 - Keep PR #47 Draft. Define/approve the service-zone timezone resolver and canonical occurrence/Partner reader contract; add exact Customer-writer fixture coverage for the real one-time and choose-dates shapes, and an integration test proving normalized occurrences reach the Partner reader. Reconcile the current Customer UI's three-walk-per-day submission cap with the normalizer's acceptance of four or more; this is a source mismatch, not an approved policy decision. Do not add duplicate `date`/`startTime` fields or persistence as an unreviewed workaround.
+
+
+## 7. Updated Customer → Partner Today-list audit (02 Nov 2026, exact source refresh)
+
+This section supersedes no approved contract; it refreshes the source evidence after the PR #47 Asia/Kolkata boundary-test commit.
+
+### Exact source revisions reviewed
+- Customer writer `lib/features/booking/screens/booking_confirmation_screen.dart`, blob `94d45b12c7873fc2d289e164df965c735c0c63cb`.
+- Partner reader `lib/screens/home/partner_home_screen.dart`, blob `9a1c14fe13e05eaa7fd2df55942a20b02ce82074`.
+- Firebase adapter branch `feat/booking-normalizer-adapter-clean-2026-10-31`, commit `da16f650c9738473482d896387cf09b1efec0eab`.
+- PR #47 current head is `da16f650c9738473482d896387cf09b1efec0eab`; PR remains open, Draft and unmerged.
+
+### Current writer/reader behavior
+Customer writes common fields including `bookingPlan`, `scheduledAt` Timestamp, `preferredTime`, `duration`, `walkCount`, `walkSchedules[]`, `status: pending`, and `walkerId: null`. Choose-Dates additionally writes `selectedDates[]` as YYYY-MM-DD strings and `dateSchedules[]` with a Timestamp `date` and nested `walks[]`. The Customer source rejects a daily primary schedule with more than three walks.
+
+Partner Home queries `bookings` by `walkerId == Firebase Auth UID`; it filters by `date` for the device-local current day, sorts by `startTime`, and includes only `assigned`, `accepted`, `picked_up`, and `walking` statuses. Its card formatter also reads legacy fields such as `dogName`/nested `dog.name`, `type`, `duration`, and pickup location fields.
+
+The pure Firebase adapter consumes the Customer schedule fields and emits normalized occurrences with `serviceDateKey`, `time`, `durationMinutes`, and `walkNumber`. It does not emit Partner's `date` or `startTime`; no callable, Firestore persistence path, or Partner reader integration invokes it. Customer creates a pending unassigned request, so it is correctly absent from the Partner assigned-work query until a trusted assignment workflow exists.
+
+### Timezone finding — important qualification
+The Notion Booking API Contract draft records a V1 design direction of `Asia/Kolkata`, UTC Firestore timestamps, and service-local `serviceDateKey` / `serviceTime` / `timezone` on each Walk Task. This is a documented design direction, not production approval. Partner Home currently derives its day boundary from device-local `DateTime.now()`; the reader has not yet been changed to consume an approved service-local task contract.
+
+PR #47 now has two additional boundary tests using an injected pure test resolver: UTC `2026-10-31T18:31:00Z` maps to India-local date `2026-11-01`, and Choose-Dates checks Timestamp/date-key correspondence. This does not implement a production timezone resolver or a callable.
+
+### Remaining incompatibilities / acceptance gates
+1. Define the approved canonical occurrence/task DTO and explicit mapping to the Partner reader; do not add speculative duplicate `date`/`startTime` fields to Customer writes.
+2. Replace device-local Today filtering with service-local date semantics only after the contract is approved and wired end-to-end.
+3. Preserve all One-Time walks and all nested Choose-Dates occurrences; test later dates, not only index zero.
+4. Define how the assigned Walker's task is materialized/read securely; test assigned versus unassigned and cross-Walker denial.
+5. Test stable ordering for multiple walks per day and supported 12-hour/24-hour clock formats.
+6. Test only approved lifecycle states; do not promote `pending` to `assigned` in a client adapter.
+7. Keep Regular and ASAP unscheduled pending their bounded-period / operations rules.
+8. Reconcile Customer's three-walk-per-day UI cap with the normalizer's acceptance of four or more; this is a product-contract mismatch, not an implementation choice for this audit.
+9. Add malformed/empty payload, retry, idempotency, duplicate task creation, and authenticated ownership/authorization tests when the callable boundary is approved.
+
+### Exact-head verification correction
+The earlier Section 6 records the prior PR #47 head `4f732ac7589f300f01d7668e6bcb89707e95d965` and its 301-test run. The current head is `da16f650c9738473482d896387cf09b1efec0eab`; its exact-head GitHub Actions checks completed successfully, including Diff Integrity and the Firebase build/Rules/Functions emulator workflow. The Functions suite reports **303 passed, 0 failed**. This is exact-head automated build/emulator evidence for the pure normalizer/adapter tests, not Customer → Partner integration, deployed behavior, or device QA.
+
+**Gate remains BLOCKED / NO-GO for production integration:** the Notion Booking API Contract remains a working draft with unresolved approval/mapping decisions. This addendum is source audit and test planning only. No app source, Rules, Functions, Firestore data, production configuration, merge, deployment, or device test was changed or performed.
