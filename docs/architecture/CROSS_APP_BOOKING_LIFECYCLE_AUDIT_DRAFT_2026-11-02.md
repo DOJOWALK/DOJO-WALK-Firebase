@@ -162,3 +162,50 @@ PR #47 now has two additional boundary tests using an injected pure test resolve
 The earlier Section 6 records the prior PR #47 head `4f732ac7589f300f01d7668e6bcb89707e95d965` and its 301-test run. The current head is `da16f650c9738473482d896387cf09b1efec0eab`; its exact-head GitHub Actions checks completed successfully, including Diff Integrity and the Firebase build/Rules/Functions emulator workflow. The Functions suite reports **303 passed, 0 failed**. This is exact-head automated build/emulator evidence for the pure normalizer/adapter tests, not Customer → Partner integration, deployed behavior, or device QA.
 
 **Gate remains BLOCKED / NO-GO for production integration:** the Notion Booking API Contract remains a working draft with unresolved approval/mapping decisions. This addendum is source audit and test planning only. No app source, Rules, Functions, Firestore data, production configuration, merge, deployment, or device test was changed or performed.
+
+## 8. Proposed automated integration test matrix — design only (02 Nov 2026)
+
+This matrix is a test-design artifact derived from the current Customer writer, Firebase PR #44 architecture direction, PR #47 pure adapter, Partner Home reader, and the Notion implementation gate. It is not evidence that these integration tests exist or have run. Test implementation must wait for the DTO/status/timezone/idempotency decisions below to be approved.
+
+| ID | Scenario / fixture | Expected assertion | Gate / owner |
+| --- | --- | --- | --- |
+| INT-01 | Authenticated Customer, valid One-Time request with 1 walk | Parent request is created once; normalized occurrence preserves service date, time and duration; request remains non-confirmed and non-assignable | DTO + callable approval |
+| INT-02 | One-Time with multiple walks same date | One task per submitted walk; deterministic ordering by canonical instant, then stable tie-breaker | DTO + task ID policy |
+| INT-03 | Choose-Dates with 2+ dates and multiple walks on later date | Every nested date/walk entry is represented exactly once; no index-zero-only truncation | DTO + transaction limits |
+| INT-04 | UTC timestamp crossing India midnight (2026-10-31T18:31:00Z) | Service-local date key is 2026-11-01 for approved Asia/Kolkata service zone; device timezone cannot change result | Service-zone timezone source approval |
+| INT-05 | Same schedule viewed from devices in different timezones | Partner Today grouping remains based on service-local date, not device-local clock | Partner reader migration |
+| INT-06 | Regular request without confirmed bounded end date | No unbounded child task series is generated; request is held for operations/period confirmation | Founder/Product period decision |
+| INT-07 | ASAP request with client-generated scheduledAt | Client clock is not treated as authoritative scheduled start; no scheduled/assignable task is generated prematurely | Immediate/availability workflow approval |
+| INT-08 | Customer attempts forged customerId, petId, addressId, walkerId, status, price or payment fields | Auth UID is authoritative; pet/address ownership is verified; trusted assignment/status/price/payment fields cannot be forged | Callable + Rules security review |
+| INT-09 | Repeated identical request / network retry | Exactly one parent and one set of child tasks for approved idempotency key; replay returns consistent result | Idempotency format/retention approval |
+| INT-10 | Two concurrent submissions using same idempotency key | Transaction/concurrency guard prevents duplicate parent/task creation | Backend transaction implementation |
+| INT-11 | Assigned task queried by its assigned Walker | Only that Walker can read permitted task fields; unassigned task is not exposed as work | Role/field-level Rules approval |
+| INT-12 | Walker A attempts to read/update Walker B task | Denied by backend/Rules; client-supplied walker UID is ignored | Authorization implementation |
+| INT-13 | Partner Today list receives canonical task DTO | Only approved active task statuses appear; pending/unassigned request does not appear as assigned work | Canonical status enum approval |
+| INT-14 | Same task has accepted/picked-up/walking progress events | Only server-approved transitions occur; duplicate/reordered/stale commands do not regress state | Lifecycle transition matrix approval |
+| INT-15 | Admin parent/child view | Admin sees parent request and its task occurrences with role/scope-filtered sensitive data | Admin role/scope contract approval |
+| INT-16 | Customer cancellation request during pending/assigned/in-progress states | Cancellation request, operations decision, refund decision and payment reversal remain distinct; invalid transitions rejected | POL-010/POL-012 alignment |
+| INT-17 | Malformed date/time, empty schedule, duplicate occurrence, duration outside 20–60 | Validation rejects with stable machine-readable error; no partial parent/task writes | Final validation DTO |
+| INT-18 | Batch exceeds Firestore transaction/write limits | No partial task set; request fails safely or uses approved bounded batching design | Max schedule/horizon approval |
+| INT-19 | Legacy parent booking without child tasks | Compatibility behavior is explicit; no silent fabricated task or assignment | Migration/legacy policy |
+| INT-20 | Customer, Partner and Admin read the same seeded fixture | Field mapping, labels, dates, status and ownership agree across all three clients | Coordinated cross-repo test harness |
+
+### Required fixture set
+- Customer's exact One-Time payload shape from booking_confirmation_screen.dart.
+- Customer's exact Choose-Dates payload including at least two dates and later-date nested walks.
+- Regular payload with no end date (must remain bounded/held, not expanded).
+- ASAP payload with client-generated scheduledAt (must not become a fixed task).
+- Legacy parent document fixture matching current Admin/Partner reader expectations.
+- Auth contexts for Customer A, Walker A, Walker B, Central Admin and scoped City Manager; tests must include negative cross-user and out-of-scope cases.
+
+### Current decisions blocking executable end-to-end tests
+1. Final parent/child DTO and legacy compatibility mapping.
+2. Canonical parent and task status enums plus allowed transition table.
+3. Approved service-zone → IANA timezone resolver and date-key semantics.
+4. Regular booking end-date/calendar semantics and generation horizon.
+5. ASAP/availability confirmation workflow.
+6. Idempotency key, retention and generated-ID strategy.
+7. Customer three-walk/day limit versus PR #47 normalizer's four-walk test.
+8. Admin/Partner field-level access and deployed Rules source of truth.
+
+**Test gate:** PR #47's 303 passing Functions tests are unit/emulator evidence for the pure normalizer/adapter only. They do not satisfy INT-01–INT-20. No integration test has been claimed as executed. This matrix does not authorize code changes, Rules changes, deployment, merge or device QA.
