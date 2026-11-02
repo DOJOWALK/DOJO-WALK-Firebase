@@ -106,3 +106,42 @@ test("refuses Choose-Dates Timestamp normalization without a service timezone re
     ] }],
   }), /timezone resolver is required/);
 });
+
+
+function asiaKolkataDateKey(value) {
+  const date = value.toDate();
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(date);
+  const part = (type) => parts.find((item) => item.type === type).value;
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+test("uses Asia/Kolkata service date when UTC and service-local calendar dates differ", () => {
+  // 2026-10-31 18:31Z is already 2026-11-01 00:01 in Asia/Kolkata.
+  const scheduledAt = timestamp("2026-10-31T18:31:00.000Z");
+  assert.equal(scheduledAt.toDate().toISOString().slice(0, 10), "2026-10-31");
+  assert.equal(asiaKolkataDateKey(scheduledAt), "2026-11-01");
+
+  const result = adaptLegacyCustomerBooking({
+    bookingPlan: "one_time",
+    scheduledAt,
+    walkSchedules: [{ time: "6:30 AM", duration: 30 }],
+  }, asiaKolkataDateKey);
+  assert.equal(result.occurrences[0].serviceDateKey, "2026-11-01");
+});
+
+test("Choose-Dates validates Timestamp against Asia/Kolkata selectedDates key", () => {
+  const date = timestamp("2026-10-31T18:31:00.000Z");
+  const result = adaptLegacyCustomerBooking({
+    bookingPlan: "customize",
+    selectedDates: ["2026-11-01"],
+    dateSchedules: [{ date, walks: [{ time: "6:00 AM", duration: 30 }] }],
+  }, asiaKolkataDateKey);
+  assert.equal(result.occurrences[0].serviceDateKey, "2026-11-01");
+  assert.throws(() => adaptLegacyCustomerBooking({
+    bookingPlan: "customize",
+    selectedDates: ["2026-10-31"],
+    dateSchedules: [{ date, walks: [{ time: "6:00 AM", duration: 30 }] }],
+  }, asiaKolkataDateKey), /does not match selectedDates/);
+});
