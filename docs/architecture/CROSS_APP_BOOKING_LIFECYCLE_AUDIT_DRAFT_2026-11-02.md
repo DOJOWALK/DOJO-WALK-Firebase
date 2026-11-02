@@ -76,7 +76,7 @@ Current default-branch `navigation_screen.dart` helper behavior:
 - Otherwise it directly updates `bookings/{bookingId}` with the supplied status and server `updatedAt`.
 - Callers use it for `accepted`, `picked_up`, and `walking`.
 
-This is a release-blocking source defect. PR #24's proposed fix must be independently checked on its head and only becomes main behavior after authorized merge. Do not claim fixed on main.
+This is a release-blocking source defect on current main. I separately fetched PR #24's exact head (`64c182a894591b32b92b33ba8c78f8a28acf4f14`): its helper validates the reference with `hasWalkBookingReference`, shows a support message and returns `false` when missing, and trims the ID before update. This confirms the fail-closed change exists on the PR head only; it remains unmerged, so main is still affected. The PR fix does not address the broader issue that valid lifecycle transitions are still direct client writes.
 
 ## 4. Required implementation sequence (no production action authorized)
 1. Founder/Operations approval of POL-005, POL-026, POL-021 and related cancellation/payment policies; resolve timeout, attempt, ranking, escalation and lifecycle questions.
