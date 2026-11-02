@@ -54,7 +54,7 @@ test('active Super Admin can read a walker selfie', async () => {
 
   const adminStorage = env.authenticatedContext('admin-1').storage(bucket);
   const bytes = await getBytes(ref(adminStorage, 'walker_selfies/walker-1/selfie_1793600002.jpg'));
-  assert.equal(bytes.length, 3);
+  assert.equal(bytes.byteLength, 3);
 });
 
 test('walker cannot upload an executable or unsupported file type', async () => {
