@@ -1,0 +1,54 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function isActiveSuperAdmin() {
+      return signedIn()
+        && firestore.exists(/databases/(default)/documents/admin_users/$(request.auth.uid))
+        && firestore.get(/databases/(default)/documents/admin_users/$(request.auth.uid)).data.isActive == true
+        && firestore.get(/databases/(default)/documents/admin_users/$(request.auth.uid)).data.role == 'super_admin';
+    }
+
+    // Walker onboarding selfie: one image per timestamped object.
+    // Walker can upload/read their own files; active Super Admin can review.
+    match /walker_selfies/{uid}/{fileName} {
+      allow read: if isOwner(uid) || isActiveSuperAdmin();
+
+      allow create: if isOwner(uid)
+        && fileName.matches('^selfie_[0-9]{10,17}\\.(jpg|jpeg|png|webp)$')
+        && request.resource.size > 0
+        && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+
+      // Submitted evidence is immutable from client SDKs.
+      allow update, delete: if false;
+    }
+
+    // Walker KYC documents: private to the owning walker and active Super Admin.
+    match /walker_documents/{uid}/{fileName} {
+      allow read: if isOwner(uid) || isActiveSuperAdmin();
+
+      allow create: if isOwner(uid)
+        && fileName.matches('^[A-Za-z0-9][A-Za-z0-9._-]{0,119}\\.(pdf|jpg|jpeg|png|webp)$')
+        && request.resource.size > 0
+        && request.resource.size <= 10 * 1024 * 1024
+        && request.resource.contentType.matches('(application/pdf|image/(jpeg|png|webp))');
+
+      allow update, delete: if false;
+    }
+
+    // No public access and no implicit access to unlisted paths.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
