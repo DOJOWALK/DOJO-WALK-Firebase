@@ -209,3 +209,67 @@ This matrix is a test-design artifact derived from the current Customer writer, 
 8. Admin/Partner field-level access and deployed Rules source of truth.
 
 **Test gate:** PR #47's 303 passing Functions tests are unit/emulator evidence for the pure normalizer/adapter only. They do not satisfy INT-01–INT-20. No integration test has been claimed as executed. This matrix does not authorize code changes, Rules changes, deployment, merge or device QA.
+
+
+## 9. Proposed lifecycle ownership and transition decision register — design only (02 Nov 2026)
+
+This section reconciles the **Draft** POL-005 / POL-026 requirements with the **Draft** Booking + Walk Task contract. It is a review aid, not an approved state machine. Names below are candidates already present in those sources; this section does not authorize new enum values, Firestore fields, callables, or client writes.
+
+### 9.1 Keep four lifecycles separate
+
+| Domain | What it represents | Source-backed direction | Must not be conflated with |
+|---|---|---|---|
+| Parent Booking | Customer's commercial/request record | POL-005 candidate states: `draft`, `submitted`, `validated`, `searching_walker`, `offer_pending`, `assigned`, `in_progress`, `completed`, `cancelled`, `needs_operations`, `failed` | Payment outcome, individual walk progress, or offer response |
+| Walk Task | One scheduled walk occurrence under a parent | PR #44 candidate direction: `pending_confirmation`, `ready_for_assignment`, `assigned`, `accepted`, `arrived`, `picked_up`, `in_progress`, `completed`, plus explicit exception outcomes | Parent booking status or completed history in `walks` |
+| Assignment / Offer | One Walker-specific, time-limited offer and its outcome | POL-005 / POL-026 require unique offer, one active offer at a time, decline/expiry closure, atomic accept, next candidate, and operations escalation | Walk Task progress or proof that a notification was delivered |
+| Payment | Quote/payment/refund/reconciliation lifecycle | PR #44 lists separate candidate payment states; Notion API gate says payment needs its own trusted verification and expiry/reconciliation decisions | Booking request receipt, Walker acceptance, or walk completion |
+
+### 9.2 Candidate transition sequence (not yet approved)
+
+| Stage | Candidate event / state direction | Authority required | Current evidence / blocker |
+|---|---|---|---|
+| Intake | Customer submits request; parent starts in a server-defined pending/request state | Customer may submit intent; backend derives identity, timestamp and trusted fields | Customer currently writes directly to Firestore; callable gate is BLOCKED |
+| Validation | Request becomes validated only after customer/pet/address/schedule/zone checks | Trusted backend | No booking-create callable in reviewed Functions exports |
+| Assignment preparation | Task becomes eligible for matching only after approved availability/confirmation/payment gates | Trusted backend | Exact order of availability, quote, payment and task creation remains open |
+| Offer | One eligible Walker receives one active offer; no other Walker has an active offer for that same task | Assignment service | POL-005 / POL-026 Draft; timeout, ranking, max attempts and pause unresolved |
+| Response | Walker accepts or declines the currently open offer | Authenticated Walker through trusted backend; backend rechecks offer and eligibility | Partner currently writes booking status directly; no reviewed offer callable |
+| Winner commit | Accepted offer and assigned Walker are committed atomically; losing/stale accepts fail | Trusted backend transaction | No matching/atomic winner implementation found |
+| Walk progress | Arrival, pickup, start and completion are distinct task events/states | Trusted lifecycle API; safety/handover checks before completion | Current Partner writes booking status and completion/history separately from client |
+| Exception | Exhausted candidates or blocked transition routes to operations review; replacement follows future-vs-active walk rules | Central/authorized role via audited backend action; active walk requires safe handover | Exact escalation thresholds and replacement authority remain open |
+| Cancellation | Customer cancellation request is separate from backend cancellation decision and payment/refund outcome | Customer may request; backend/policy-authorized operator decides | POL-010/POL-012 alignment and charge rules still required |
+
+### 9.3 Actor boundary proposal for review
+
+- **Customer app:** submit booking intent; read own parent/task status; submit cancellation request. It must not choose Walker, mark availability/payment confirmed, or advance trusted lifecycle states.
+- **Partner app:** read only offers addressed to the authenticated Walker and tasks assigned to that Walker; send accept/decline/progress commands to trusted APIs. It must not directly set `walkerId`, parent booking state, or task owner.
+- **Admin / Central Operations:** view parent/task/offer history within role and geographic scope; perform only explicitly authorized retry/reassignment/exception actions with mandatory reason and audit record.
+- **City Manager / Zone Supervisor:** view and escalate only within assigned scope; no bypass of eligibility, safety or Central-controlled exceptions.
+- **Backend:** sole authority for identity, ownership, eligibility, offer expiry, atomic assignment, canonical state transitions, timestamps, idempotency and audit events.
+- **Super Admin:** privileged technical/security administration is not automatically booking dispatch or financial approval authority; enforce POL-021 role/action/scope separation.
+
+### 9.4 Decisions that must be recorded before implementation
+
+| Decision ID | Required decision | Source owner / approver | Safe status until decided |
+|---|---|---|---|
+| LIFE-01 | Final parent Booking enum and exact legacy mapping | Founder/Product + Customer/Admin/Partner owners | Keep current legacy flow; no new status writes |
+| LIFE-02 | Final Walk Task enum and allowed from→to transitions, including exception/terminal states | Founder/Operations + backend/app owners | No task lifecycle implementation |
+| LIFE-03 | Whether `accepted` is offer acceptance or task acknowledgement; whether `picked_up` / `walking` belong to task state or events | Product + Partner + backend | Do not alias existing statuses |
+| LIFE-04 | Assignment offer status enum, expiry behavior, timeout, max attempts, ranking and tie-breakers | Founder/Operations | Configurable decisions remain unset; no hard-coded defaults |
+| LIFE-05 | Exact point when a request becomes assignable relative to zone availability, quote and payment | Founder/Product + Finance/Operations | Request receipt remains non-confirmed/non-assignable |
+| LIFE-06 | Cancellation request, cancellation decision, refund and payment reversal transitions | Founder + Finance/Operations; align POL-010/POL-012 | Keep each outcome separate; do not invent fees |
+| LIFE-07 | Future-walk replacement versus active-walk safe handover transition and proof | Operations + Safety owner | No silent reassignment or completion assertion |
+| LIFE-08 | Role/scope matrix for Customer, Walker, Central, City Manager, Supervisor, Finance and Super Admin | Founder + Security/Admin owners; align POL-021 | Deny by default; no UI-only authorization |
+| LIFE-09 | Audit event schema, idempotency keys, concurrency behavior and retry semantics | Backend + Security + Operations | No trusted write path until designed and tested |
+
+### 9.5 Required transition-test shape after approval
+
+For every approved transition, the implementation test suite must assert all of the following:
+1. Correct prior state and actor/role/scope are required.
+2. Unauthorized, stale, expired, duplicate and out-of-order requests are rejected without partial writes.
+3. A successful command changes only the approved parent/task/offer/payment domain(s).
+4. Assignment winner selection is atomic; at most one active offer and one assigned Walker exist per task.
+5. The event is idempotent and leaves an auditable actor/service, reason, timestamp and correlation reference.
+6. Customer, Partner and Admin projections show the same authoritative outcome while hiding fields outside the actor's access stage.
+7. Cancellation, refund, replacement and active-walk handover paths are tested independently from the ordinary completion path.
+
+**Decision gate:** POL-005 and POL-026 are both Draft and require approval; the Notion Booking API gate and PR #44 field/status contract are also Draft/blocked. This register is therefore documentation-only. It does not implement a state machine, modify a schema, change Rules, or authorize merge/deployment/device testing.
