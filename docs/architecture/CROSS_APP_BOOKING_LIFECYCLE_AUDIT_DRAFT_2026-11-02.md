@@ -42,14 +42,41 @@ These are not yet proven to be mutually compatible. Do not silently alias or wri
 4. Define cancellation request vs cancellation outcome as separate concepts.
 5. Keep Booking ID, Walk Task ID, and Walk History ID distinct; reconcile with merged-but-draft PR #44 contract and proposed trusted completion API.
 
-- No reviewed trusted callable implements sequential one-Walker-at-a-time offers, timeout/decline progression, eligibility recheck, atomic accept, or reassignment.
+## 3. Blocking cross-app gaps
 - No reviewed trusted callable implements sequential one-Walker-at-a-time offers, timeout/decline progression, eligibility recheck, atomic accept, or reassignment.
 - Partner app directly writes booking lifecycle statuses; client-side writes cannot be the authority for state transitions.
-- Completion currently relies on client-side assertions and separate writes; no verified handover/atomic completion proof established.
+- **Booking schedule schema mismatch:** Customer creates `scheduledAt`/`preferredTime`/`walkSchedules`; Partner Home filters/sorts using `date`/`startTime`. This can prevent assigned bookings appearing in the Partner's Today list or being sorted correctly.
+- **Fail-open missing ID:** current Partner Navigation helper returns success when `bookingId` is absent, allowing local progression without a persisted status transition. PR #24 is a proposed, unmerged correction only.
+- Completion currently relies on client-side assertions and separate writes; no verified handover/atomic completion proof established. Walk-history creation and booking completion can diverge on partial failure.
 - Customer's upcoming filter and labels include legacy states not present in the proposed canonical lifecycle.
 - Admin currently provides visibility, not assignment operations; existing Admin role checks are not a substitute for an assignment authorization model.
 - Firestore Rules allowlist and client write paths must be re-audited against the final approved canonical lifecycle. Do not loosen rules to make current writes pass.
 - Cancellation request, cancellation decision, refund decision, and payment reversal must remain distinct and follow approved policies.
+
+## 3A. Exact current payload/reader mismatch
+
+Customer booking payload (current main):
+- `bookingId` equals the generated Firestore document ID.
+- `customerId`, `dogId`, `pickupAddressId`, `pickupAddress`.
+- `scheduledAt`, `preferredTime`, `duration`, `walkCount`, `walkSchedules`.
+- `status: pending`, `walkerId: null`, `cancelRequest: null`, `createdAt`.
+
+Partner Home (current main):
+- Query: `bookings.where('walkerId', isEqualTo: uid)`.
+- Date filter reads `date`.
+- Sort reads `startTime`.
+- Active statuses: `assigned`, `accepted`, `picked_up`, `walking`.
+
+No compatibility adapter or backend normalization connecting these exact schedule fields was established in this audit. Do not simply add duplicate `date`/`startTime` fields in the client: approve a canonical schema and normalize server-side or update all consumers consistently.
+
+## 3B. Navigation fail-open evidence
+
+Current default-branch `navigation_screen.dart` helper behavior:
+- If `bookingId == null || bookingId.isEmpty`, it returns `true`.
+- Otherwise it directly updates `bookings/{bookingId}` with the supplied status and server `updatedAt`.
+- Callers use it for `accepted`, `picked_up`, and `walking`.
+
+This is a release-blocking source defect. PR #24's proposed fix must be independently checked on its head and only becomes main behavior after authorized merge. Do not claim fixed on main.
 
 ## 4. Required implementation sequence (no production action authorized)
 1. Founder/Operations approval of POL-005, POL-026, POL-021 and related cancellation/payment policies; resolve timeout, attempt, ranking, escalation and lifecycle questions.
