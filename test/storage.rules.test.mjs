@@ -57,6 +57,31 @@ test('active Super Admin can read a walker selfie', async () => {
   assert.equal(bytes.byteLength, 3);
 });
 
+test('walker can upload a valid private KYC document using the Partner App path contract', async () => {
+  const storage = env.authenticatedContext('walker-1').storage(bucket);
+  const file = ref(storage, 'walker_documents/walker-1/aadhaar_1793600003.jpg');
+  await uploadBytes(file, new Uint8Array([1, 2, 3]), { contentType: 'image/jpeg' });
+});
+
+test('active Super Admin can read a private walker KYC document', async () => {
+  const ownerStorage = env.authenticatedContext('walker-1').storage(bucket);
+  const path = 'walker_documents/walker-1/pan_1793600004.jpg';
+  await uploadBytes(ref(ownerStorage, path), new Uint8Array([4, 5, 6]), { contentType: 'image/jpeg' });
+
+  const adminStorage = env.authenticatedContext('admin-1').storage(bucket);
+  const bytes = await getBytes(ref(adminStorage, path));
+  assert.equal(bytes.byteLength, 3);
+});
+
+test('another walker cannot read a private KYC document', async () => {
+  const ownerStorage = env.authenticatedContext('walker-1').storage(bucket);
+  const path = 'walker_documents/walker-1/license_1793600005.jpg';
+  await uploadBytes(ref(ownerStorage, path), new Uint8Array([7, 8, 9]), { contentType: 'image/jpeg' });
+
+  const otherStorage = env.authenticatedContext('walker-2').storage(bucket);
+  await assert.rejects(() => getBytes(ref(otherStorage, path)));
+});
+
 test('walker cannot upload an executable or unsupported file type', async () => {
   const storage = env.authenticatedContext('walker-1').storage(bucket);
   const file = ref(storage, 'walker_documents/walker-1/malware.exe');
