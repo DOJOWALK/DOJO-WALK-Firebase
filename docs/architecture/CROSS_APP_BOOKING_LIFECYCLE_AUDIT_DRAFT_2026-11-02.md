@@ -96,3 +96,28 @@ This is a release-blocking source defect on current main. I separately fetched P
 - Notion policies: POL-005, POL-026, POL-021, POL-010 and POL-012. Draft status remains authoritative until approval.
 
 This is a source-level audit. No Firestore data, Rules, Functions, app source, production configuration, deployment, merge, or device testing was changed or performed by this document.
+
+
+## 6. PR #47 normalizer/adapter verification (02 Nov 2026)
+
+Exact PR evidence:
+- PR #47: https://github.com/DOJOWALK/DOJO-WALK-Firebase/pull/47
+- Reviewed changed files: `functions/src/booking_request_normalizer.ts`, `functions/src/legacy_customer_booking_adapter.ts`, and their two Node test files.
+- Reviewed head commit: `4f732ac7589f300f01d7668e6bcb89707e95d965` (commit message: `test: cover schedules with more than three walks`).
+- The head commit changes the normalizer test to accept four walks; it does not connect the normalizer to a callable or Firestore writer.
+
+Observed behavior:
+1. The pure normalizer accepts a proposed DTO: one-time uses `serviceDateKey` + `walkSchedules`; choose-dates uses `dateSchedules[].serviceDateKey` + `walks`. It emits `serviceDateKey`, `time`, `durationMinutes`, and `walkNumber` occurrences.
+2. The legacy adapter reads Customer's `bookingPlan`, `scheduledAt`, `preferredTime`, `walkSchedules`, `selectedDates`, and `dateSchedules`. For one-time bookings it requires an injected service-date resolver for `scheduledAt`; for choose-dates it requires a resolver and verifies each Timestamp against the explicit `selectedDates` key.
+3. `preferredTime` is only used to detect `ASAP`; scheduled time is taken from each `walkSchedules[].time`. ASAP and regular requests produce no scheduled occurrences and remain awaiting operations/period approval.
+4. The adapter output is not the Partner Home schema: it does not emit Partner's `date` or `startTime`, and no callable/import path invokes it. Therefore PR #47 does not resolve the Customer-to-Partner Today-list mismatch.
+5. Current Customer writer source (`lib/features/booking/screens/booking_confirmation_screen.dart`, blob `94d45b12c7873fc2d289e164df965c735c0c63cb`) confirms integer `walkSchedules[].duration`, Timestamp `scheduledAt`, and for choose-dates a `selectedDates` string list plus `dateSchedules[].date` Timestamp and nested walks. The adapter's duration type is compatible with this writer; the earlier comment alleging a string-duration mismatch was explicitly corrected in PR discussion.
+6. Customer source still enforces a maximum of three walks per day in its submission validation, while the pure normalizer now accepts four. The UI cap and server DTO contract should be reconciled against an approved product limit before end-to-end integration; do not assume the normalizer test changes the Customer UI behavior.
+7. The reviewed PR scope explicitly excludes Firestore reads/writes, Auth/ownership checks, availability, pricing, idempotency, task creation, assignment, lifecycle changes, and deployment. Keep it separate from assignment implementation.
+
+Verification qualification:
+- The reviewed commit has a successful workflow-run record named `Trusted Location Geometry and Callable Tests` (run `41186165719`), but the combined commit status returned no status contexts. This is not sufficient evidence that a Functions build and the PR #47 normalizer/adapter tests ran on this exact head. Do not label PR #47 exact-head validation PASS without the relevant run/job evidence.
+- No production data, Rules, Functions deployment, app source, merge, or device test was performed as part of this audit.
+
+Required next step:
+- Keep PR #47 Draft. Define/approve the service-zone timezone resolver and canonical occurrence/Partner reader contract; then add exact Customer-writer fixture tests and an explicit integration test proving the normalized schedule reaches the Partner reader. Do not add duplicate `date`/`startTime` fields or persistence as an unreviewed workaround.
