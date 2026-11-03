@@ -103,9 +103,9 @@ test.before(async () => {
   await adminAuth.setCustomUserClaims("test-visibility-claims-spoof", { isFounder: true, role: "central_admin" });
 
   const fixture = {
-    "service_zones/zone-a": { zoneId: "zone-a", cityId: "city-a", name: "Synthetic Zone A", status: "active", isServiceActive: true, revision: 1, verifiedBoundaryId: "boundary-a", verifiedBoundaryRevision: 1, boundaryHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
-    "service_zones/zone-a2": { zoneId: "zone-a2", cityId: "city-a", name: "Synthetic Zone A2", status: "active", isServiceActive: true, revision: 1, verifiedBoundaryId: "boundary-a2", verifiedBoundaryRevision: 1, boundaryHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
-    "service_zones/zone-b": { zoneId: "zone-b", cityId: "city-b", name: "Synthetic Zone B", status: "active", isServiceActive: true, revision: 1, verifiedBoundaryId: "boundary-b", verifiedBoundaryRevision: 1, boundaryHash: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" },
+    "service_zones/zone-a": { schemaVersion: 1, zoneId: "zone-a", countryId: "india", stateId: "state-a", districtId: "district-a", cityId: "city-a", name: "Synthetic Zone A", status: "active", isServiceActive: true, revision: 1, verifiedBoundaryId: "boundary-a", verifiedBoundaryRevision: 1, boundaryHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+    "service_zones/zone-a2": { schemaVersion: 1, zoneId: "zone-a2", countryId: "india", stateId: "state-a", districtId: "district-a", cityId: "city-a", name: "Synthetic Zone A2", status: "active", isServiceActive: true, revision: 1, verifiedBoundaryId: "boundary-a2", verifiedBoundaryRevision: 1, boundaryHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+    "service_zones/zone-b": { schemaVersion: 1, zoneId: "zone-b", countryId: "india", stateId: "state-a", districtId: "district-b", cityId: "city-b", name: "Synthetic Zone B", status: "active", isServiceActive: true, revision: 1, verifiedBoundaryId: "boundary-b", verifiedBoundaryRevision: 1, boundaryHash: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" },
     "service_location_boundaries/boundary-a": {
       locationType: "zone", locationId: "zone-a", zoneRevision: 1, zoneId: "zone-a",
       revision: 1, verificationStatus: "verified", geometryHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -237,7 +237,7 @@ test("revocation and reassignment invalidate subsequent callable reads", async (
   await callAs("test-visibility-supervisor", "getVisibleServiceZoneBoundary", { zoneId: "zone-a" });
   await db.doc("admin_scope_assignments/supervisor-zone-a").update({ isActive: false, revokedAt: new Date() });
   await expectPermissionDenied("test-visibility-supervisor", "getVisibleServiceZoneBoundary", { zoneId: "zone-a" });
-  await db.doc("admin_scope_assignments/supervisor-zone-a").update({ isActive: true, scopeId: "zone-b" });
+  await db.doc("admin_scope_assignments/supervisor-zone-a").update({ isActive: true, revokedAt: null, scopeId: "zone-b" });
   await expectPermissionDenied("test-visibility-supervisor", "getVisibleServiceZoneBoundary", { zoneId: "zone-a" });
   await callAs("test-visibility-supervisor", "getVisibleServiceZoneBoundary", { zoneId: "zone-b" });
 });
