@@ -271,3 +271,11 @@ The three previously Founder-approved defaults in Section 2 and both lifecycle d
 - Production Founder schema/bootstrap and City Manager/Supervisor/Walker authoritative assignment records remain unverified. The synthetic Phase 2 fixture schema is not a production contract.
 - **Next gate:** inspect the Admin implementation and Notion build spec for real assignment workflow; if absent, prepare an explicit schema proposal. Then add Emulator tests before any Rules/Functions change.
 - No runtime permissions or production records changed.
+
+
+### Authority and operational assignment schema proposal — 2026-11-03
+
+- Added Founder-review proposal: `docs/decisions/ZONE_VISIBILITY_AUTHORITY_AND_ASSIGNMENT_SCHEMA_PROPOSAL_2026-11-03.md`.
+- Proposed trusted records: `founder_users/{uid}`; explicit Central Admin permissions in `admin_users/{uid}`; server-owned `admin_scope_assignments` for City Manager / Supervisor; server-owned `walker_zone_assignments`; and `zone_boundary_review_assignments`.
+- Recommended read architecture: trusted callable list/get endpoints, with direct client raw-boundary reads denied. The callable must re-read current authority/scope on every request; no authorization from profile preferences or client claims.
+- **Founder approval required.** No collections, fields, roles, Rules, Functions, Apps, or production data changed.
