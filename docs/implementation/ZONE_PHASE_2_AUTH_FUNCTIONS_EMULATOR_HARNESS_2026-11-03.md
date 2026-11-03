@@ -119,3 +119,16 @@ Each report must record exact commit SHA, workflow run, commands, test totals, s
 - Notification delivery provider and technical retry/escalation mechanics need a documented implementation decision while preserving immediate Founder notification.
 
 Until those gates are closed, only isolated synthetic harness design and non-production test scaffolding are permitted. Do not enable Admin Zone actions, grant real roles, migrate production data, merge the implementation PR, deploy Functions/Rules, or activate Zones.
+
+
+## 10. Phase 2 executable fixture scaffold — 2026-11-03
+
+A non-production Auth/Firestore fixture smoke test has been added at `functions/test/zone_emulator_harness.test.cjs`. It provisions deterministic synthetic Auth users and fixture-only authority documents, signs each identity in through the Auth Emulator, checks fixture isolation, and cleans up the synthetic records. It intentionally does not invoke Zone callables because those exports do not yet exist and the security/schema entry gates remain open.
+
+Run from the repository root:
+
+```bash
+npm run test:zone-emulator
+```
+
+The command builds Functions and executes the fixture test under Auth, Functions, and Firestore Emulators using project ID `demo-dojo-zone-lifecycle`. The test refuses to run unless the active project ID starts with `demo-` and the Auth/Firestore Emulator host variables are present. This is fixture/bootstrap smoke coverage only; it is not evidence that callable authorization, suspension, Founder notification, or Zone lifecycle behavior works.
