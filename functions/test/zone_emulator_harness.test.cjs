@@ -1,8 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { initializeApp, deleteApp } = require("firebase/app");
-const { getAuth, signInWithEmailAndPassword, signOut } = require("firebase/auth");
-const { getFunctions, connectFunctionsEmulator } = require("firebase/functions");
+const { getAuth, signInWithEmailAndPassword, signOut, connectAuthEmulator } = require("firebase/auth");
 const { initializeApp: initializeAdminApp, deleteApp: deleteAdminApp } = require("firebase-admin/app");
 const { getAuth: getAdminAuth } = require("firebase-admin/auth");
 const { getFirestore } = require("firebase-admin/firestore");
@@ -73,12 +72,12 @@ test("synthetic Auth identities can sign in without custom claims", async () => 
     const app = initializeApp({ projectId: PROJECT_ID, apiKey: "demo-api-key", authDomain: `${PROJECT_ID}.firebaseapp.com` }, `client-${actor.uid}-${process.pid}`);
     clientApps.push(app);
     const auth = getAuth(app);
-    // The emulator host is injected by firebase emulators:exec.
+    connectAuthEmulator(auth, `http://${AUTH_HOST}`, { disableWarnings: true });
     const credential = await signInWithEmailAndPassword(auth, actor.email, PASSWORD);
     assert.equal(credential.user.uid, actor.uid);
-    assert.deepEqual((await credential.user.getIdTokenResult()).claims, {
-      ...((await credential.user.getIdTokenResult()).claims),
-    });
+    const claims = (await credential.user.getIdTokenResult()).claims;
+    assert.equal(claims.role, undefined, "Synthetic authority must not be supplied as a custom Auth role claim.");
+    assert.equal(claims.isFounder, undefined, "Founder authority must not be inferred from a client claim.");
     await signOut(auth);
   }
 });
