@@ -107,12 +107,26 @@ test.before(async () => {
     "service_zones/zone-a2": { zoneId: "zone-a2", cityId: "city-a", name: "Synthetic Zone A2", status: "active", isServiceActive: true, revision: 1, verifiedBoundaryId: "boundary-a2" },
     "service_zones/zone-b": { zoneId: "zone-b", cityId: "city-b", name: "Synthetic Zone B", status: "active", isServiceActive: true, revision: 1, verifiedBoundaryId: "boundary-b" },
     "service_location_boundaries/boundary-a": {
-      zoneId: "zone-a", revision: 1, verificationStatus: "verified",
+      locationType: "zone", locationId: "zone-a", zoneRevision: 1, zoneId: "zone-a",
+      revision: 1, verificationStatus: "verified",
       points: [{ lat: 28.5, lng: 77.3 }, { lat: 28.6, lng: 77.3 }, { lat: 28.6, lng: 77.4 }],
       submitted: true, submittedBy: "test-visibility-central",
     },
-    "service_location_boundaries/boundary-a2": {\n      locationType: "zone", locationId: "zone-a2", zoneRevision: 1, zoneId: "zone-a2", revision: 1, verificationStatus: "verified",\n      points: [{ lat: 28.52, lng: 77.32 }, { lat: 28.62, lng: 77.32 }, { lat: 28.62, lng: 77.42 }],\n      submitted: true, submittedBy: "test-visibility-central",\n    },\n    "service_location_boundaries/boundary-b": {\n      locationType: "zone", locationId: "zone-b", zoneRevision: 1, zoneId: "zone-b", revision: 1, verificationStatus: "verified",\n      points: [{ lat: 28.53, lng: 77.33 }, { lat: 28.63, lng: 77.33 }, { lat: 28.63, lng: 77.43 }],\n      submitted: true, submittedBy: "test-visibility-central",\n    },\n    "service_location_boundaries/boundary-own": {
-      zoneId: "zone-a", revision: 1, verificationStatus: "draft",
+    "service_location_boundaries/boundary-a2": {
+      locationType: "zone", locationId: "zone-a2", zoneRevision: 1, zoneId: "zone-a2",
+      revision: 1, verificationStatus: "verified",
+      points: [{ lat: 28.52, lng: 77.32 }, { lat: 28.62, lng: 77.32 }, { lat: 28.62, lng: 77.42 }],
+      submitted: true, submittedBy: "test-visibility-central",
+    },
+    "service_location_boundaries/boundary-b": {
+      locationType: "zone", locationId: "zone-b", zoneRevision: 1, zoneId: "zone-b",
+      revision: 1, verificationStatus: "verified",
+      points: [{ lat: 28.53, lng: 77.33 }, { lat: 28.63, lng: 77.33 }, { lat: 28.63, lng: 77.43 }],
+      submitted: true, submittedBy: "test-visibility-central",
+    },
+    "service_location_boundaries/boundary-own": {
+      locationType: "zone", locationId: "zone-a", zoneRevision: 1, zoneId: "zone-a",
+      revision: 1, verificationStatus: "draft",
       points: [{ lat: 28.51, lng: 77.31 }, { lat: 28.61, lng: 77.31 }, { lat: 28.61, lng: 77.41 }],
       submitted: false, submittedBy: "test-visibility-submitter",
     },
