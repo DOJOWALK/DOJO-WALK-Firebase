@@ -103,9 +103,9 @@ test.before(async () => {
   await adminAuth.setCustomUserClaims("test-visibility-claims-spoof", { isFounder: true, role: "central_admin" });
 
   const fixture = {
-    "service_zones/zone-a": { zoneId: "zone-a", cityId: "city-a", name: "Synthetic Zone A", status: "active", isServiceActive: true, revision: 1, verifiedBoundaryId: "boundary-a" },
-    "service_zones/zone-a2": { zoneId: "zone-a2", cityId: "city-a", name: "Synthetic Zone A2", status: "active", isServiceActive: true, revision: 1, verifiedBoundaryId: "boundary-a2" },
-    "service_zones/zone-b": { zoneId: "zone-b", cityId: "city-b", name: "Synthetic Zone B", status: "active", isServiceActive: true, revision: 1, verifiedBoundaryId: "boundary-b" },
+    "service_zones/zone-a": { zoneId: "zone-a", cityId: "city-a", name: "Synthetic Zone A", status: "active", isServiceActive: true, revision: 1, verifiedBoundaryId: "boundary-a", verifiedBoundaryRevision: 1, boundaryHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+    "service_zones/zone-a2": { zoneId: "zone-a2", cityId: "city-a", name: "Synthetic Zone A2", status: "active", isServiceActive: true, revision: 1, verifiedBoundaryId: "boundary-a2", verifiedBoundaryRevision: 1, boundaryHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+    "service_zones/zone-b": { zoneId: "zone-b", cityId: "city-b", name: "Synthetic Zone B", status: "active", isServiceActive: true, revision: 1, verifiedBoundaryId: "boundary-b", verifiedBoundaryRevision: 1, boundaryHash: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" },
     "service_location_boundaries/boundary-a": {
       locationType: "zone", locationId: "zone-a", zoneRevision: 1, zoneId: "zone-a",
       revision: 1, verificationStatus: "verified",
