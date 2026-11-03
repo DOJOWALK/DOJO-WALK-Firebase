@@ -9,7 +9,6 @@ const { getFirestore } = require("firebase-admin/firestore");
 const PROJECT_ID = process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT;
 const AUTH_HOST = process.env.FIREBASE_AUTH_EMULATOR_HOST;
 const FIRESTORE_HOST = process.env.FIRESTORE_EMULATOR_HOST;
-const FUNCTIONS_HOST = process.env.FUNCTIONS_EMULATOR_HOST || "127.0.0.1:5001";
 const PASSWORD = "synthetic-emulator-only-password";
 const actors = [
   { uid: "test-founder-allowed", email: "test-founder-allowed@example.test", authority: "founder", active: true },
@@ -86,7 +85,7 @@ test("synthetic authority documents are isolated in the demo Firestore project",
   assert.equal((await db.doc("founder_users/test-founder-allowed").get()).get("isActive"), true);
   assert.equal((await db.doc("founder_users/test-founder-inactive").get()).get("isActive"), false);
   assert.equal((await db.doc("admin_users/test-central-admin-authorized").get()).get("role"), "central_admin");
-  assert.equal((await db.doc("admin_users/test-legacy-super-admin").get("role"), "super_admin");
+  assert.equal((await db.doc("admin_users/test-legacy-super-admin").get()).get("role"), "super_admin");
 });
 
 test.after(async () => {
