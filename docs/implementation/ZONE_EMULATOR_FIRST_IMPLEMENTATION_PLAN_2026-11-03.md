@@ -304,7 +304,7 @@ The three previously Founder-approved defaults in Section 2 and both lifecycle d
   - Firebase Storage Rules Tests: `41659707653`
   - Trusted Location Geometry and Callable Tests: `41659707644`
   - Zone Auth and Functions Emulator Fixtures: `41659707662`
-- Final counts: Firestore Rules 73 total / 63 PASS / 0 FAIL / 10 pre-existing TODO; Functions 292 PASS / 0 FAIL; Zone visibility callable suite 13 PASS / 0 FAIL; Functions build PASS; Storage Rules PASS.
+- Final counts: Firestore Rules 73 total / 63 PASS / 0 FAIL / 10 pre-existing TODO; Functions 292 PASS / 0 FAIL; Auth + Functions fixture workflow 13 total PASS (2 fixture bootstrap + 11 callable visibility) / 0 FAIL; Functions build PASS; Storage Rules PASS.
 - This final exact-head result supersedes the earlier 35a3 code-head verification above. Full evidence: `docs/implementation/ZONE_VISIBILITY_SYNTHETIC_EMULATOR_ACCEPTANCE_REPORT_2026-11-03.md`.
 - PR #64 remains Draft / Open / Unmerged. Production Founder bootstrap, real assignment records, Partner legacy mapping, remaining Zone lifecycle TODOs, Admin/Partner consumer integration, release review, deployment, and Zone activation remain gated.
 
