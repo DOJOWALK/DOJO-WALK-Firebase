@@ -226,3 +226,11 @@ Remaining policy/authority gates:
 4. Define technical notification delivery/retry/escalation details during callable design while preserving the approved requirement that Founder notification is immediate; do not weaken this to a periodic digest.
 
 The three previously Founder-approved defaults in Section 2 and both lifecycle decisions above are fixed; do not reopen them. Build only isolated synthetic test infrastructure while the remaining gates are open; keep runtime deployment, real role provisioning, Admin UI enablement, PR merge, and Zone activation blocked.
+
+
+### Phase 2 harness design — 2026-11-03
+
+- Added `docs/implementation/ZONE_PHASE_2_AUTH_FUNCTIONS_EMULATOR_HARNESS_2026-11-03.md` as a design-only specification for synthetic Auth + Functions + Firestore Emulator testing.
+- Defines isolated emulator topology, synthetic actor fixtures, callable-level assertions, Emergency Suspension safety/notification acceptance matrix, routine deactivation separation tests, revision/idempotency/concurrency checks, and evidence requirements.
+- This is a test design artifact only. No Zone lifecycle callable or runtime behavior was implemented in this step. Existing open gates remain: boundary geometry read visibility, verified Founder authority schema/bootstrap, and legacy Partner `zones` mapping/cutover. Notification transport/retry/escalation mechanics remain to be designed without weakening immediate Founder notification.
+- No production deployment, real role provisioning, migration, PR merge, Admin UI enablement, or Zone activation.
