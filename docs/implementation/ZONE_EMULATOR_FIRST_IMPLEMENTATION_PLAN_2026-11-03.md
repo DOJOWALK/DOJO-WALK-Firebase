@@ -251,3 +251,13 @@ The three previously Founder-approved defaults in Section 2 and both lifecycle d
 - Recommendation: Founder and explicitly authorized Central Admin may read all Zone geometry; designated reviewer only assigned review items; submitter only own draft; City/Area Manager and Supervisor read-only within active assigned scope; Walker/Partner and Customer do not receive raw polygon geometry; backend resolves coverage.
 - Includes scoped-read security requirements and Emulator acceptance tests for direct document reads, list/query bypass, guessed IDs, scope revocation, reviewer self-review, and role denial.
 - **Pending Founder approval.** This is documentation only; no Firestore Rules, roles, callables, UI, or production access changed. Do not implement the read matrix until approved.
+
+
+### Founder-approved boundary geometry visibility policy — 2026-11-03
+
+- Founder approved: Founder/CEO and Central Admin can view all Zone boundaries; City Manager can view all Zones in their assigned City only; Supervisor and Walker can view only their own assigned Zone(s), read-only; Customer receives no Zone map or raw polygon.
+- Boundary Reviewer remains limited to specifically assigned review items with explicit review permission; submitter self-review remains prohibited. Draft submitter may read only own draft.
+- Visibility is not operational authority: Manager/Supervisor/Walker read-only; no implied edit, review, approval, activation, deactivation, or suspension rights.
+- Decision recorded in `docs/decisions/ZONE_BOUNDARY_GEOMETRY_READ_VISIBILITY_DECISION_2026-11-03.md`.
+- **Implementation is still gated:** verify Founder/CEO authority bootstrap, Manager/Supervisor/Walker assignment schemas, callable/Rules design, and legacy Partner `zones` mapping. Add executable Emulator tests for role scope, direct/list/guessed-ID bypass, revocation, reassignment, and no privilege escalation before changing Rules.
+- No runtime permissions, Firestore Rules, callables, Admin UI, production data, deployment, merge, migration, or Zone activation changed.
