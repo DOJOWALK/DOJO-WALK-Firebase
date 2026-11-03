@@ -19,7 +19,7 @@ Founder explicitly approved these three defaults on 2026-11-03. They are binding
 2. **Boundary review:** a designated Central Admin reviewer with an explicit boundary-review permission. The submitter cannot review their own boundary. Founder performs final business approval, not routine geometry review.
 3. **Founder identity:** an explicit active `founder_users/{uid}` allowlist record provisioned through a separately controlled, audited bootstrap/recovery process. Never infer Founder from email, display name, `super_admin`, or client claims. The exact initial UID and recovery custodians must be verified from Firebase Auth/admin records before any role provisioning.
 
-Additional policy gate still requiring a recorded decision: boundary geometry read visibility. Routine deactivation authority and emergency suspension authority/Founder-notification requirements were explicitly approved on 2026-11-03 and are recorded in the Phase 2 entry gate below. Technical notification delivery/retry/escalation mechanics remain an implementation-design item, not a reason to weaken immediate Founder notification.
+Boundary geometry read visibility was explicitly approved on 2026-11-03 and is recorded in `docs/decisions/ZONE_BOUNDARY_GEOMETRY_READ_VISIBILITY_DECISION_2026-11-03.md`. The remaining work is to verify actual production authority and assignment schemas, then implement and test the approved scope. Routine deactivation authority and emergency suspension authority/Founder-notification requirements were also approved. Technical notification delivery/retry/escalation mechanics remain an implementation-design item, not a reason to weaken immediate Founder notification.
 
 ## 3. Phase 0 — source and environment freeze
 
@@ -261,3 +261,13 @@ The three previously Founder-approved defaults in Section 2 and both lifecycle d
 - Decision recorded in `docs/decisions/ZONE_BOUNDARY_GEOMETRY_READ_VISIBILITY_DECISION_2026-11-03.md`.
 - **Implementation is still gated:** verify Founder/CEO authority bootstrap, Manager/Supervisor/Walker assignment schemas, callable/Rules design, and legacy Partner `zones` mapping. Add executable Emulator tests for role scope, direct/list/guessed-ID bypass, revocation, reassignment, and no privilege escalation before changing Rules.
 - No runtime permissions, Firestore Rules, callables, Admin UI, production data, deployment, merge, migration, or Zone activation changed.
+
+
+### Approved visibility source/schema audit — 2026-11-03
+
+- Source audit: `docs/implementation/ZONE_VISIBILITY_SOURCE_SCHEMA_AUDIT_2026-11-03.md`.
+- Verified current mismatch: existing `isAdmin()` and legacy boundary reads are `super_admin`-only; existing Admin role allowlist does not include `central_admin`; Functions entry point has only five legacy callable exports and no Zone lifecycle/read API.
+- Partner onboarding writes applicant-selected legacy `zoneName`, `zoneNames`, and `zones` IDs into the walker's own profile. Those fields are user-editable preferences, not trusted assignments and must not authorize geometry.
+- Production Founder schema/bootstrap and City Manager/Supervisor/Walker authoritative assignment records remain unverified. The synthetic Phase 2 fixture schema is not a production contract.
+- **Next gate:** inspect the Admin implementation and Notion build spec for real assignment workflow; if absent, prepare an explicit schema proposal. Then add Emulator tests before any Rules/Functions change.
+- No runtime permissions or production records changed.
