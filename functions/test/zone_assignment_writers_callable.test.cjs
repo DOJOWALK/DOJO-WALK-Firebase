@@ -23,6 +23,7 @@ const actors = [
   ["reviewer", "test-writer-reviewer@example.test"],
   ["customer", "test-writer-customer@example.test"],
   ["legacy-admin", "test-writer-legacy-admin@example.test"],
+  ["unauthenticated", "test-writer-unauthenticated@example.test"],
 ];
 const uid = Object.fromEntries(actors.map(([key]) => [key, `test-writer-${key}`]));
 const clients = new Map();
@@ -45,7 +46,7 @@ async function callAs(actor, name, payload) {
 async function expectDenied(actor, name, payload) {
   await assert.rejects(
     callAs(actor, name, payload),
-    error => error && ["functions/permission-denied", "functions/failed-precondition"].includes(error.code),
+    error => error && ["functions/permission-denied", "functions/failed-precondition", "functions/unauthenticated"].includes(error.code),
     `Expected ${actor} to be denied by ${name}`,
   );
 }
@@ -90,7 +91,7 @@ test.before(async () => {
     const app = initializeApp({ projectId: PROJECT_ID, apiKey: "demo-api-key", authDomain: `${PROJECT_ID}.firebaseapp.com` }, `writer-client-${key}-${process.pid}`);
     const auth = getAuth(app);
     connectAuthEmulator(auth, `http://${AUTH_HOST}`, { disableWarnings: true });
-    await signInWithEmailAndPassword(auth, email, PASSWORD);
+    if (key !== "unauthenticated") await signInWithEmailAndPassword(auth, email, PASSWORD);
     const functions = getFunctions(app, REGION);
     connectFunctionsEmulator(functions, "127.0.0.1", 5001);
     clients.set(key, { app, auth, functions });
@@ -206,6 +207,7 @@ test("Boundary Reviewer assignment requires explicit review permission and forbi
 
 test("Unauthenticated, Customer, Walker, Supervisor, City Manager and inactive Admin cannot mutate assignments", async () => {
   const payload = { targetUid: uid.walker, zoneId: "writer-zone-active", assignmentId: "writer-denied", reason: "denied actor" };
+  await expectCallableDenied("unauthenticated", "assignWalkerToZone", payload);
   for (const actor of ["customer", "walker", "supervisor", "manager", "central-inactive"]) {
     await expectCallableDenied(actor, "assignWalkerToZone", payload);
   }
