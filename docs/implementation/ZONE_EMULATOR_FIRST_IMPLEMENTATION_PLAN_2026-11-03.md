@@ -112,7 +112,7 @@ Client SDK create/update/delete must be denied for canonical Zone lifecycle coll
 
 Explicitly test attempts to forge status, `isServiceActive`, revision, hash, verified fields, Founder decision fields, actor identity, timestamps, and audit records. Keep legacy rules behavior intact and test it separately.
 
-**Exit (current):** the Rules-forgery tests execute successfully in CI and default-deny the five canonical Zone collections. Ten callable/lifecycle acceptance gates remain TODO. No Auth/Functions callable harness exists yet; do not treat the test scaffold as proof of lifecycle behavior.
+**Exit (current):** the Rules-forgery tests execute successfully in CI and default-deny the five canonical Zone collections. Ten callable/lifecycle acceptance gates remain TODO. A synthetic Auth/Firestore fixture smoke harness now exists, but it does not invoke Zone callables and is not proof of lifecycle behavior.
 
 ## 5. Phase 2 — implement trusted Firebase backend
 
@@ -234,3 +234,12 @@ The three previously Founder-approved defaults in Section 2 and both lifecycle d
 - Defines isolated emulator topology, synthetic actor fixtures, callable-level assertions, Emergency Suspension safety/notification acceptance matrix, routine deactivation separation tests, revision/idempotency/concurrency checks, and evidence requirements.
 - This is a test design artifact only. No Zone lifecycle callable or runtime behavior was implemented in this step. Existing open gates remain: boundary geometry read visibility, verified Founder authority schema/bootstrap, and legacy Partner `zones` mapping/cutover. Notification transport/retry/escalation mechanics remain to be designed without weakening immediate Founder notification.
 - No production deployment, real role provisioning, migration, PR merge, Admin UI enablement, or Zone activation.
+
+
+### Phase 2 executable fixture scaffold — 2026-11-03
+
+- Added `functions/test/zone_emulator_harness.test.cjs`: provisions deterministic synthetic Auth identities, writes fixture-only Founder/Admin authority documents to the Firestore Emulator, signs in via the Auth Emulator without custom role claims, checks fixture isolation, and cleans up synthetic records.
+- Added root command `npm run test:zone-emulator`; it builds Functions and runs the fixture smoke test under Auth, Functions, and Firestore Emulators using only `demo-dojo-zone-lifecycle`.
+- Added `.github/workflows/zone-auth-functions-emulator.yml` to run this isolated fixture suite on relevant pull-request changes and manual dispatch.
+- This is executable test scaffolding only. No Zone lifecycle callable has been added or invoked; the 10 callable/lifecycle TODOs remain TODO. The workflow must complete successfully on the exact latest head before fixture setup can be marked verified.
+- Remaining blockers and release restrictions are unchanged. No production project, real Founder UID, role provisioning, migration, merge, deployment, Admin UI enablement, or Zone activation.
