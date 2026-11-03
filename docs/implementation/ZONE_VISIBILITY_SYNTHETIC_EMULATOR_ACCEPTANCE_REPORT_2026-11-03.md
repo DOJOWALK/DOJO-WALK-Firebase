@@ -82,3 +82,43 @@ Only run 41653691172 has a final FAILURE conclusion directly attributable to the
 ## 8. Explicit non-effects
 
 No `firestore.rules` or `functions/src/index.ts` runtime implementation change was made in this test batch. No production project, real Founder UID, real assignments, customer data, or live Zone was accessed or modified.
+
+
+## 9. Executable callable contract tests — second synthetic batch
+
+Tested code commit: `9d16165064e37e61bebd3aee210b40a1d3fd40bb`.
+
+Added `functions/test/zone_visibility_callable.test.cjs` and updated `npm run test:zone-emulator` to run it through Firebase Auth + Functions + Firestore Emulators. The suite signs synthetic actors into Auth Emulator, seeds only synthetic authority/assignment/Zone fixtures in demo Firestore, and invokes the proposed callable names through the Firebase callable SDK.
+
+Callable contract under test:
+- `listVisibleServiceZones({ pageSize })` returns `data.zones[]` with `zoneId`, scoped by the caller's current authority/assignment.
+- `getVisibleServiceZoneBoundary({ zoneId })` or `{ boundaryId }` returns only the authorized Zone/review/draft boundary.
+- Denials must be `functions/permission-denied`; caller payload, custom claims, email, display name, and legacy role must not widen access.
+
+Synthetic test actors and scenarios include Founder active/inactive, Central Admin, City Manager, Supervisor, Walker with deliberately conflicting editable onboarding preferences, assigned Reviewer, draft Submitter, Customer, legacy `super_admin`, and custom-claims spoof actor. Revocation/reassignment is tested by changing only synthetic Emulator assignment records and invoking the callable again.
+
+### Exact Auth + Functions Emulator result
+
+[Zone Auth and Functions Emulator Fixtures run 41654893262](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41654893262) — FAILURE (expected baseline: callable APIs are not implemented).
+
+- Functions TypeScript build: SUCCESS.
+- Auth, Functions, and Firestore Emulators started with `demo-dojo-zone-lifecycle`.
+- Emulator loaded only the five existing legacy exports: `reviewServiceLocationBoundary`, `activateServiceLocation`, `setServiceLocationStatus`, `saveServiceLocationWithNameIndex`, and `manageServiceLocationImportRun`.
+- Tests: 12; passed: 2; failed: 10; TODO: 0.
+- The two existing synthetic Auth/Firestore fixture bootstrap tests passed.
+- The 10 callable contract tests failed because `listVisibleServiceZones` and `getVisibleServiceZoneBoundary` are not exported yet; allowed-call tests returned `functions/not-found`, and expected-denial tests could not receive the required `functions/permission-denied` response.
+
+This confirms the callable tests are executable and currently red against the pre-implementation source. Do not interpret this as an authorization implementation failure: the endpoints do not exist yet. Do not weaken the tests to accept `not-found`; implementation must add the trusted APIs and satisfy the approved policy.
+
+### Other exact-head workflow outcomes
+
+- [Test Firestore Security Rules run 41654893256](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41654893256) — FAILURE; Rules suite: 72 total / 61 passed / 1 failed / 10 TODO. Same legacy `super_admin` direct-boundary-read gap.
+- [Trusted Location Geometry and Callable Tests run 41654893293](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41654893293) — FAILURE at root `npm test` due the same Rules gap; downstream Functions suite did not run.
+- [Firestore Rules Tests run 41654893307](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41654893307) — FAILURE on the same Rules assertion.
+- [Firebase Storage Rules Tests run 41654893333](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41654893333) — SUCCESS.
+
+## 10. Implementation gate remains closed
+
+The synthetic test-first matrix now includes both Firestore Rules direct-access tests and executable Auth/Functions callable contract tests. The current source fails the known legacy direct-read assertion and does not yet export the two scoped read callables. This is the intended pre-implementation baseline.
+
+The next engineering phase may now implement the Rules/Functions changes strictly against these tests, after any remaining test contract refinements. Re-run both emulator suites after implementation. No merge, deployment, real role provisioning, production migration, Admin UI enablement, or Zone activation until all acceptance tests pass and separate release approval is obtained.
