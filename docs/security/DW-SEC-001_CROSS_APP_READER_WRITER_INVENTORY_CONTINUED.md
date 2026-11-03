@@ -286,3 +286,18 @@ The historical audit found POL-013, POL-033 and POL-034 still Draft/unapproved a
 ### Verification boundary
 
 Historical branch documents and current checked-in source were fetched and compared. No app/Rules source modified, no tests run, no PR merged, no deployment, no production data accessed. Notion verification remains Not checked.
+
+
+### Partner earnings disclosure PR status checked (3 Nov 2026)
+
+GitHub API read-back confirms Partner PR #23:
+- Title: `Disclose earnings preview and remove fabricated payout values`
+- URL: https://github.com/DOJOWALK/DOJO-WALK-Partner/pull/23
+- State: Open; Draft; unmerged
+- Head: `fix/earnings-demo-data-disclosure` at `9c565038af4547c3c7421a867c103330622dfc73`
+- Base: `main`
+- Mergeability: clean / mergeable (this is not approval to merge)
+- Checks at the exact head: `Analyze and test Partner app (no release)` success; `Diff integrity (all PRs)` success.
+- PR scope says remove hard-coded demo amounts/counts and fabricated recent transactions, replace with neutral placeholders and a preview-only/non-payable notice. It explicitly defers real-device testing until full platform setup and requires approved verified-walk ledger/rate/bonus/payout contract before live earnings.
+
+This is a relevant safe UI disclosure candidate, but it remains Draft and unmerged. Do not merge without the user's/Founder approval and the Notion policy gate. Its PR body mentions a Monday payout contract dependency; this does not override the current approved Notion policy state or turn a draft proposal into an approved payout commitment.
