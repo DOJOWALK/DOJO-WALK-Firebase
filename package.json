@@ -5,7 +5,7 @@
   "description": "Emulator tests for DOJO WALK Firestore Security Rules",
   "scripts": {
     "test": "node --test --test-concurrency=1 test/firestore.rules.test.mjs test/service_zones.rules.test.mjs test/zone_visibility.rules.test.mjs",
-    "test:zone-emulator": "npm --prefix functions run build && firebase emulators:exec --only auth,functions,firestore --project demo-dojo-zone-lifecycle \"node --test --test-concurrency=1 functions/test/zone_emulator_harness.test.cjs functions/test/zone_visibility_callable.test.cjs\""
+    "test:zone-emulator": "npm --prefix functions run build && firebase emulators:exec --only auth,functions,firestore --project demo-dojo-zone-lifecycle \"node --test --test-concurrency=1 functions/test/zone_emulator_harness.test.cjs functions/test/zone_visibility_callable.test.cjs functions/test/zone_assignment_writers_callable.test.cjs\""
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^4.0.1",
