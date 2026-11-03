@@ -292,3 +292,18 @@ The three previously Founder-approved defaults in Section 2 and both lifecycle d
 - PASS workflows: Test Firestore Security Rules `41657817742`; Firestore Rules Tests `41657817801`; Firebase Storage Rules Tests `41657817694`; Trusted Location Geometry and Callable Tests `41657817674`; Zone Auth and Functions Emulator Fixtures `41657817770`.
 - Counts: Firestore Rules 73 total / 63 PASS / 0 FAIL / 10 TODO (pre-existing lifecycle gates); Functions 291 PASS / 0 FAIL; callable visibility suite 12 PASS / 0 FAIL.
 - PR #64 remains Draft / Unmerged. No production deployment, role provisioning, legacy migration, Admin UI enablement, or Zone activation.
+
+
+### Final expanded visibility regression gate — 2026-11-03
+
+- Final tested code/test SHA: `651825cfe09193f9aff5ee138683cf572b0c7422`.
+- Expanded callable coverage now verifies inactive Central Admin, permission revocation, reviewer self-review denial, and stale verified-boundary revision rejection.
+- All five workflows PASS on the exact final tested head:
+  - Test Firestore Security Rules: `41659707637`
+  - Firestore Rules Tests: `41659707626`
+  - Firebase Storage Rules Tests: `41659707653`
+  - Trusted Location Geometry and Callable Tests: `41659707644`
+  - Zone Auth and Functions Emulator Fixtures: `41659707662`
+- Final counts: Firestore Rules 73 total / 63 PASS / 0 FAIL / 10 pre-existing TODO; Functions 292 PASS / 0 FAIL; Zone visibility callable suite 13 PASS / 0 FAIL; Functions build PASS; Storage Rules PASS.
+- This final exact-head result supersedes the earlier 35a3 code-head verification above. Full evidence: `docs/implementation/ZONE_VISIBILITY_SYNTHETIC_EMULATOR_ACCEPTANCE_REPORT_2026-11-03.md`.
+- PR #64 remains Draft / Open / Unmerged. Production Founder bootstrap, real assignment records, Partner legacy mapping, remaining Zone lifecycle TODOs, Admin/Partner consumer integration, release review, deployment, and Zone activation remain gated.
