@@ -1,7 +1,7 @@
 # DOJO WALK — Zone Visibility Synthetic Emulator Acceptance Report
 
 Date: 2026-11-03
-Status: First synthetic Rules acceptance batch executed; one confirmed baseline security failure; callable acceptance remains pending because the trusted read APIs do not yet exist.
+Status: Founder-approved visibility Rules/Functions implementation added on the branch; exact-head synthetic Emulator acceptance suites PASS. Production release gates remain closed.
 Tested code commit: `4b72e295d6cb3818aba7f82e5ccfd0b2e9170d1f`
 Branch: `implementation/zone-emulator-first-plan-2026-11-03`
 Project: `demo-dojo-zone-visibility-rules` (Firestore Rules Emulator suite)
@@ -122,3 +122,59 @@ This confirms the callable tests are executable and currently red against the pr
 The synthetic test-first matrix now includes both Firestore Rules direct-access tests and executable Auth/Functions callable contract tests. The current source fails the known legacy direct-read assertion and does not yet export the two scoped read callables. This is the intended pre-implementation baseline.
 
 The next engineering phase may now implement the Rules/Functions changes strictly against these tests, after any remaining test contract refinements. Re-run both emulator suites after implementation. No merge, deployment, real role provisioning, production migration, Admin UI enablement, or Zone activation until all acceptance tests pass and separate release approval is obtained.
+
+
+## 11. Founder-approved visibility implementation — exact-head verification
+
+Implementation code head: `35a3def2d1a91bcedd1fefb9fa43436a26991ada`.
+PR: [#64 — Draft / Open / Unmerged](https://github.com/DOJOWALK/DOJO-WALK-Firebase/pull/64).
+
+### Runtime changes now present on the implementation branch
+
+- Added `listVisibleServiceZones` callable in `functions/src/index.ts`.
+  - Resolves active Founder authority from `founder_users/{uid}`.
+  - Resolves Central Admin only with active `admin_users/{uid}` and explicit `permissions.zoneGeometryReadAll`.
+  - Resolves City Manager from exactly one current City assignment.
+  - Resolves Supervisor from current active Zone assignment(s).
+  - Resolves Walker from active/approved Partner profile plus current `walker_zone_assignments`; editable onboarding `zoneName/zoneNames/zones` preferences are ignored.
+  - Does not grant visibility to legacy `super_admin`, `admin`, or `support` by role alone.
+  - Returns only canonical Zone metadata, no polygon coordinates or internal assignment records; validates canonical schema version and uses scoped pagination.
+- Added `getVisibleServiceZoneBoundary` callable.
+  - Checks current role and assignment on every call.
+  - Uses `verifiedBoundaryId + verifiedBoundaryRevision + boundaryHash` binding for Zone-scoped map reads.
+  - Reviewer reads only explicitly assigned review boundary and cannot read own submission.
+  - Submitter reads own unsubmitted draft only.
+  - Customer, inactive/revoked, legacy-only, unassigned, and out-of-scope actors are denied.
+  - Writes a `service_zone_audit` access event without polygon coordinates before returning geometry.
+- Firestore Rules now deny direct client reads of canonical `service_zones`, Zone boundary documents, Founder authority, assignment, approval, name-index, and Zone audit collections. Legacy non-Zone City/Area boundary access is retained for existing workflows.
+- Zone boundary create/update/delete through client SDKs is denied; Zone lifecycle evidence remains server-owned.
+- `admin_users` role, active-state, and permission changes are no longer allowed through direct client updates; only safe profile fields remain client-updatable.
+
+### Exact-head GitHub Actions results
+
+All five workflows completed SUCCESS on the exact implementation/test head `35a3def2d1a91bcedd1fefb9fa43436a26991ada`:
+
+- [Test Firestore Security Rules — 41657817742](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41657817742) — SUCCESS.
+- [Firestore Rules Tests — 41657817801](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41657817801) — SUCCESS.
+- [Firebase Storage Rules Tests — 41657817694](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41657817694) — SUCCESS.
+- [Trusted Location Geometry and Callable Tests — 41657817674](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41657817674) — SUCCESS.
+- [Zone Auth and Functions Emulator Fixtures — 41657817770](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41657817770) — SUCCESS.
+
+Exact test totals from the combined geometry/callable workflow:
+- Firestore Rules: 73 total / 63 passed / 0 failed / 10 TODO.
+- Functions: 291 passed / 0 failed / 0 TODO. This includes the 12-test Zone visibility callable suite: 12 passed / 0 failed.
+- Functions TypeScript build: SUCCESS.
+- Storage Rules workflow: SUCCESS.
+
+The 10 Rules TODO entries are pre-existing Zone lifecycle/approval gates outside this read-visibility implementation; they are not counted as PASS. All new Zone visibility direct-read and callable cases are executable and passing.
+
+### Remaining release gates — not completed
+
+1. Secure production Founder UID bootstrap/recovery and controlled production role provisioning.
+2. Verify production City Manager/Supervisor/Walker assignment data and assignment writer/revocation workflows.
+3. Complete legacy Partner `zones` to canonical `service_zones` mapping and reviewed cutover; no name-based automatic mapping.
+4. Implement and test the remaining Zone lifecycle TODOs, including boundary review, Founder approval, activation, deactivation, emergency suspension, notification delivery/retry/escalation, and reactivation.
+5. Adapt Admin/Partner consumers to the callable contract and verify their integration; keep UI actions disabled until paired integration tests pass.
+6. Run full release/security review before merge/deployment.
+
+PR #64 remains Draft / Unmerged. No production Firestore data, real authority records, migration, deployment, Admin UI enablement, or Zone activation was performed.
