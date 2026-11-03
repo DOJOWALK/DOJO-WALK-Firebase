@@ -100,6 +100,9 @@ beforeEach(async () => {
       reviewerUid: 'visibility-reviewer', boundaryId: 'zone-boundary-secret',
       zoneId: 'zone-private-1', status: 'assigned',
     });
+    await setDoc(doc(db, 'service_zone_audit/fixture-audit'), {
+      actorUid: 'visibility-founder', action: 'zone_geometry_read', fixtureOnly: true,
+    });
   });
 });
 
@@ -126,6 +129,15 @@ for (const actor of actors) {
     const db = env.authenticatedContext(actor.uid).firestore();
     for (const name of internalAuthorityCollections) {
       await assertFails(getDocs(collection(db, name)));
+    }
+    for (const path of [
+      'founder_users/visibility-founder',
+      'admin_scope_assignments/city-manager-city-a',
+      'walker_zone_assignments/walker-zone-a',
+      'zone_boundary_review_assignments/reviewer-boundary-a',
+      'service_zone_audit/fixture-audit',
+    ]) {
+      await assertFails(getDoc(doc(db, path)));
     }
   });
 }
