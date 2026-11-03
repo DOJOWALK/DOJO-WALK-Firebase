@@ -259,8 +259,10 @@ The three previously Founder-approved defaults in Section 2 and both lifecycle d
 - Boundary Reviewer remains limited to specifically assigned review items with explicit review permission; submitter self-review remains prohibited. Draft submitter may read only own draft.
 - Visibility is not operational authority: Manager/Supervisor/Walker read-only; no implied edit, review, approval, activation, deactivation, or suspension rights.
 - Decision recorded in `docs/decisions/ZONE_BOUNDARY_GEOMETRY_READ_VISIBILITY_DECISION_2026-11-03.md`.
-- **Implementation is still gated:** verify Founder/CEO authority bootstrap, Manager/Supervisor/Walker assignment schemas, callable/Rules design, and legacy Partner `zones` mapping. Add executable Emulator tests for role scope, direct/list/guessed-ID bypass, revocation, reassignment, and no privilege escalation before changing Rules.
-- No runtime permissions, Firestore Rules, callables, Admin UI, production data, deployment, merge, migration, or Zone activation changed.
+- Founder approved the authority/assignment schema proposal on 2026-11-03. Synthetic acceptance tests were built and run before Rules/Functions implementation.
+- Scoped read callables and client Rules protections are now implemented on this branch. Exact-head Emulator results are recorded in `docs/implementation/ZONE_VISIBILITY_SYNTHETIC_EMULATOR_ACCEPTANCE_REPORT_2026-11-03.md`.
+- Verified code head `35a3def2d1a91bcedd1fefb9fa43436a26991ada`: all five GitHub Actions workflows SUCCESS; Firestore Rules 73 total / 63 passed / 0 failed / 10 pre-existing TODO; Functions 291 passed / 0 failed; callable visibility suite 12/12 passed.
+- Production authority bootstrap, real assignment data, legacy Partner mapping, Admin/Partner consumer integration, remaining Zone lifecycle tests, merge, deployment, migration, and Zone activation remain gated.
 
 
 ### Approved visibility source/schema audit — 2026-11-03
@@ -269,8 +271,8 @@ The three previously Founder-approved defaults in Section 2 and both lifecycle d
 - Verified current mismatch: existing `isAdmin()` and legacy boundary reads are `super_admin`-only; existing Admin role allowlist does not include `central_admin`; Functions entry point has only five legacy callable exports and no Zone lifecycle/read API.
 - Partner onboarding writes applicant-selected legacy `zoneName`, `zoneNames`, and `zones` IDs into the walker's own profile. Those fields are user-editable preferences, not trusted assignments and must not authorize geometry.
 - Production Founder schema/bootstrap and City Manager/Supervisor/Walker authoritative assignment records remain unverified. The synthetic Phase 2 fixture schema is not a production contract.
-- **Next gate:** inspect the Admin implementation and Notion build spec for real assignment workflow; if absent, prepare an explicit schema proposal. Then add Emulator tests before any Rules/Functions change.
-- No runtime permissions or production records changed.
+- Founder approved the schema proposal. Synthetic tests now exist and have been executed. Rules/Functions read-visibility implementation was added only after that test-first gate.
+- Production Founder bootstrap and City Manager/Supervisor/Walker assignment writer/revocation workflows remain unverified. Do not provision real roles or migrate legacy data until those workflows are designed and reviewed.
 
 
 ### Authority and operational assignment schema proposal — 2026-11-03
@@ -278,4 +280,15 @@ The three previously Founder-approved defaults in Section 2 and both lifecycle d
 - Added Founder-review proposal: `docs/decisions/ZONE_VISIBILITY_AUTHORITY_AND_ASSIGNMENT_SCHEMA_PROPOSAL_2026-11-03.md`.
 - Proposed trusted records: `founder_users/{uid}`; explicit Central Admin permissions in `admin_users/{uid}`; server-owned `admin_scope_assignments` for City Manager / Supervisor; server-owned `walker_zone_assignments`; and `zone_boundary_review_assignments`.
 - Recommended read architecture: trusted callable list/get endpoints, with direct client raw-boundary reads denied. The callable must re-read current authority/scope on every request; no authorization from profile preferences or client claims.
-- **Founder approval required.** No collections, fields, roles, Rules, Functions, Apps, or production data changed.
+- **Founder approval recorded 2026-11-03.** The proposal is approved for synthetic test-first implementation. The current branch now contains scoped read callables and direct-client Rules protections; no production roles, data, Apps, deployment, or activation were changed.
+
+
+### Visibility implementation and exact-head Emulator verification — 2026-11-03
+
+- Implementation: `listVisibleServiceZones` and `getVisibleServiceZoneBoundary` in `functions/src/index.ts`; direct client access to canonical Zone aggregates, Zone boundary geometry, Founder/assignment records, and Zone audit records denied in `firestore.rules`.
+- Role authority is re-resolved from active server records on every callable request. Legacy `super_admin` does not imply Zone visibility. City Manager is City-scoped; Supervisor and Walker are assignment-scoped; reviewer and submitter are exact-boundary scoped; Customer is denied.
+- Geometry reads are audited in `service_zone_audit` without storing polygon coordinates. Zone metadata list responses do not include geometry.
+- Exact tested code head: `35a3def2d1a91bcedd1fefb9fa43436a26991ada`.
+- PASS workflows: Test Firestore Security Rules `41657817742`; Firestore Rules Tests `41657817801`; Firebase Storage Rules Tests `41657817694`; Trusted Location Geometry and Callable Tests `41657817674`; Zone Auth and Functions Emulator Fixtures `41657817770`.
+- Counts: Firestore Rules 73 total / 63 PASS / 0 FAIL / 10 TODO (pre-existing lifecycle gates); Functions 291 PASS / 0 FAIL; callable visibility suite 12 PASS / 0 FAIL.
+- PR #64 remains Draft / Unmerged. No production deployment, role provisioning, legacy migration, Admin UI enablement, or Zone activation.
