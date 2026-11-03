@@ -119,3 +119,29 @@ Visibility does not imply edit, review, approval, activation, deactivation, or e
 Next safe step: inspect the current Admin and Partner implementation branches and the relevant Notion developer-build specification to locate the authoritative assignment workflow. If none exists, prepare a schema proposal for Founder approval before coding. Then add Emulator fixtures and tests before implementing scoped reads.
 
 **No runtime changes:** no Rules, Functions, roles, Firestore records, migration, UI, deployment, merge, or Zone activation were changed by this audit.
+
+
+## 8. Cross-check against Admin and Notion specifications
+
+Additional sources inspected after the Firebase/Partner source pass:
+
+| Source | Version/status | What it establishes | What it does not establish |
+|---|---|---|---|
+| Notion POL-037 — India City–Zone Operating Structure | Draft / not approved (page fetched 2026-10-26) | Product governance intent: City Manager oversees all Zones in one assigned City; each active Zone has one primary Supervisor; Supervisor handles only assigned Zone; Walker eligible only for assigned approved Zone(s). | No Firestore collection, document path, stable assignment ID, writer, or revocation mechanism. |
+| Notion POL-004 — Walker / Partner Management | Draft / Founder approval required (page fetched 2026-10-30) | Walker must only receive work within assigned scope; Area Manager is scoped to assigned Area; service-area scope changes need records. | No canonical Walker-to-Zone assignment schema or trusted write path. |
+| Notion POL-005 / POL-026 | Draft / not approved | Assignment eligibility and scope checks are required; server is source of truth. | Not an implemented Zone visibility contract. |
+| Notion Partner Onboarding + Location API Contract Proposal v0.1 | Proposal / not approved | Proposes backend-owned State/UT → District → City → Zone catalogue and operational profile fields including assigned City/Zone. It explicitly flags the legacy `zones` vs canonical `service_zones` mismatch. | No verified production API or assignment record; proposal itself says collection/DTO mapping is undecided. |
+| Admin PR #51, head `ed01648d9ad3e4649b44047da3a53f05a81ae1e0` | Open / Draft / Unmerged | Current role UI is a static prototype; role cards are hard-coded and Grant Role / Change Scope controls disabled. AuthGate checks active membership only. The role-scope matrix is explicitly Draft / not an authorization contract. | No live role assignment or geographic-scope implementation. |
+| Admin source `lib/features/access_control/screens/admin_access_control_screen.dart` | PR #51 branch; blob SHA `b435e4cfdcd392c51ef4e6106890a4ec3cc3c1be` | Confirms UI-only role descriptions and disabled scope/role grant controls. | No persistence or server-side permission enforcement. |
+| Admin source `docs/architecture/ADMIN_ROLE_ENTRY_AND_ROLE_MATRIX_SOURCE_AUDIT_2026-11-01.md` | PR #51 branch; blob SHA `d3b5d7972f77d864427a6f7ef8081edce29b020c` | Confirms AuthGate is active-membership only and role screen is static; role/scope enforcement not established. | No approved production schema. |
+| Admin source `docs/architecture/ADMIN_ROLE_AND_BOOKING_STATE_CONTRACT_AUDIT_2026-11-02.md` | PR #51 branch; blob SHA `d8cb04a253f3916701d662dfcdc82b8870e26f85` | States intended City Manager/Zone Supervisor scope and explicitly says production role/scope model is not established. | No verified assignment documents. |
+
+**Reconciliation:** Product intent is clear enough to define the visibility scopes. It is not sufficient to invent production assignment fields. The authoritative source-of-truth schema and trusted assignment writer are still missing from the inspected source.
+
+## 9. Updated conclusion
+
+- **Policy:** approved and fixed.
+- **Product operating semantics:** present in draft Notion policy/specification sources; not all source documents are approved.
+- **Current implementation:** does not enforce the approved visibility matrix.
+- **Trusted assignment schema:** not verified for Founder/CEO, Central Admin, City Manager, Supervisor, or Walker.
+- **Next safe step:** prepare a proposed authority/assignment schema as a separate Founder decision artifact, explicitly marking it as proposed; do not change runtime code until that schema is approved and Emulator acceptance tests are written.
