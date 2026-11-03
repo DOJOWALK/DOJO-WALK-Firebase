@@ -174,3 +174,63 @@ The search was performed against GitHub's indexed code results, which may be inc
 ### Verification boundary
 
 These findings are from the exact source snapshots listed above. They do not establish deployed Rules behavior, production data contents, whether a different app version writes `walk_locations`, or whether backend integrations exist elsewhere. No app/Rules/Functions source was changed and no tests, production reads, merge or deployment were performed.
+
+
+## Follow-up: GPS/location writer search, Admin Walker detail and finance surfaces (3 Nov 2026)
+
+### Additional exact source snapshots
+
+| Repository | Path | Blob SHA |
+|---|---|---|
+| Partner | `lib/screens/home/walk_details_screen.dart` | `4443ca2b4520700246c417cb315a6645506a1be1` |
+| Partner | `lib/features/onboarding/screens/work_location_screen.dart` | `9c5d5e12a3fd29785d2001fb20937a7bbb374df5` |
+| Partner | `lib/screens/home/earnings_screen.dart` | `9fd6a6bbdc908ce0e92bc4b4466c5a8fb5f7ef6c` |
+| Admin | `lib/screens/live/live_operations_screen.dart` | `15bf852258b273f753a45d9b107528dc027829e5` |
+| Admin | `lib/features/walkers/screens/walker_details_screen.dart` | `9f45b86c298211eba41dfc7bf45f8f98554311d4` |
+| Admin | `lib/features/walkers/widgets/walker_details_sections.dart` | `e51fb0c028622c0c6cba9c3cf897437872f728ca` |
+| Admin | `lib/screens/dashboard/dashboard_screen.dart` | `ce4bd363279e15e707cf1ac8bfcb21ec451ac50d` |
+| Firebase | `firestore.rules` | `9bac26b9e13a97d412a0154ec9af70629e82eb47` |
+| Firebase | `storage.rules` | `3f68748b526e4c702c84d3712ea14b8644808479` |
+
+### GPS and live-location writer search
+
+1. Admin Live Operations has a live query on `walkers` where `isOnline == true`, consumes full document maps, and extracts `currentLocation`; its route panel reads `walk_locations` filtered by `walkerId`, ordered by `timestamp`, limit 300.
+2. GitHub indexed code search across Partner, Admin and Firebase for exact `walk_locations` and `currentLocation` terms returned:
+   - Partner: zero matches for both exact terms.
+   - Admin: one `walk_locations` match, the Live Operations reader.
+   - Firebase: zero matches for both exact terms.
+3. Inspected Partner Live Walk completion writes a compact `route` array into `walks/{walkId}` and separately updates the Booking; it does not write `walk_locations` in that source.
+4. Inspected Firebase `firestore.rules` has a `bookings/{bookingId}` match and Walker parent match, but no match for `walks/{walkId}` or `walk_locations/{locationId}` was found in the full 1,551-line Rules file. The existing Booking rule allows approved assigned Walker updates only to a fixed set of status/time/schedule/notes/count/distance fields; this does not include the entire Live Walk payload written by the inspected Partner client.
+5. Consequence: current source evidence shows an unresolved Live GPS contract: Admin expects a `walk_locations` stream, Partner Live Walk writes a final route under `walks`, and canonical Firebase Rules contain no explicit match for either collection. This is a source mismatch/rules coverage risk, not a statement about the currently deployed Rules version. Do not add permissive rules or switch the writer without a separate approved contract and Emulator tests.
+
+### Partner booking detail and work-location writes
+
+1. Partner Walk Details reads `bookings/{bookingId}` and extracts customer name, dog breed/size, and pickup address from the booking document. On navigation it attempts to update Booking `status = accepted` and `updatedAt` directly; exceptions are swallowed and navigation proceeds.
+2. Partner Work Location reads active `zones` to resolve selected zone names/IDs, then reads own `walkers/{uid}` and, for an existing in-progress application, writes `city`, `state`, `area`, `zoneName`, `zoneNames`, `zones`, `travelMode`, and `updatedAt` to the Walker parent.
+3. Partner Earnings screen remains presentation-only in the inspected snapshot; its labels/cards do not establish a queryable earnings ledger or payout record.
+
+### Admin Walker details and finance surface
+
+1. Walker details screen subscribes to `WalkerAdminService.watchWalker(uid)`, invokes privileged approval/rejection/suspension/reactivation/correction actions through the service, opens private KYC documents through the Storage viewer, opens Walker audit history, and passes the complete Walker data map to the security dialog.
+2. Walker details sections display phone, email, gender, DOB, current residential address, zone/service details, walk counters and KYC document metadata. These are consumers of the broad parent Walker model, not independently scoped data sources.
+3. Admin Dashboard reads `payments` where status is paid and aggregates `amount`, in addition to collection-wide operational counts and recent audit/booking streams. No separate Walker finance/payout collection consumer was found in the inspected Admin Walker details and Dashboard files.
+4. Exact `bankDetails` code search in Admin returned zero indexed matches. This is not proof that payout/bank information does not exist elsewhere or in external systems.
+
+### Canonical Rules and Storage Rules observations
+
+1. Canonical Firestore Rules permit `walkers/{uid}` get by owner, Admin, or any signed-in user when the Walker is active and approved; list is Admin-only. A Firestore document read returns the full document, so this is not field-level redaction.
+2. Walker parent create allowlist includes sensitive-capable keys including `currentAddress`, `kyc`, `documents`, `fcmToken`, `deviceTokens`, `bankDetails`, and `emergencyContact`. Admin parent updates are limited to lifecycle/decision fields in the inspected rule.
+3. Canonical Storage Rules allow Walker owner and active Super Admin to read their `walker_selfies/{uid}/{fileName}` and `walker_documents/{uid}/{fileName}` objects; owner can create matching objects; update/delete are denied. This is the checked-in source, not a live deployment read-back.
+4. No `walk_locations` or `walks` match exists in the inspected canonical Firestore Rules source. Do not infer whether another overlapping wildcard rule, separate project, or deployed revision changes actual behavior without full emulator/live verification.
+
+### Remaining gaps
+
+- Determine how `isOnline` and `currentLocation` are written (exact indexed search did not find Partner writer; search remaining branches/commits and any other app/backend repository).
+- Determine whether a legacy/external service writes `walk_locations`; indexed search found only Admin reader.
+- Inspect all Dashboard and payment-related screens/services for who can view payment details versus aggregate totals; no Walker payout ledger was evidenced in the inspected sources.
+- Define the approved trusted live-location write/read API, retention, geographic access scopes, stale-location expiry and emergency access before implementation.
+- Keep DW-SEC-001 implementation gated until field schemas, role IDs/scopes, emergency mechanics, POL-014/POL-020 retention approval, API and migration/rollback contract are frozen.
+
+### Verification boundary
+
+Source-only review and indexed code search. No live Firebase Rules read-back, production data query, deployment, test execution, code change, merge or workflow dispatch was performed.
