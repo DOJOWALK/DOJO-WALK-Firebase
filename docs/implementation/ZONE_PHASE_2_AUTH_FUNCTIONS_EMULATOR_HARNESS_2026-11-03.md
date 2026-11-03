@@ -113,7 +113,7 @@ Each report must record exact commit SHA, workflow run, commands, test totals, s
 
 ## 9. Current blockers before runtime callable implementation
 
-- Boundary geometry read visibility by role/scope is not yet approved.
+- Boundary geometry read visibility is Founder-approved; actual production authority and Manager/Supervisor/Walker assignment schemas remain unverified. See `docs/implementation/ZONE_VISIBILITY_SOURCE_SCHEMA_AUDIT_2026-11-03.md`.
 - Actual Founder authority document schema and controlled bootstrap/recovery must be securely verified.
 - Legacy Partner `zones` mapping/cutover is unresolved.
 - Notification delivery provider and technical retry/escalation mechanics need a documented implementation decision while preserving immediate Founder notification.
@@ -132,3 +132,10 @@ npm run test:zone-emulator
 ```
 
 The command builds Functions and executes the fixture test under Auth, Functions, and Firestore Emulators using project ID `demo-dojo-zone-lifecycle`. The test refuses to run unless the active project ID starts with `demo-` and the Auth/Firestore Emulator host variables are present. This is fixture/bootstrap smoke coverage only; it is not evidence that callable authorization, suspension, Founder notification, or Zone lifecycle behavior works.
+
+
+## 11. Approved visibility policy and source-schema audit — 2026-11-03
+
+The Founder-approved visibility policy is recorded in `docs/decisions/ZONE_BOUNDARY_GEOMETRY_READ_VISIBILITY_DECISION_2026-11-03.md`. The source audit at `docs/implementation/ZONE_VISIBILITY_SOURCE_SCHEMA_AUDIT_2026-11-03.md` confirms that the current production source does not yet implement this matrix.
+
+Important: legacy Partner onboarding fields `zoneName`, `zoneNames`, and `zones` are user-selected and owner-editable. They are not trusted Walker assignments. Do not use them as authorization inputs. Production Founder bootstrap and Manager/Supervisor/Walker assignment contracts must be verified before callable implementation.
