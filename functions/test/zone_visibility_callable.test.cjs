@@ -234,6 +234,8 @@ test("Reviewer sees only assigned review boundary and cannot list all Zones", as
   assert.equal(audit.docs[0].get("action"), "assigned_review_boundary_read");
   await expectPermissionDenied("test-visibility-reviewer", "getVisibleServiceZoneBoundary", { boundaryId: "boundary-own" });
   await expectPermissionDenied("test-visibility-reviewer", "getVisibleServiceZoneBoundary", { boundaryId: "boundary-reviewer-own" });
+  await db.doc("zone_boundary_review_assignments/reviewer-boundary-a").update({ isActive: false });
+  await expectPermissionDenied("test-visibility-reviewer", "getVisibleServiceZoneBoundary", { boundaryId: "boundary-a" });
   await expectPermissionDenied("test-visibility-reviewer", "listVisibleServiceZones", { pageSize: 100 });
 });
 
@@ -267,6 +269,10 @@ test("revocation and reassignment invalidate subsequent callable reads", async (
   await db.doc("admin_scope_assignments/supervisor-zone-a").update({ isActive: true, revokedAt: null, scopeId: "zone-b" });
   await expectPermissionDenied("test-visibility-supervisor", "getVisibleServiceZoneBoundary", { zoneId: "zone-a" });
   await callAs("test-visibility-supervisor", "getVisibleServiceZoneBoundary", { zoneId: "zone-b" });
+  await db.doc("admin_scope_assignments/supervisor-zone-a").update({
+    effectiveTo: new Date(Date.now() - 1000),
+  });
+  await expectPermissionDenied("test-visibility-supervisor", "getVisibleServiceZoneBoundary", { zoneId: "zone-b" });
 });
 
 test.after(async () => {
