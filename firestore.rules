@@ -192,22 +192,20 @@ service cloud.firestore {
 
       allow create, delete: if false;
 
+      // Role, active status, and permissions are server-owned. A legacy
+      // super_admin cannot grant or alter operational Zone visibility through
+      // a direct client write to another Admin membership document.
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data)
           .affectedKeys()
           .hasOnly([
             'name',
             'email',
-            'role',
-            'isActive',
             'updatedAt'
           ])
-        && request.resource.data.get('role', '') in [
-          'super_admin',
-          'admin',
-          'support'
-        ]
-        && request.resource.data.isActive is bool;
+        && request.resource.data.get('role', null) == resource.data.get('role', null)
+        && request.resource.data.get('isActive', null) == resource.data.get('isActive', null)
+        && request.resource.data.get('permissions', null) == resource.data.get('permissions', null);
     }
 
     // =====================================================
