@@ -141,16 +141,4 @@ test('clients cannot forge or mutate Founder and assignment authority records', 
   }));
 });
 
-// These callable acceptance gates remain TODO until the trusted read APIs exist.
-// TODO is deliberately not counted as a passing authorization test.
-test.todo('Founder callable sees all canonical Zones and loses access immediately when founder_users/{uid} is revoked');
-test.todo('Central Admin callable sees all Zones only with active membership and explicit zoneGeometryReadAll permission');
-test.todo('City Manager callable sees all Zones in assigned City and no Zone in another City');
-test.todo('Supervisor callable sees exact assigned Zone IDs only; revocation removes former Zone access');
-test.todo('Walker callable ignores editable onboarding preferences and checks active walker_zone_assignments');
-test.todo('Boundary Reviewer callable reads only assigned boundary and denies submitter self-review');
-test.todo('Draft submitter callable reads own draft only and cannot widen scope by guessed ID');
-test.todo('role disablement, assignment expiry, revocation, and reassignment invalidate subsequent reads');
-test.todo('callable rejects client payload scope, custom claims, email, display name, and legacy super_admin spoofing');
-test.todo('customer callable surface never returns raw Zone geometry');
-test.todo('callable pagination, guessed IDs, and broad query attempts cannot bypass scope');
+// Callable visibility contracts are exercised through the Auth + Functions Emulator suite in functions/test/zone_visibility_callable.test.cjs.
