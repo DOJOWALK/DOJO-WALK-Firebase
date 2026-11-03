@@ -96,3 +96,27 @@ All app files below were read from each repository's `main` branch. Blob SHAs ar
 - No tests were run as part of this inventory.
 - No merge, workflow dispatch, production migration or deployment performed.
 - This document does not mark DW-SEC-001 implementation or testing complete.
+
+
+## Repository-wide GitHub code-search pass (3 Nov 2026)
+
+A repository-scoped GitHub code-search pass was run for `walks`, `walker_documents`, `deviceTokens`, `currentAddress`, `bankDetails`, `payout`, `fcmToken`, and `walkerId` across the four app/backend repositories. This helps discover additional references, but GitHub code search is an index and is not a substitute for a checked-out full-text scan or deployed-resource inventory.
+
+### Search results that extend the file-by-file inspection
+
+- Partner `walks` references include `lib/screens/home/schedule_screen.dart`, `lib/screens/home/partner_home_screen.dart`, `lib/screens/home/working_schedule_screen.dart`, `lib/screens/home/walk_summary_screen.dart`, `lib/screens/home/navigation_screen.dart`, and `lib/screens/home/walk_completed_screen.dart`, in addition to the inspected Live Walk screen.
+- Admin `walks` references include `lib/screens/dashboard/dashboard_screen.dart` and `lib/features/walkers/widgets/walker_details_sections.dart`; Admin `walkerId` references also include `lib/screens/live/live_operations_screen.dart`, `lib/screens/bookings/bookings_screen.dart`, and the Walker management/details/audit files.
+- Customer `walks` references include `lib/features/home/screens/home_screen.dart`, booking selection/confirmation/list screens, support and profile text/screens. The `walkerId` search returned only Customer booking creation and My Bookings in the indexed results.
+- Partner `walker_documents` search returned only the KYC upload screen. Admin/Customer/Firebase searches returned no indexed matches for that literal path.
+- Partner `currentAddress` search returned Current Address, Review/Submit and KYC onboarding screens. Admin returned Walker helper/details sections and two historical audit documents. Customer/Firebase returned no indexed matches for that exact key.
+- Literal `deviceTokens`, `fcmToken`, and `bankDetails` matches were found only in Partner's checked-in `firestore.rules` copy; no app implementation reader/writer was returned by these exact-term searches.
+- Partner `payout` matches included `earnings_screen.dart` and `walk_completed_screen.dart`; Admin had one architecture document match. No Firebase payout implementation match was returned.
+- Firebase code-search returned zero results for `walks`, `walker_documents`, `walkerId`, `deviceTokens`, `currentAddress`, `bankDetails`, `payout`, and `fcmToken` in this search pass. This does not establish absence from deployed functions, external systems, differently named fields, or unindexed sources.
+
+### Follow-up inspection required
+
+The newly surfaced Partner schedule/home/navigation/summary/completion files and Admin Live Operations/dashboard files must be read individually to determine exact collection paths, fields and writes. Continue to treat exact-term search misses as unverified, not proof of no usage.
+
+### Search limitations
+
+The search was performed against GitHub's indexed code results, which may be incomplete, branch/ref-dependent, or omit generated/ignored files. No repository checkout grep, production Firestore/Storage scan, deployed Functions listing, external integration inspection, or tests were performed. No code or production resources were changed.
