@@ -123,7 +123,7 @@ These are source-configured versions and commands, not proof that local dependen
 
 ## 7. Phase 0 exit assessment
 
-<badge>PARTIAL — source inspected; identity/deployment verification blocked</badge>
+**PARTIAL — source inspected; identity/deployment verification blocked.**
 
 Repository source, branch refs, callable exports, Rules shape, Admin UI wiring, test harness commands, and manual paired-workflow SHA pinning have been inspected and pinned above. Phase 0 is complete for source inspection only; it is not complete for live identity/deployment verification.
 
