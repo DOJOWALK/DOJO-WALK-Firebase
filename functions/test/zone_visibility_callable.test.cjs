@@ -199,7 +199,7 @@ test("inactive and unregistered Founder identities are denied", async () => {
 
 test("Central Admin requires active membership and explicit global geometry permission", async () => {
   const result = await callAs("test-visibility-central", "listVisibleServiceZones", { pageSize: 100 });
-  assert.deepEqual(zoneIds(result), ["zone-a", "zone-a2", "zone-b"]);
+  assert.deepEqual(zoneIds(result), ["zone-a", "zone-a2", "zone-b", "zone-stale"]);
   await expectPermissionDenied("test-visibility-legacy-super-admin", "listVisibleServiceZones", { pageSize: 100 });
   await expectPermissionDenied("test-visibility-claims-spoof", "listVisibleServiceZones", { pageSize: 100 });
   await db.doc("admin_users/test-visibility-central").update({ permissions: { zoneGeometryReadAll: false } });
