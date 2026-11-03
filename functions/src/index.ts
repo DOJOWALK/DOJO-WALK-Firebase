@@ -1416,9 +1416,11 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
 // -----------------------------------------------------------------------------
 
 type ZoneReadActor =
-  | { uid: string; kind: "founder" | "central_admin" }
+  | { uid: string; kind: "founder" }
+  | { uid: string; kind: "central_admin" }
   | { uid: string; kind: "city_manager"; cityId: string }
-  | { uid: string; kind: "zone_supervisor" | "walker"; zoneIds: string[] };
+  | { uid: string; kind: "zone_supervisor"; zoneIds: string[] }
+  | { uid: string; kind: "walker"; zoneIds: string[] };
 
 function permissionMap(data: FirebaseFirestore.DocumentData | undefined): Record<string, unknown> {
   const value = data?.permissions;
