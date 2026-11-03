@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase-admin/app";
 import { createHash } from "node:crypto";
-import { FieldValue, getFirestore } from "firebase-admin/firestore";
+import { FieldPath, FieldValue, getFirestore } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { assertAreaCoveredByCity, polygonFromBoundary, type BoundaryDoc } from "./location_geometry";
 import {
@@ -1406,4 +1406,319 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
   }
 
   throw new HttpsError("invalid-argument", "Action must be begin, inspect, recordPlan, reconcilePlan, or finalize.");
+});
+
+
+// -----------------------------------------------------------------------------
+// Founder-approved Zone geometry visibility — read-only callable API.
+// These callables deliberately resolve current authority and assignments from
+// Firestore on every request. They do not trust role claims or caller scope IDs.
+// -----------------------------------------------------------------------------
+
+type ZoneReadActor =
+  | { uid: string; kind: "founder" | "central_admin" }
+  | { uid: string; kind: "city_manager"; cityId: string }
+  | { uid: string; kind: "zone_supervisor" | "walker"; zoneIds: string[] };
+
+function permissionMap(data: FirebaseFirestore.DocumentData | undefined): Record<string, unknown> {
+  const value = data?.permissions;
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function timestampMillis(value: unknown): number | null {
+  if (value instanceof Date) return value.getTime();
+  if (value && typeof value === "object") {
+    const candidate = value as { toMillis?: unknown; toDate?: unknown };
+    if (typeof candidate.toMillis === "function") {
+      try {
+        const result = candidate.toMillis.call(value);
+        return typeof result === "number" && Number.isFinite(result) ? result : null;
+      } catch {
+        return null;
+      }
+    }
+    if (typeof candidate.toDate === "function") {
+      try {
+        const date = candidate.toDate.call(value);
+        return date instanceof Date && Number.isFinite(date.getTime()) ? date.getTime() : null;
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+function assignmentIsCurrent(
+  data: FirebaseFirestore.DocumentData,
+  expectedStatus: "active" | "assigned",
+  now = Date.now(),
+): boolean {
+  const statusMatches = expectedStatus === "active"
+    ? data.isActive === true || data.status === "active"
+    : data.status === "assigned";
+  if (!statusMatches || data.revokedAt != null) return false;
+  const start = timestampMillis(data.effectiveFrom);
+  const end = timestampMillis(data.effectiveTo);
+  if (start != null && start > now) return false;
+  if (end != null && end <= now) return false;
+  return true;
+}
+
+async function activeAssignments(
+  collectionName: string,
+  uidField: string,
+  uid: string,
+  expectedStatus: "active" | "assigned",
+): Promise<FirebaseFirestore.QueryDocumentSnapshot[]> {
+  const snapshot = await db.collection(collectionName).where(uidField, "==", uid).get();
+  return snapshot.docs.filter((doc) => assignmentIsCurrent(doc.data(), expectedStatus));
+}
+
+async function resolveZoneReadActor(uid: string): Promise<ZoneReadActor | null> {
+  const founder = await db.doc(`founder_users/${uid}`).get();
+  if (founder.exists && founder.get("isActive") === true &&
+      founder.get("authorityType") === "founder_ceo" &&
+      permissionMap(founder.data()).zoneGeometryReadAll === true) {
+    return { uid, kind: "founder" };
+  }
+
+  const admin = await db.doc(`admin_users/${uid}`).get();
+  if (admin.exists && admin.get("isActive") === true) {
+    const role = admin.get("role");
+    const permissions = permissionMap(admin.data());
+
+    if (role === "central_admin" && permissions.zoneGeometryReadAll === true) {
+      return { uid, kind: "central_admin" };
+    }
+
+    if (role === "city_manager") {
+      const assignments = (await activeAssignments("admin_scope_assignments", "adminUid", uid, "active"))
+        .filter((doc) => doc.get("role") === "city_manager" &&
+          doc.get("scopeType") === "city" &&
+          typeof doc.get("scopeId") === "string");
+      if (assignments.length !== 1) return null;
+      return { uid, kind: "city_manager", cityId: String(assignments[0].get("scopeId")) };
+    }
+
+    if (role === "zone_supervisor") {
+      const assignments = (await activeAssignments("admin_scope_assignments", "adminUid", uid, "active"))
+        .filter((doc) => doc.get("role") === "zone_supervisor" &&
+          doc.get("scopeType") === "zone" &&
+          typeof doc.get("scopeId") === "string");
+      const zoneIds = [...new Set(assignments.map((doc) => String(doc.get("scopeId"))))];
+      if (zoneIds.length === 0) return null;
+      return { uid, kind: "zone_supervisor", zoneIds };
+    }
+  }
+
+  const walker = await db.doc(`walkers/${uid}`).get();
+  if (walker.exists && walker.get("isActive") === true && walker.get("isApproved") === true) {
+    const assignments = (await activeAssignments("walker_zone_assignments", "walkerUid", uid, "active"))
+      .filter((doc) => typeof doc.get("zoneId") === "string");
+    const zoneIds = [...new Set(assignments.map((doc) => String(doc.get("zoneId"))))];
+    if (zoneIds.length > 0) return { uid, kind: "walker", zoneIds };
+  }
+
+  return null;
+}
+
+function zoneSummary(
+  snapshot: FirebaseFirestore.QueryDocumentSnapshot | FirebaseFirestore.DocumentSnapshot,
+): Record<string, unknown> {
+  const data = snapshot.data() ?? {};
+  return {
+    zoneId: snapshot.id,
+    name: data.name,
+    stateId: data.stateId,
+    districtId: data.districtId,
+    cityId: data.cityId,
+    status: data.status,
+    isServiceActive: data.isServiceActive === true,
+    revision: data.revision,
+  };
+}
+
+function zoneAllowedForActor(actor: ZoneReadActor, zone: FirebaseFirestore.DocumentData, zoneId: string): boolean {
+  if (actor.kind === "founder" || actor.kind === "central_admin") return true;
+  if (actor.kind === "city_manager") return zone.cityId === actor.cityId;
+  if (actor.kind === "zone_supervisor") return actor.zoneIds.includes(zoneId);
+  return actor.zoneIds.includes(zoneId) && zone.status === "active" && zone.isServiceActive === true;
+}
+
+function parsePageSize(value: unknown): number {
+  if (value === undefined) return 50;
+  if (!Number.isInteger(value) || Number(value) < 1 || Number(value) > 100) {
+    throw new HttpsError("invalid-argument", "pageSize must be an integer from 1 to 100.");
+  }
+  return Number(value);
+}
+
+function parsePageToken(value: unknown): string | null {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value !== "string" || value.length > 128 || value.includes("/")) {
+    throw new HttpsError("invalid-argument", "pageToken is invalid.");
+  }
+  return value;
+}
+
+export const listVisibleServiceZones = onCall({ region: "asia-south1" }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign-in is required.");
+
+  const actor = await resolveZoneReadActor(uid);
+  if (!actor) throw new HttpsError("permission-denied", "No active Zone visibility assignment is available.");
+
+  const pageSize = parsePageSize(request.data?.pageSize);
+  const pageToken = parsePageToken(request.data?.pageToken);
+  let zones: Record<string, unknown>[] = [];
+  let hasMore = false;
+
+  if (actor.kind === "founder" || actor.kind === "central_admin" || actor.kind === "city_manager") {
+    let query: FirebaseFirestore.Query = db.collection("service_zones")
+      .orderBy(FieldPath.documentId());
+    if (actor.kind === "city_manager") query = query.where("cityId", "==", actor.cityId);
+    if (pageToken) query = query.startAfter(pageToken);
+    const snapshot = await query.limit(pageSize + 1).get();
+    hasMore = snapshot.docs.length > pageSize;
+    zones = snapshot.docs.slice(0, pageSize).map(zoneSummary);
+  } else {
+    const snapshots = await Promise.all(actor.zoneIds.map((zoneId) => db.doc(`service_zones/${zoneId}`).get()));
+    const visible = snapshots
+      .filter((snapshot) => snapshot.exists && zoneAllowedForActor(actor, snapshot.data() ?? {}, snapshot.id))
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .filter((snapshot) => !pageToken || snapshot.id > pageToken);
+    hasMore = visible.length > pageSize;
+    zones = visible.slice(0, pageSize).map(zoneSummary);
+  }
+
+  const nextPageToken = hasMore && zones.length > 0 ? String(zones[zones.length - 1].zoneId) : null;
+  return { zones, nextPageToken };
+});
+
+async function recordZoneGeometryRead(
+  uid: string,
+  actorRole: string,
+  zoneId: string,
+  boundaryId: string,
+  boundaryHash: string | null,
+  accessType: "zone_geometry_read" | "assigned_review_boundary_read" | "own_draft_boundary_read",
+): Promise<void> {
+  await db.collection("service_zone_audit").add({
+    actorUid: uid,
+    actorRole,
+    action: accessType,
+    zoneId,
+    boundaryId,
+    boundaryHash,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+}
+
+function boundaryResponse(
+  zoneId: string,
+  boundaryId: string,
+  boundary: FirebaseFirestore.DocumentData,
+  zoneRevision: number | null,
+): Record<string, unknown> {
+  return {
+    zoneId,
+    boundaryId,
+    zoneRevision: zoneRevision ?? boundary.zoneRevision ?? null,
+    geometryHash: typeof boundary.geometryHash === "string" ? boundary.geometryHash : null,
+    verificationStatus: boundary.verificationStatus,
+    points: boundary.points,
+    sourceType: boundary.sourceType,
+    sourceName: boundary.sourceName,
+    sourceReference: boundary.sourceReference,
+    verifiedBy: boundary.verifiedBy ?? null,
+    verifiedAt: boundary.verifiedAt ?? null,
+  };
+}
+
+export const getVisibleServiceZoneBoundary = onCall({ region: "asia-south1" }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign-in is required.");
+
+  const zoneId = request.data?.zoneId;
+  const boundaryId = request.data?.boundaryId;
+  if ((typeof zoneId === "string") === (typeof boundaryId === "string")) {
+    throw new HttpsError("invalid-argument", "Provide exactly one of zoneId or boundaryId.");
+  }
+
+  if (typeof zoneId === "string") {
+    if (!zoneId.trim() || zoneId.includes("/")) throw new HttpsError("invalid-argument", "zoneId is invalid.");
+    const actor = await resolveZoneReadActor(uid);
+    if (!actor) throw new HttpsError("permission-denied", "Zone geometry access is not authorized.");
+
+    const zoneSnapshot = await db.doc(`service_zones/${zoneId}`).get();
+    if (!zoneSnapshot.exists) throw new HttpsError("not-found", "Zone was not found.");
+    const zone = zoneSnapshot.data() ?? {};
+    if (!zoneAllowedForActor(actor, zone, zoneId)) {
+      throw new HttpsError("permission-denied", "Zone is outside the actor's current assigned scope.");
+    }
+
+    const verifiedBoundaryId = zone.verifiedBoundaryId;
+    if (typeof verifiedBoundaryId !== "string" || !verifiedBoundaryId.trim()) {
+      throw new HttpsError("failed-precondition", "The Zone has no current verified boundary.");
+    }
+    const boundarySnapshot = await db.doc(`service_location_boundaries/${verifiedBoundaryId}`).get();
+    if (!boundarySnapshot.exists) throw new HttpsError("failed-precondition", "The verified Zone boundary is missing.");
+    const boundary = boundarySnapshot.data() ?? {};
+    if (boundary.locationType !== "zone" || boundary.locationId !== zoneId ||
+        boundary.verificationStatus !== "verified" ||
+        boundary.zoneRevision !== zone.verifiedBoundaryRevision ||
+        boundary.geometryHash !== zone.boundaryHash) {
+      throw new HttpsError("failed-precondition", "The verified Zone boundary does not match the current Zone revision and hash.");
+    }
+
+    await recordZoneGeometryRead(uid, actor.kind, zoneId, verifiedBoundaryId,
+      typeof zone.boundaryHash === "string" ? zone.boundaryHash : null, "zone_geometry_read");
+    return boundaryResponse(zoneId, verifiedBoundaryId, boundary,
+      Number.isInteger(zone.verifiedBoundaryRevision) ? Number(zone.verifiedBoundaryRevision) : null);
+  }
+
+  if (typeof boundaryId !== "string" || !boundaryId.trim() || boundaryId.includes("/")) {
+    throw new HttpsError("invalid-argument", "boundaryId is invalid.");
+  }
+  const boundarySnapshot = await db.doc(`service_location_boundaries/${boundaryId}`).get();
+  if (!boundarySnapshot.exists) throw new HttpsError("not-found", "Boundary was not found.");
+  const boundary = boundarySnapshot.data() ?? {};
+  if (boundary.locationType !== "zone" || typeof boundary.locationId !== "string") {
+    throw new HttpsError("not-found", "Zone boundary was not found.");
+  }
+  const zoneIdForBoundary = boundary.locationId;
+  const zoneSnapshot = await db.doc(`service_zones/${zoneIdForBoundary}`).get();
+  if (!zoneSnapshot.exists) throw new HttpsError("not-found", "Zone was not found.");
+  const zone = zoneSnapshot.data() ?? {};
+
+  const admin = await db.doc(`admin_users/${uid}`).get();
+  const reviewerPermission = admin.exists && admin.get("isActive") === true &&
+    permissionMap(admin.data()).zoneBoundaryReview === true;
+  if (reviewerPermission) {
+    const assignments = (await activeAssignments("zone_boundary_review_assignments", "reviewerUid", uid, "assigned"))
+      .filter((doc) => doc.get("boundaryId") === boundaryId && doc.get("zoneId") === zoneIdForBoundary);
+    const isOwnSubmission = boundary.createdBy === uid || boundary.submittedBy === uid;
+    if (assignments.length > 0 && !isOwnSubmission) {
+      await recordZoneGeometryRead(uid, "boundary_reviewer", zoneIdForBoundary, boundaryId,
+        typeof boundary.geometryHash === "string" ? boundary.geometryHash : null, "assigned_review_boundary_read");
+      return boundaryResponse(zoneIdForBoundary, boundaryId, boundary,
+        Number.isInteger(boundary.zoneRevision) ? Number(boundary.zoneRevision) : null);
+    }
+  }
+
+  const isOwnDraft = (boundary.createdBy === uid || boundary.submittedBy === uid) &&
+    boundary.submitted !== true &&
+    ["draft", "pending"].includes(String(boundary.verificationStatus)) &&
+    boundary.verifiedBy == null && boundary.verifiedAt == null;
+  if (isOwnDraft) {
+    await recordZoneGeometryRead(uid, "draft_submitter", zoneIdForBoundary, boundaryId,
+      typeof boundary.geometryHash === "string" ? boundary.geometryHash : null, "own_draft_boundary_read");
+    return boundaryResponse(zoneIdForBoundary, boundaryId, boundary,
+      Number.isInteger(boundary.zoneRevision) ? Number(boundary.zoneRevision) : null);
+  }
+
+  throw new HttpsError("permission-denied", "Boundary is outside the actor's current review or draft scope.");
 });
