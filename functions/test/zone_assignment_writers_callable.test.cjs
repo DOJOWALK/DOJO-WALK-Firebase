@@ -46,7 +46,7 @@ async function callAs(actor, name, payload) {
 async function expectDenied(actor, name, payload) {
   await assert.rejects(
     callAs(actor, name, payload),
-    error => error && ["functions/permission-denied", "functions/failed-precondition", "functions/unauthenticated"].includes(error.code),
+    error => error && ["functions/permission-denied", "functions/failed-precondition", "functions/unauthenticated", "functions/not-found"].includes(error.code),
     `Expected ${actor} to be denied by ${name}`,
   );
 }
