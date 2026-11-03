@@ -178,3 +178,39 @@ The 10 Rules TODO entries are pre-existing Zone lifecycle/approval gates outside
 6. Run full release/security review before merge/deployment.
 
 PR #64 remains Draft / Unmerged. No production Firestore data, real authority records, migration, deployment, Admin UI enablement, or Zone activation was performed.
+
+
+## 12. Expanded authorization regression suite — final exact-head PASS
+
+Final tested implementation/test code SHA: `651825cfe09193f9aff5ee138683cf572b0c7422`.
+
+The callable contract suite was expanded beyond the initial 12 cases to cover:
+- Inactive Central Admin denial.
+- Immediate loss of Central Admin geometry visibility when the explicit permission is revoked.
+- Reviewer self-review denial, even when the reviewer is assigned that exact boundary.
+- Stale verified-boundary revision rejection, even for Founder.
+- Global list behavior for canonical Zone records while keeping the stale-boundary fixture in a separate City.
+- Full synthetic fixture cleanup, including geometry access audit events.
+
+### Exact final test results
+
+All five workflows completed SUCCESS on this exact head:
+
+- [Test Firestore Security Rules — 41659707637](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41659707637) — SUCCESS.
+- [Firestore Rules Tests — 41659707626](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41659707626) — SUCCESS.
+- [Firebase Storage Rules Tests — 41659707653](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41659707653) — SUCCESS.
+- [Trusted Location Geometry and Callable Tests — 41659707644](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41659707644) — SUCCESS.
+- [Zone Auth and Functions Emulator Fixtures — 41659707662](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41659707662) — SUCCESS.
+
+Final exact totals from the combined Emulator workflow:
+- Firestore Rules: 73 total / 63 passed / 0 failed / 10 TODO.
+- Functions: 292 passed / 0 failed / 0 TODO.
+- Zone visibility callable suite: 13 passed / 0 failed / 0 TODO.
+- Functions TypeScript build: SUCCESS.
+- Storage Rules: SUCCESS.
+
+The 10 Firestore Rules TODO entries are the pre-existing Zone lifecycle/approval gates; they remain explicitly outside the completed read-visibility scope and are not counted as PASS. All 13 new callable visibility tests pass, including the expanded revocation, self-review, and stale-boundary cases.
+
+This exact head supersedes the earlier 2026-11-03 exact-head results in Sections 3 and 11 for current implementation verification. The earlier baseline and intermediate failures remain in this report as historical test-first evidence.
+
+PR #64 remains Draft / Open / Unmerged. The current branch contains no production role provisioning, production data writes, migration, deployment, Admin UI enablement, or Zone activation.
