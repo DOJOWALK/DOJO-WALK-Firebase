@@ -214,3 +214,34 @@ The 10 Firestore Rules TODO entries are the pre-existing Zone lifecycle/approval
 This exact head supersedes the earlier 2026-11-03 exact-head results in Sections 3 and 11 for current implementation verification. The earlier baseline and intermediate failures remain in this report as historical test-first evidence.
 
 PR #64 remains Draft / Open / Unmerged. The current branch contains no production role provisioning, production data writes, migration, deployment, Admin UI enablement, or Zone activation.
+
+
+## 13. Final assignment lifecycle hardening — exact-head PASS
+
+Final tested code/test SHA: `ecba60fee042449cac8179a81c7907847f63c84b`.
+
+Additional regression assertions were added and passed:
+- Reviewer assignment with `status: assigned` but `isActive: false` is denied.
+- Supervisor access ends when `effectiveTo` is in the past, even if the assignment record otherwise remains active.
+- Previous coverage remains passing: active/inactive Founder and Central Admin, explicit permission revocation, City Manager City scope, Supervisor/Walker exact Zone assignment, editable Walker preference ignored, reviewer exact item and self-review denial, own-draft-only, customer and legacy-role denial, custom-claim spoof denial, guessed/out-of-scope Zone IDs, revocation/reassignment, stale boundary revision/hash, and coordinate-free access audit.
+
+### Final exact-head workflow results
+
+All five workflows completed SUCCESS on `ecba60fee042449cac8179a81c7907847f63c84b`:
+
+- [Firestore Rules Tests — 41661097531](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41661097531) — SUCCESS.
+- [Firebase Storage Rules Tests — 41661097545](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41661097545) — SUCCESS.
+- [Test Firestore Security Rules — 41661097557](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41661097557) — SUCCESS.
+- [Trusted Location Geometry and Callable Tests — 41661097552](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41661097552) — SUCCESS.
+- [Zone Auth and Functions Emulator Fixtures — 41661097573](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41661097573) — SUCCESS.
+
+Exact totals:
+- Firestore Rules: 73 total / 63 passed / 0 failed / 10 TODO.
+- Functions: 292 passed / 0 failed / 0 TODO.
+- Auth + Functions fixture workflow: 13 total / 13 passed / 0 failed / 0 TODO (2 fixture bootstrap + 11 callable visibility tests).
+- Functions TypeScript build: SUCCESS.
+- Storage Rules: SUCCESS.
+
+The 10 Rules TODOs remain pre-existing Zone lifecycle/approval gates and are not counted as PASS. This exact-head result supersedes the previous tested code heads in Sections 11 and 12. The latest branch head may advance with documentation-only updates; no runtime code change is made after this exact tested code SHA.
+
+PR #64 remains Draft / Open / Unmerged. No production authority records, role provisioning, migration, deployment, Admin UI enablement, or Zone activation.
