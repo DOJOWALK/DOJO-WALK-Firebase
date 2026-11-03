@@ -130,7 +130,13 @@ test.before(async () => {
       points: [{ lat: 28.53, lng: 77.33 }, { lat: 28.63, lng: 77.33 }, { lat: 28.63, lng: 77.43 }],
       submitted: true, submittedBy: "test-visibility-central",
     },
-    "service_location_boundaries/boundary-reviewer-own": {\n      locationType: "zone", locationId: "zone-a", zoneRevision: 1, zoneId: "zone-a",\n      revision: 1, verificationStatus: "pending",\n      points: [{ lat: 28.54, lng: 77.34 }, { lat: 28.64, lng: 77.34 }, { lat: 28.64, lng: 77.44 }],\n      submitted: true, createdBy: "test-visibility-reviewer", submittedBy: "test-visibility-reviewer",\n    },\n    "service_location_boundaries/boundary-own": {
+    "service_location_boundaries/boundary-reviewer-own": {
+      locationType: "zone", locationId: "zone-a", zoneRevision: 1, zoneId: "zone-a",
+      revision: 1, verificationStatus: "pending",
+      points: [{ lat: 28.54, lng: 77.34 }, { lat: 28.64, lng: 77.34 }, { lat: 28.64, lng: 77.44 }],
+      submitted: true, createdBy: "test-visibility-reviewer", submittedBy: "test-visibility-reviewer",
+    },
+    "service_location_boundaries/boundary-own": {
       locationType: "zone", locationId: "zone-a", zoneRevision: 1, zoneId: "zone-a",
       revision: 1, verificationStatus: "draft",
       points: [{ lat: 28.51, lng: 77.31 }, { lat: 28.61, lng: 77.31 }, { lat: 28.61, lng: 77.41 }],
@@ -138,7 +144,8 @@ test.before(async () => {
     },
     "founder_users/test-visibility-founder": { authorityType: "founder_ceo", isActive: true, permissions: { zoneGeometryReadAll: true }, fixtureOnly: true },
     "founder_users/test-visibility-founder-inactive": { authorityType: "founder_ceo", isActive: false, fixtureOnly: true },
-    "admin_users/test-visibility-central": { role: "central_admin", isActive: true, permissions: { zoneGeometryReadAll: true }, fixtureOnly: true },\n    "admin_users/test-visibility-central-inactive": { role: "central_admin", isActive: false, permissions: { zoneGeometryReadAll: true }, fixtureOnly: true },
+    "admin_users/test-visibility-central": { role: "central_admin", isActive: true, permissions: { zoneGeometryReadAll: true }, fixtureOnly: true },
+    "admin_users/test-visibility-central-inactive": { role: "central_admin", isActive: false, permissions: { zoneGeometryReadAll: true }, fixtureOnly: true },
     "admin_users/test-visibility-manager": { role: "city_manager", isActive: true, fixtureOnly: true },
     "admin_users/test-visibility-supervisor": { role: "zone_supervisor", isActive: true, fixtureOnly: true },
     "admin_users/test-visibility-reviewer": { role: "admin", isActive: true, permissions: { zoneBoundaryReview: true }, fixtureOnly: true },
@@ -147,7 +154,8 @@ test.before(async () => {
     "admin_scope_assignments/manager-city-a": { adminUid: "test-visibility-manager", role: "city_manager", scopeType: "city", scopeId: "city-a", isActive: true },
     "admin_scope_assignments/supervisor-zone-a": { adminUid: "test-visibility-supervisor", role: "zone_supervisor", scopeType: "zone", scopeId: "zone-a", isActive: true },
     "walker_zone_assignments/walker-zone-a": { walkerUid: "test-visibility-walker", zoneId: "zone-a", status: "active", effectiveFrom: new Date("2026-01-01T00:00:00Z") },
-    "zone_boundary_review_assignments/reviewer-boundary-a": { reviewerUid: "test-visibility-reviewer", zoneId: "zone-a", boundaryId: "boundary-a", status: "assigned" },\n    "zone_boundary_review_assignments/reviewer-boundary-own": { reviewerUid: "test-visibility-reviewer", zoneId: "zone-a", boundaryId: "boundary-reviewer-own", status: "assigned" },
+    "zone_boundary_review_assignments/reviewer-boundary-a": { reviewerUid: "test-visibility-reviewer", zoneId: "zone-a", boundaryId: "boundary-a", status: "assigned" },
+    "zone_boundary_review_assignments/reviewer-boundary-own": { reviewerUid: "test-visibility-reviewer", zoneId: "zone-a", boundaryId: "boundary-reviewer-own", status: "assigned" },
     "walkers/test-visibility-walker": {
       isActive: true, isApproved: true,
       zoneName: "Synthetic Zone B", zoneNames: ["Synthetic Zone B"], zones: ["legacy-zone-b"],
@@ -182,7 +190,8 @@ test("Founder reads all Zones and an arbitrary Zone boundary", async () => {
 });
 
 test("inactive and unregistered Founder identities are denied", async () => {
-  await expectPermissionDenied("test-visibility-founder-inactive", "listVisibleServiceZones", { pageSize: 100 });\n  await expectPermissionDenied("test-visibility-central-inactive", "listVisibleServiceZones", { pageSize: 100 });
+  await expectPermissionDenied("test-visibility-founder-inactive", "listVisibleServiceZones", { pageSize: 100 });
+  await expectPermissionDenied("test-visibility-central-inactive", "listVisibleServiceZones", { pageSize: 100 });
   await expectPermissionDenied("test-visibility-customer", "listVisibleServiceZones", { pageSize: 100 });
 });
 
@@ -190,7 +199,9 @@ test("Central Admin requires active membership and explicit global geometry perm
   const result = await callAs("test-visibility-central", "listVisibleServiceZones", { pageSize: 100 });
   assert.deepEqual(zoneIds(result), ["zone-a", "zone-a2", "zone-b"]);
   await expectPermissionDenied("test-visibility-legacy-super-admin", "listVisibleServiceZones", { pageSize: 100 });
-  await expectPermissionDenied("test-visibility-claims-spoof", "listVisibleServiceZones", { pageSize: 100 });\n  await db.doc("admin_users/test-visibility-central").update({ permissions: { zoneGeometryReadAll: false } });\n  await expectPermissionDenied("test-visibility-central", "listVisibleServiceZones", { pageSize: 100 });
+  await expectPermissionDenied("test-visibility-claims-spoof", "listVisibleServiceZones", { pageSize: 100 });
+  await db.doc("admin_users/test-visibility-central").update({ permissions: { zoneGeometryReadAll: false } });
+  await expectPermissionDenied("test-visibility-central", "listVisibleServiceZones", { pageSize: 100 });
 });
 
 test("City Manager sees assigned City Zones only and cannot widen scope in payload", async () => {
@@ -219,7 +230,8 @@ test("Reviewer sees only assigned review boundary and cannot list all Zones", as
   const audit = await db.collection("service_zone_audit").where("actorUid", "==", "test-visibility-reviewer").get();
   assert.equal(audit.size, 1);
   assert.equal(audit.docs[0].get("action"), "assigned_review_boundary_read");
-  await expectPermissionDenied("test-visibility-reviewer", "getVisibleServiceZoneBoundary", { boundaryId: "boundary-own" });\n  await expectPermissionDenied("test-visibility-reviewer", "getVisibleServiceZoneBoundary", { boundaryId: "boundary-reviewer-own" });
+  await expectPermissionDenied("test-visibility-reviewer", "getVisibleServiceZoneBoundary", { boundaryId: "boundary-own" });
+  await expectPermissionDenied("test-visibility-reviewer", "getVisibleServiceZoneBoundary", { boundaryId: "boundary-reviewer-own" });
   await expectPermissionDenied("test-visibility-reviewer", "listVisibleServiceZones", { pageSize: 100 });
 });
 
@@ -232,7 +244,14 @@ test("Draft submitter sees own draft only and cannot fetch another boundary", as
   await expectPermissionDenied("test-visibility-submitter", "listVisibleServiceZones", { pageSize: 100 });
 });
 
-test("stale verified boundary revision/hash is rejected even for Founder", async () => {\n  await assert.rejects(\n    callAs("test-visibility-founder", "getVisibleServiceZoneBoundary", { zoneId: "zone-stale" }),\n    error => error && error.code === "functions/failed-precondition",\n  );\n});\n\ntest("Customer and legacy super_admin receive no raw Zone geometry or audit event", async () => {
+test("stale verified boundary revision/hash is rejected even for Founder", async () => {
+  await assert.rejects(
+    callAs("test-visibility-founder", "getVisibleServiceZoneBoundary", { zoneId: "zone-stale" }),
+    error => error && error.code === "functions/failed-precondition",
+  );
+});
+
+test("Customer and legacy super_admin receive no raw Zone geometry or audit event", async () => {
   await expectPermissionDenied("test-visibility-customer", "getVisibleServiceZoneBoundary", { zoneId: "zone-a" });
   await expectPermissionDenied("test-visibility-legacy-super-admin", "getVisibleServiceZoneBoundary", { zoneId: "zone-a" });
   const audit = await db.collection("service_zone_audit").where("actorUid", "==", "test-visibility-customer").get();
