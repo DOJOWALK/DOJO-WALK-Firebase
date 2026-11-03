@@ -212,16 +212,17 @@ Phase 0 source inspection is recorded in `docs/implementation/ZONE_PHASE_0_SOURC
 
 ### Phase 2 entry gate — before trusted callable implementation
 
-Founder decision recorded on 2026-11-03:
+Founder decisions recorded on 2026-11-03:
 
 - **Routine Zone deactivation:** Central Admin may submit a deactivation request; only the Founder may approve it. The Zone is deactivated only after the explicit Founder approval decision is recorded by the trusted backend. Central Admin cannot independently complete routine deactivation.
-- **Emergency suspension:** remains a separate safety action and is not covered by the routine deactivation approval path. Its notification SLA and recipient/escalation rules remain open and must be defined before implementation.
+- **Emergency Zone suspension:** approved as a separate immediate safety action. An authorized Central Admin may temporarily suspend a Zone immediately when an emergency or safety risk requires it. The suspension must create an auditable event recording the Zone, actor, reason, and timestamp, and trigger immediate notification to the Founder. Emergency suspension is not routine deactivation and does not bypass the Founder approval required for routine deactivation.
+- **Scope boundary:** suspension blocks new booking eligibility for the affected Zone. Existing in-progress walks must continue through the separate emergency, handover, and safety workflow; suspension must not silently cancel or terminate a running walk.
 
 Remaining policy/authority gates:
 
-1. Confirm emergency suspension notification SLA and required recipients/escalation.
-2. Confirm boundary geometry read visibility by role/scope.
-3. Securely verify the actual Founder authority document schema and controlled bootstrap/recovery process; never commit real UID or credentials.
-4. Confirm legacy Partner `zones` mapping/cutover approach before any migration or client compatibility changes.
+1. Confirm boundary geometry read visibility by role/scope.
+2. Securely verify the actual Founder authority document schema and controlled bootstrap/recovery process; never commit real UID or credentials.
+3. Confirm legacy Partner `zones` mapping/cutover approach before any migration or client compatibility changes.
+4. Define technical notification delivery/retry/escalation details during callable design while preserving the approved requirement that Founder notification is immediate; do not weaken this to a periodic digest.
 
-The three previously Founder-approved defaults in Section 2 and the routine deactivation decision above are fixed; do not reopen them. Build only isolated synthetic test infrastructure while the remaining gates are open; keep runtime deployment, real role provisioning, Admin UI enablement, PR merge, and Zone activation blocked.
+The three previously Founder-approved defaults in Section 2 and both lifecycle decisions above are fixed; do not reopen them. Build only isolated synthetic test infrastructure while the remaining gates are open; keep runtime deployment, real role provisioning, Admin UI enablement, PR merge, and Zone activation blocked.
