@@ -1,7 +1,7 @@
 # DOJO WALK — Zone Assignment Writer Authority Gap Audit
 
 **Date:** 2026-11-03  
-**Status:** Evidence audit complete; writer authority matrix requires Founder clarification before assignment mutation callables or their positive-path acceptance tests are implemented.  
+**Status:** Evidence audit complete; Founder approved the proposed writer authority matrix on 2026-11-03. Synthetic callable acceptance suite added; baseline Emulator execution is in progress.  
 **Related approved decision:** `ZONE_VISIBILITY_AUTHORITY_AND_ASSIGNMENT_SCHEMA_PROPOSAL_2026-11-03.md`  
 **Current PR:** #64 — Draft / Open / Unmerged.
 
@@ -70,7 +70,7 @@ The following proposed default is offered for Founder confirmation. It preserves
 | Assign/revoke boundary reviewer | Central Admin | Active reviewer membership + explicit review permission; reviewer cannot be submitter |
 | Change another actor's assignment or permissions | Never by that actor | Actor cannot self-assign, self-elevate, or approve own privileged access |
 
-**Important:** This table is a proposed writer authority matrix, not an already-approved policy. The approved schema alone did not specify all of these mutation actors.
+**Approval recorded:** Founder approved this writer authority matrix in chat (“Ok karo”) on 2026-11-03. The matrix governs the test-first writer implementation; it does not authorize production role provisioning, migration, deployment, or Zone activation.
 
 ## 5. Acceptance tests to write once authority is confirmed
 
@@ -89,10 +89,10 @@ The following proposed default is offered for Founder confirmation. It preserves
 
 ## 6. Next safe implementation sequence
 
-1. Founder confirms or edits the writer authority matrix in Section 4.
-2. Add synthetic Auth/Firestore fixtures and callable acceptance tests for every allowed and denied writer path.
-3. Run tests against the dedicated Auth, Functions and Firestore Emulators; record baseline failures before implementation.
-4. Implement only the tested trusted writer callables and transactional invariants.
+1. Founder approved the authority matrix in Section 4.
+2. Added synthetic Auth/Firestore fixtures and callable acceptance tests for allowed and denied writer paths.
+3. Run the writer suite against the dedicated Auth, Functions and Firestore Emulators; record baseline failures before implementation.
+4. Implement only the tested trusted writer callables and transactional invariants after baseline evidence is reviewed.
 5. Re-run all Rules, Functions, Storage, location geometry and Zone Auth/Functions workflows on one exact code SHA.
 6. Only after that, adapt Admin/Partner clients. Keep all production roles, migration, merge, deployment and Zone activation gated behind separate release approval.
 
