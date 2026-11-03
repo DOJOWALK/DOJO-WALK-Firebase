@@ -390,3 +390,124 @@ Firestore Rules at the verified SHA validate Customer booking create fields incl
 ### 12.6 Verification boundary
 
 This was a source inspection only. No code, Firestore Rules, indexes, Functions, data, permissions, tests, Emulator, production settings, deployment, merge, or device behavior was changed or executed. The source SHA list is the evidence boundary; later commits may change these findings.
+
+
+## 13. Firebase callable and Rules compatibility matrix — 2026-11-03
+
+### 13.1 Exact Firebase main callable export inventory
+
+Inspected `functions/src/index.ts` at blob SHA `2b13994aff949f38e626e1929422e5de84755312`. The file imports only `location_geometry`, `location_name_index`, and `district_index_pair_preflight` for the service-location implementation. Its exported callable inventory is:
+
+- `reviewServiceLocationBoundary`
+- `activateServiceLocation`
+- `setServiceLocationStatus`
+- `saveServiceLocationWithNameIndex`
+- `manageServiceLocationImportRun`
+
+The inspected index contains no Zone-specific callable export. In particular, the Admin Zone workflow's expected names are not present in this index:
+
+| Admin Zone workflow callable | Firebase main result | Reason |
+|---|---|---|
+| `submitServiceZoneForFounderReview` | ABSENT from inspected index | No matching export in the index callable inventory |
+| `decideServiceZoneFounderApproval` | ABSENT from inspected index | No matching export in the index callable inventory |
+| `activateServiceZone` | ABSENT from inspected index | Existing export is `activateServiceLocation` with City/Area contract |
+| `requestServiceZoneDeactivation` | ABSENT from inspected index | Existing status callable is generic and does not implement Zone approval workflow |
+| `suspendServiceZoneForEmergency` | ABSENT from inspected index | No matching export in the index callable inventory |
+| `requestServiceZoneReactivation` | ABSENT from inspected index | No matching export in the index callable inventory |
+| `reviewServiceLocationBoundary` | PRESENT, WRONG CONTRACT for Zone | Accepts only City/Area boundary owners |
+| `saveServiceLocationWithNameIndex` | PRESENT, WRONG CONTRACT for Zone | Allowed types are Country/State/District/City/Area/Locality; Zone is not a supported type |
+| `setServiceLocationStatus` | PRESENT, WRONG CONTRACT for Zone | Allowed types are Country/State/District/City/Area/Locality; Zone is not a supported type |
+
+This inventory is a finding about the inspected `functions/src/index.ts` revision. Before implementation, re-check the deployed Functions inventory and all source modules/build entry points; do not assume that an uninspected deployment or alternate entry point is identical.
+
+### 13.2 Existing callable contracts and authorization
+
+**`saveServiceLocationWithNameIndex`**
+- Input: `locationType`, optional `locationId`, and `payload`.
+- Supported types: `country | state | district | city | area | locality`.
+- Validates payload, parent references, and name-index consistency; creates new records inactive and prevents client payloads from controlling activation/boundary fields.
+- Callable authorization accepts an active `admin_users/{uid}` whose role is `super_admin` or `admin`.
+- Result: `{ ok, locationId, locationType }`.
+- Zone cannot be passed as a supported type without a coordinated schema/function change.
+
+**`reviewServiceLocationBoundary`**
+- Input: `boundaryId`, `decision: verified | rejected`, non-empty `notes` (maximum 2,000 characters).
+- Requires active `super_admin`; does not implement Central Admin / Founder separation.
+- Accepts only `city` and `area` boundary owners.
+- Verifies polygon validity and source metadata; Area verification additionally requires an active parent City and containment within the City polygon.
+- Updates the boundary, owner `verifiedBoundaryId`, and review audit transactionally.
+- Result: `{ ok, boundaryId, locationId, locationType, decision }`.
+
+**`activateServiceLocation`**
+- Input: `locationType: city | area`, `locationId`.
+- Requires active `super_admin`.
+- Requires a verified boundary. City requires active Country/State and active District when linked. Area requires an active parent City, verified City boundary, and Area-within-City containment.
+- Re-reads ancestry and geometry in a transaction and writes activation audit.
+- Result: `{ ok, locationId, locationType }`.
+- This is explicitly not the approved Zone-only activation contract.
+
+**`setServiceLocationStatus`**
+- Input: `locationType`, `locationId`, boolean `isActive`.
+- Requires active `super_admin`.
+- Supports Country/State/District/City/Area/Locality; City/Area activation must use `activateServiceLocation`.
+- Enforces parent/child status guards, but does not provide Founder approval or Zone boundary revision/hash checks.
+
+### 13.3 Firestore Rules contract at inspected main SHA
+
+Inspected `firestore.rules` blob SHA `9bac26b9e13a97d412a0154ec9af70629e82eb47`.
+
+- `isAdmin()` means signed-in user with active `admin_users/{uid}` and role exactly `super_admin`. It does not include a distinct Central Admin permission.
+- Admin role values in `admin_users` are constrained to `super_admin | admin | support`; no explicit `central_admin`, `area_manager`, or `supervisor` authorization model appears in the inspected helper.
+- `validBoundaryLocation` accepts `city | area | locality`; it does not accept `zone`.
+- Boundary draft create/update rules use `isAdmin()`. Client-side create is therefore not evidence of Central Admin draft authorization.
+- Boundary verification/rejection client writes are not allowed by the update rule; trusted callable uses Admin SDK. This is directionally sound, but the callable currently authorizes only Super Admin.
+- `service_cities`, `service_areas`, and other hierarchy records are client read-only; writes go through trusted Functions. No `service_zones` match block was found in the inspected Rules source.
+- The Rules source does not enforce the canonical Founder approval document, Zone revision, boundary hash, or Zone-only activation conditions because those records/contracts are not present in this implementation.
+
+### 13.4 Required callable design before coding
+
+Do not rename the current City/Area callables in place or silently route Zone actions through them. Add a separately versioned Zone workflow with explicit contracts:
+
+1. **Save Zone draft** — input: parent `stateId`, `districtId`, `cityId`, Zone name, stable optional `zoneId`; server validates parent chain, name uniqueness, and immutable parent links. New Zone is inactive and has no verified boundary.
+2. **Create/update boundary draft** — input: `zoneId`, boundary draft geometry, source type/name/reference, and expected Zone revision. Draft writes are Central Admin-scoped; clients cannot set verification, approval, activation, revision, or hash fields.
+3. **Review boundary** — input: `zoneId`, `boundaryId`, decision, notes, expected Zone revision. Trusted server validates polygon topology/coordinates, binds the exact boundary to the Zone, increments revision, computes canonical geometry hash, and writes immutable audit evidence.
+4. **Submit Founder review** — input: `zoneId`, expected revision, boundary ID/hash, evidence summary. Server snapshots the exact tuple; submission cannot be edited in place.
+5. **Founder decision** — input: approval request ID, exact Zone ID/revision/boundary hash, decision, reason. Only authorized Founder identity can approve/reject; decision is immutable and replay-safe.
+6. **Activate Zone** — input: Zone ID and approval request ID. Server transaction re-reads actor, Zone, revision, boundary, hash, approval, parent IDs, and readiness; rejects stale/revoked/replayed approvals and concurrent changes. City is a hierarchy parent only and its own service-active flag or polygon must not be an operational prerequisite unless the approved policy is changed.
+7. **Deactivate/suspend/reactivate** — explicit reason and actor; distinguish routine deactivation, emergency suspension, and reactivation. Reactivation requires a current valid approval or a new Founder decision according to the governance policy; do not silently reuse an obsolete approval.
+
+All callable results should return stable identifiers and server-authoritative state, e.g. `{ ok, zoneId, zoneRevision, boundaryId, boundaryHash, approvalRequestId, status }`. Use structured `HttpsError` codes; clients must not infer authorization from UI visibility.
+
+### 13.5 Authorization and audit matrix to implement/test
+
+| Actor | Save/edit Zone draft | Submit review | Verify boundary | Founder decision | Activate/deactivate |
+|---|---:|---:|---:|---:|---:|
+| Founder | Oversight only unless separately granted | Review | No routine boundary operation | Yes | Approval authority only; operational action follows Central workflow |
+| Central Admin | Yes | Yes | Authorized reviewer only if separation-of-duties policy permits | No | Yes, after exact Founder approval |
+| Area/City Manager | Assigned-area scoped request/read only | No | No | No | No |
+| Supervisor | Assigned-Zone operational read/report | No | No | No | No |
+| Walker/Partner | No | No | No | No | No |
+| Customer | No | No | No | No | No |
+
+This table is a proposed enforcement matrix derived from the governance policy; role claims and exact admin document schema must be reconciled before code. Do not treat the existing `admin` role as equivalent to Central Admin without an explicit mapping decision.
+
+Every state transition must write an immutable audit record with actor UID and role, action, target Zone ID, prior/new status, Zone revision, boundary ID/hash, approval request ID, reason, server timestamp, and idempotency/request ID. Audit writes must be atomic with the state transition.
+
+### 13.6 Emulator acceptance matrix — required, not run
+
+- Callable export/deployment manifest matches the Admin client callable names and region `asia-south1`.
+- Active Central Admin can create/edit a draft; inactive or wrong-role actors are denied.
+- Area Manager is denied outside assigned scope; Supervisor, Walker, Partner, and Customer are denied all administrative mutations.
+- Zone boundary draft accepts only valid parent-linked Zone ID and supported geometry; client-supplied verified/approved/active/hash/revision fields are rejected.
+- Valid polygon review binds the exact boundary to the Zone; malformed, self-intersecting, out-of-range, underspecified, or wrong-owner polygons are rejected.
+- Boundary replacement increments Zone revision and invalidates earlier approval.
+- Founder approval is bound to exact Zone ID + revision + boundary ID + canonical boundary hash; mismatched, stale, revoked, duplicate, or replayed decisions fail.
+- Zone activation succeeds with a valid Zone polygon and exact current approval even if the City has no operational service-active flag or City polygon.
+- Activation fails for missing/unverified/invalid Zone boundary, missing approval, hash/revision mismatch, wrong Zone/parent IDs, inactive/invalid hierarchy references, unauthorized actor, or concurrent revision change.
+- Routine deactivation, emergency suspension, and reactivation have distinct allowed transitions and audit events.
+- Direct Firestore writes cannot forge boundary verification, Founder approval, activation, or audit records.
+- Every callable is tested for unauthenticated, unauthorized, malformed payload, duplicate retry, and concurrent update cases.
+
+### 13.7 Evidence boundary
+
+This update is based on Firebase `functions/src/index.ts` SHA `2b13994aff949f38e626e1929422e5de84755312` and `firestore.rules` SHA `9bac26b9e13a97d412a0154ec9af70629e82eb47`. No Functions, Rules, indexes, data, permissions, tests, Emulator, deployment, merge, or production configuration were changed or executed. Admin client callable names are taken from the previously inspected Admin Zone workflow source revision recorded in Section 12; the Admin source file must be re-fetched at its exact branch SHA before implementation.
