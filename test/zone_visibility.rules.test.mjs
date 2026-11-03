@@ -146,7 +146,7 @@ test('clients cannot forge or mutate Founder and assignment authority records', 
 
 test('legacy super_admin cannot grant Central Admin Zone geometry permission through client writes', async () => {
   const db = env.authenticatedContext('visibility-legacy-super-admin').firestore();
-  await assertFails(updateDoc(doc(db, 'admin_users/visibility-central-admin'), {
+  await assertFails(updateDoc(doc(db, 'admin_users/visibility-claims-spoof'), {
     role: 'central_admin',
     isActive: true,
     permissions: { zoneGeometryReadAll: true },
