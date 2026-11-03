@@ -13,7 +13,7 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 
-const projectId = 'demo-dojo-zone-rules-tests';
+const projectId = 'demo-dojo-rules-tests';
 const canonicalCollections = [
   'service_zones',
   'service_location_boundaries',
