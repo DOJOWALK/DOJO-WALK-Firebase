@@ -113,7 +113,7 @@ test.before(async () => {
     "service_zones/zone-a": { schemaVersion: 1, zoneId: "zone-a", countryId: "india", stateId: "state-a", districtId: "district-a", cityId: "city-a", name: "Synthetic Zone A", status: "active", isServiceActive: true, revision: 1, verifiedBoundaryId: "boundary-a", verifiedBoundaryRevision: 1, boundaryHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
     "service_zones/zone-a2": { schemaVersion: 1, zoneId: "zone-a2", countryId: "india", stateId: "state-a", districtId: "district-a", cityId: "city-a", name: "Synthetic Zone A2", status: "active", isServiceActive: true, revision: 1, verifiedBoundaryId: "boundary-a2", verifiedBoundaryRevision: 1, boundaryHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
     "service_zones/zone-b": { schemaVersion: 1, zoneId: "zone-b", countryId: "india", stateId: "state-a", districtId: "district-b", cityId: "city-b", name: "Synthetic Zone B", status: "active", isServiceActive: true, revision: 1, verifiedBoundaryId: "boundary-b", verifiedBoundaryRevision: 1, boundaryHash: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" },
-    "service_zones/zone-stale": { schemaVersion: 1, zoneId: "zone-stale", countryId: "india", stateId: "state-a", districtId: "district-a", cityId: "city-a", name: "Synthetic Stale Zone", status: "active", isServiceActive: true, revision: 2, verifiedBoundaryId: "boundary-a", verifiedBoundaryRevision: 2, boundaryHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+    "service_zones/zone-stale": { schemaVersion: 1, zoneId: "zone-stale", countryId: "india", stateId: "state-a", districtId: "district-c", cityId: "city-c", name: "Synthetic Stale Zone", status: "active", isServiceActive: true, revision: 2, verifiedBoundaryId: "boundary-a", verifiedBoundaryRevision: 2, boundaryHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
     "service_location_boundaries/boundary-a": {
       locationType: "zone", locationId: "zone-a", zoneRevision: 1, zoneId: "zone-a",
       revision: 1, verificationStatus: "verified", geometryHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -182,7 +182,7 @@ test.before(async () => {
 
 test("Founder reads all Zones and an arbitrary Zone boundary", async () => {
   const result = await callAs("test-visibility-founder", "listVisibleServiceZones", { pageSize: 100 });
-  assert.deepEqual(zoneIds(result), ["zone-a", "zone-a2", "zone-b"]);
+  assert.deepEqual(zoneIds(result), ["zone-a", "zone-a2", "zone-b", "zone-stale"]);
   assert.equal(result.data.zones[0].points, undefined, "Zone list metadata must not include polygon coordinates.");
   const boundary = await callAs("test-visibility-founder", "getVisibleServiceZoneBoundary", { zoneId: "zone-b" });
   assert.equal(boundary.data.zoneId, "zone-b");
