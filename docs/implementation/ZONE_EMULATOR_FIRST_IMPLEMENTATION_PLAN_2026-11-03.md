@@ -243,3 +243,11 @@ The three previously Founder-approved defaults in Section 2 and both lifecycle d
 - Added `.github/workflows/zone-auth-functions-emulator.yml` to run this isolated fixture suite on relevant pull-request changes and manual dispatch.
 - This is executable test scaffolding only. No Zone lifecycle callable has been added or invoked; the 10 callable/lifecycle TODOs remain TODO. The workflow must complete successfully on the exact latest head before fixture setup can be marked verified.
 - Remaining blockers and release restrictions are unchanged. No production project, real Founder UID, role provisioning, migration, merge, deployment, Admin UI enablement, or Zone activation.
+
+
+### Boundary geometry read-visibility decision draft — 2026-11-03
+
+- Added `docs/decisions/ZONE_BOUNDARY_GEOMETRY_READ_VISIBILITY_DECISION_2026-11-03.md`.
+- Recommendation: Founder and explicitly authorized Central Admin may read all Zone geometry; designated reviewer only assigned review items; submitter only own draft; City/Area Manager and Supervisor read-only within active assigned scope; Walker/Partner and Customer do not receive raw polygon geometry; backend resolves coverage.
+- Includes scoped-read security requirements and Emulator acceptance tests for direct document reads, list/query bypass, guessed IDs, scope revocation, reviewer self-review, and role denial.
+- **Pending Founder approval.** This is documentation only; no Firestore Rules, roles, callables, UI, or production access changed. Do not implement the read matrix until approved.
