@@ -303,3 +303,90 @@ This document does not:
 - merge any PR.
 
 **Exit criterion:** Implementation may begin only after the unresolved decisions are closed, exact source field mappings are attached, and all affected app owners agree to the same versioned contract.
+
+
+## 12. Cross-app source verification update — 2026-11-03
+
+This section records a read-only verification against the exact source revisions below. It does not change the target contract or claim runtime behavior.
+
+### 12.1 Verified source revisions
+
+| Repository | Ref | File | Blob SHA |
+|---|---|---|---|
+| DOJO-WALK-Admin | `ui/notion-brand-foundation-2026-10-28` | `lib/features/service_location/services/service_zone_workflow_service.dart` | `77c0f290b764f781aa7fcc672c4ff5d1ec49f6cf` |
+| DOJO-WALK-Admin | same | `lib/features/service_location/services/service_location_service.dart` | `02e6a378485633e2593b17684d0585e233acf6d4` |
+| DOJO-WALK-Firebase | `main` | `functions/src/index.ts` | `2b13994aff949f38e626e1929422e5de84755312` |
+| DOJO-WALK-Firebase | `main` | `firestore.rules` | `9bac26b9e13a97d412a0154ec9af70629e82eb47` |
+| DOJO-WALK-Partner | `main` | `lib/features/onboarding/screens/work_location_screen.dart` | `9c5d5e12a3fd29785d2001fb20937a7bbb374df5` |
+| DOJO-WALK-Partner | `main` | `lib/screens/home/partner_home_screen.dart` | `9a1c14fe13e05eaa7fd2df55942a20b02ce82074` |
+| DOJO-WALK-Partner | `main` | `lib/screens/home/walk_details_screen.dart` | `4443ca2b4520700246c417cb315a6645506a1be1` |
+| DOJO-WALK-Customer | `main` | `lib/features/booking/screens/booking_confirmation_screen.dart` | `94d45b12c7873fc2d289e164df965c735c0c63cb` |
+
+Admin PR #51 head at inspection: `ed01648d9ad3e4649b44047da3a53f05a81ae1e0`. PR is open and unmerged; its description requires Draft/no merge/no deployment and defers Firebase integration.
+
+### 12.2 Zone workflow compatibility — confirmed mismatch
+
+Admin Zone client:
+- Reads `service_zones`, filtered by `stateId`, `districtId`, and `cityId`.
+- Saves through `saveServiceLocationWithNameIndex` with `locationType: zone`.
+- Creates a pending `service_location_boundaries` document with `locationType: zone`.
+- Calls `submitServiceZoneForFounderReview`, `reviewServiceLocationBoundary`, `decideServiceZoneFounderApproval`, `activateServiceZone`, `requestServiceZoneDeactivation`, `suspendServiceZoneForEmergency`, and `requestServiceZoneReactivation`.
+
+Firebase main at the verified SHA:
+- `reviewServiceLocationBoundary` accepts only `city` and `area`; it resolves owners from `service_cities` and `service_areas`.
+- Area verification requires an active parent City and a verified City polygon, then checks Area containment.
+- `activateServiceLocation` accepts only `city` and `area`; it does not implement the Admin client's Zone lifecycle.
+- Firestore Rules `validBoundaryLocation` accepts `city`, `area`, and `locality`, not `zone`.
+- Existing boundary draft rules use `isAdmin()`; the inspected rule helper is the existing Super Admin gate, not proof of the Admin PR's intended Central Admin policy.
+- No `service_zones` match block was found in the inspected Rules excerpt. A complete Rules tree/runtime test is still required before any claim about all possible access paths.
+
+**Gate:** Admin Zone workflow is not backend-compatible with Firebase main at these SHAs. Do not wire, deploy, or activate Zones against this backend until matching Zone callables, Firestore Rules, approval binding, and Emulator tests exist.
+
+### 12.3 Partner onboarding and booking payload mapping
+
+Partner onboarding reads active legacy `zones`, selects by `city` and `area`, then saves `city`, `state`, `area`, `zoneName`, `zoneNames`, and legacy zone document IDs in `walkers/{uid}`. It does not save canonical `serviceZoneId`, boundary revision, or boundary hash in the inspected screen.
+
+Customer booking confirmation:
+- Reads the selected pet from `users/{uid}/pets/{dogId}`.
+- Builds `bookings/{bookingId}` directly.
+- Writes `scheduledAt`, `preferredTime`, `walkSchedules`, and optional `dateSchedules`.
+- Sets `status: pending`, `walkerId: null`.
+- Does not write `date` or `startTime` in the inspected payload.
+
+Partner Home:
+- Queries `bookings` by `walkerId == uid`.
+- Filters today's bookings using `date`.
+- Sorts using `startTime`.
+- Accepts statuses `assigned`, `accepted`, `picked_up`, `walking`.
+
+Partner Walk Details reads `bookings/{bookingId}` and directly updates booking `status: accepted` before navigation. This confirms the current UI still couples acceptance to the parent Booking; it does not prove a separate Walk Task lifecycle.
+
+Firestore Rules at the verified SHA validate Customer booking create fields including `scheduledAt`, `preferredTime`, `walkSchedules`, `status`, and `walkerId`, but do not require a server-resolved Zone or Founder-approved boundary. The Rules allow an active Super Admin to update `walkerId`, `assignedAt`, and booking status through the booking update allowlist. The Partner reader's `date`/`startTime` fields are not present in the inspected Customer payload.
+
+### 12.4 Confirmed field map and unresolved items
+
+| Domain | Current observed fields | Canonical target / action |
+|---|---|---|
+| Zone identity | legacy Partner `zones/{id}`; Admin `service_zones/{id}` | Decide stable canonical Zone ID and explicit legacy mapping; do not equate IDs by name |
+| Zone hierarchy | Admin: `stateId`, `districtId`, `cityId`; Partner: names `state`, `city`, `area` | Persist canonical parent IDs on Partner profile; retain legacy fields during adapter period |
+| Boundary | `locationId`, `locationType`, `points`, `verificationStatus`; Admin expects Zone | Firebase must support Zone owner type and bind verified boundary to exact Zone revision/hash |
+| Customer schedule | `scheduledAt`, `preferredTime`, `walkSchedules`, optional `dateSchedules` | Server derives per-occurrence schedule; define adapter for Partner's `date` and `startTime` |
+| Assignment | `walkerId`, `assignedAt`, booking `status` | Trusted atomic assignment callable; validate eligibility, Zone, schedule/capacity, concurrency, idempotency and audit |
+| Walk identity | Partner Walk Details currently passes `bookingId` | Separate Walk Task ID and parent Booking ID; one task per scheduled occurrence |
+| Booking state | Customer creates `pending`; Partner writes `accepted`; Admin aliases normalize display labels | Define canonical state machine and server-owned transition authority before implementation |
+
+### 12.5 Required implementation gates (not executed)
+
+1. Add/verify Firebase Zone callables matching every Admin callable name and payload, including exact Founder approval identity, Zone revision and boundary hash.
+2. Update Rules to permit only the intended Central Admin draft writes and server-only verification/approval/activation fields; ensure no client can forge verified state.
+3. Add Zone-only boundary geometry and parent-link tests; City must remain a reference parent, not an activation prerequisite unless governing policy explicitly requires it.
+4. Define canonical Zone ID mapping from legacy Partner `zones` documents; do not migrate by matching display names.
+5. Define a booking request callable and idempotency contract; client Zone IDs are diagnostic only and server coverage resolution is authoritative.
+6. Add Customer schedule adapter so Partner reads the same canonical schedule fields; cover one-time, regular, and selected-date booking cases.
+7. Define Booking-to-Walk-Task creation and lifecycle, including multiple walks per day and multi-date bookings.
+8. Define trusted assignment callable, eligible Walker checks, Zone compatibility, availability/capacity conflict checks, transaction concurrency, idempotency, audit, and reassignment policy.
+9. Add Emulator negative and positive tests before staged client migration. Only after supported clients migrate should direct Customer booking create and direct Partner lifecycle writes be restricted.
+
+### 12.6 Verification boundary
+
+This was a source inspection only. No code, Firestore Rules, indexes, Functions, data, permissions, tests, Emulator, production settings, deployment, merge, or device behavior was changed or executed. The source SHA list is the evidence boundary; later commits may change these findings.
