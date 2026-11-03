@@ -43,7 +43,7 @@ Founder-approved governance defaults are now fixed inputs. Create isolated test 
 - Added `test/service_zones.rules.test.mjs` with synthetic actor fixtures for Founder, Central Admin, designated reviewer, Area Manager, Supervisor, legacy `super_admin`, Walker, and Customer.
 - The executable Rules suite checks that all five canonical Zone collections remain server-write-only: client create/update/delete attempts and forged lifecycle/approval/audit fields are denied for every synthetic authenticated actor; unauthenticated create attempts are denied.
 - Added explicit `test.todo` acceptance gates for callable authorization, self-review prevention, exact Founder approval tuple, legacy-role isolation, City-scoped uniqueness, stale revision/hash rejection, idempotency, and concurrency. These require the trusted Zone callable harness and are not represented as passing tests.
-- Test source is committed but has not yet been executed in a local or CI Emulator run. No PASS is claimed.
+- Exact-head CI Emulator evidence is recorded in the Phase 1 execution update below: all four Firebase workflows succeeded on `b1f5bd28f1ff3ae1c58ef6a5446dcd7bb627e884`. The Zone suite reports 10 TODO lifecycle/callable gates; these are not passing tests.
 
 ### 4.1 Role and authorization matrix
 
@@ -112,7 +112,7 @@ Client SDK create/update/delete must be denied for canonical Zone lifecycle coll
 
 Explicitly test attempts to forge status, `isServiceActive`, revision, hash, verified fields, Founder decision fields, actor identity, timestamps, and audit records. Keep legacy rules behavior intact and test it separately.
 
-**Exit:** all tests exist and fail for the expected missing implementation reasons; test harness itself passes lint/type checks.
+**Exit (current):** the Rules-forgery tests execute successfully in CI and default-deny the five canonical Zone collections. Ten callable/lifecycle acceptance gates remain TODO. No Auth/Functions callable harness exists yet; do not treat the test scaffold as proof of lifecycle behavior.
 
 ## 5. Phase 2 — implement trusted Firebase backend
 
@@ -202,4 +202,22 @@ Implementation PR must remain Draft until:
 
 Phase 0 source inspection is recorded in `docs/implementation/ZONE_PHASE_0_SOURCE_ENVIRONMENT_FREEZE_2026-11-03.md`. The report pins the Admin/Firebase source refs and blob SHAs, confirms the current callable/Rules mismatch, records emulator commands/configuration, and identifies the live Founder identity/deployment checks that cannot be verified from repository source.
 
-Next: record Founder approval of the three governance defaults in Section 2, verify the authority document shape through an approved secure administrative process (without placing real UIDs or secrets in source control), then add Phase 1 failing Emulator test scaffolding with synthetic UIDs. Do not begin Functions/Rules implementation or enable Admin UI until these gates are satisfied. Keep all work isolated from `main`.
+### Phase 1 execution result — 2026-11-03
+
+- Exact tested head: `b1f5bd28f1ff3ae1c58ef6a5446dcd7bb627e884`.
+- Four workflows succeeded: [Test Firestore Security Rules](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41628633136), [Firestore Rules Tests](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41628632914), [Firebase Storage Rules Tests](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41628632932), and [Trusted Location Geometry and Callable Tests](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41628633037).
+- Combined test summary: root Rules suite 50 total / 40 passed / 0 failed / 10 TODO; Functions suite 279 passed / 0 failed.
+- The 10 TODO entries are unimplemented Zone callable/lifecycle acceptance gates. Current Rules deny client writes to the five canonical Zone collections for synthetic actors; no trusted Zone lifecycle callable is implemented or proven.
+- PR #64 remains Open / Draft / Unmerged. No production deployment, role provisioning, merge, migration, or Zone activation occurred.
+
+### Phase 2 entry gate — before trusted callable implementation
+
+The next safe engineering action is to prepare the Auth + Functions Emulator harness and test fixtures, but callable authorization behavior must not be coded until these remaining policy/authority inputs are settled:
+
+1. Confirm routine Zone deactivation approval threshold and who can request/approve it.
+2. Confirm emergency suspension notification SLA and required recipients/escalation.
+3. Confirm boundary geometry read visibility by role/scope.
+4. Securely verify the actual Founder authority document schema and controlled bootstrap/recovery process; never commit real UID or credentials.
+5. Confirm legacy Partner `zones` mapping/cutover approach before any migration or client compatibility changes.
+
+The three Founder-approved defaults in Section 2 remain fixed. Do not reopen them. Build only isolated synthetic test infrastructure while the above gates are open; keep runtime deployment, real role provisioning, Admin UI enablement, PR merge, and Zone activation blocked.
