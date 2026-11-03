@@ -1,7 +1,7 @@
 # Shared Booking, Assignment & Admin Role Contract — Draft
 
-**Date:** 2026-11-02  
-**Status:** Draft for cross-team review. Not approved, not implemented, not deployed.  
+**Date:** 2026-11-02
+**Status:** Draft for cross-team review. Not approved, not implemented, not deployed.
 **Scope:** Source-of-truth alignment proposal for Firebase, Admin, Customer and Partner. This document does not change Firestore Rules, callable functions, app behavior, or business policy.
 
 ## 1. Authority and existing decisions
