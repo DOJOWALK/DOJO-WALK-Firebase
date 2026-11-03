@@ -1,6 +1,6 @@
 # DOJO WALK — Founder/CEO and Operational Zone Assignment Schema Proposal
 
-**Status:** PROPOSAL — Founder approval required before implementation  
+**Status:** FOUNDER-APPROVED — synthetic Emulator acceptance tests first; runtime implementation remains gated on test evidence  
 **Date:** 2026-11-03  
 **Parent policy:** `docs/decisions/ZONE_BOUNDARY_GEOMETRY_READ_VISIBILITY_DECISION_2026-11-03.md`  
 **Source audit:** `docs/implementation/ZONE_VISIBILITY_SOURCE_SCHEMA_AUDIT_2026-11-03.md`
@@ -181,15 +181,21 @@ This architecture prevents a client from widening access by changing a query fil
 - Dry-run counts, duplicate detection, rollback plan, and audit report are required before any production migration.
 - Existing app clients must not be broken by changing legacy rules or deleting fields prematurely.
 
-## 7. Decisions requested from Founder
+## 7. Founder approval record — 2026-11-03
 
-Approve or request changes to:
+Founder approved Sections 3.1–3.5, the server-controlled assignment model, trusted callable read architecture, assignment cardinality constraints, and migration guardrails. Approval authorizes synthetic Emulator acceptance tests first. It does not authorize Rules/Functions runtime implementation until the synthetic tests are built and executed, nor production data changes, merge, deployment, or Zone activation.
+
+The next gate is to run the synthetic acceptance matrix against isolated Emulators and record exact commit/workflow/test evidence. Any baseline failures must be documented as current security gaps; they must not be hidden by weakening the approved tests.
+
+## 8. Historical approval request
+
+The original approval request is retained as historical context; it is no longer pending.
 1. The proposed collections and fields in Sections 3.1–3.5.
 2. The rule that Manager/Supervisor/Walker scope comes only from server-controlled assignment records, never from profile preferences.
 3. The trusted callable read architecture with direct client raw-boundary reads denied.
 4. The one-active-City-Manager-per-City and one-primary-Supervisor-per-active-Zone constraints.
 5. The legacy mapping and migration guardrails.
 
-## 8. Explicit non-effects
+## 9. Explicit non-effects
 
 This is a proposal only. It does not create collections or records, grant roles, alter Firestore Rules, implement callables, change Admin/Partner apps, migrate production data, merge PR #64, deploy, or activate any Zone.
