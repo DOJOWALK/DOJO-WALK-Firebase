@@ -578,3 +578,161 @@ The exact Founder Approval Queue screen is explicitly a UI-only prototype. It us
 ### 14.6 Verification boundary
 
 This section is source-level verification of the exact Admin blobs listed in 14.1 against Firebase main source revisions in Section 13. No UI buttons were enabled; no Admin or Firebase source code, Rules, Functions, data, tests, Emulator, deployment, merge, or production configuration was changed or executed.
+
+
+## 15. Canonical Zone backend schema and authorization design — proposed, not implemented — 2026-11-03
+
+### 15.1 Design constraints and source compatibility
+
+This is the proposed target contract for implementation review. It is not a claim about the current live schema.
+
+- Preserve the existing reference hierarchy collections: `service_countries`, `service_states`, `service_districts`, and `service_cities`. A City remains a parent/reference record, not a service activation unit.
+- Introduce `service_zones/{zoneId}` as the sole operational service unit. Do not rename, bulk-copy, or delete legacy `service_areas` or legacy Partner `zones` in this phase.
+- Keep `service_location_boundaries/{boundaryId}` as the common boundary evidence collection, but make Zone ownership explicit and server-validated.
+- Do not add Zone to the current `SERVICE_LOCATION_COLLECTIONS` or generic name-index helper without updating all consumers and compatibility tests. The inspected helper hardcodes six existing collection types. Use a separate Zone index namespace in the first migration.
+- Admin client currently writes boundary drafts directly and sends Zone to a generic location callable. The target design replaces both with dedicated Zone callables; do not enable those UI actions before the backend and Rules are ready.
+- City/State/District parent references must be valid and consistent. Their operational `isServiceActive` flags and City polygon must not be treated as Zone service activation prerequisites. Parent existence/relationship and approved governance constraints still apply.
+
+### 15.2 Proposed document model
+
+**A. `service_zones/{zoneId}` — canonical Zone aggregate**
+
+| Field | Type | Ownership / rule |
+|---|---|---|
+| `schemaVersion` | integer | Server; start at 1 |
+| `name`, `normalizedName` | string | Server-normalized; name 1–120 chars |
+| `countryId`, `stateId`, `districtId`, `cityId` | string | Required immutable parent IDs after creation |
+| `status` | enum | Server only: `draft`, `boundary_pending`, `founder_review`, `approved`, `active`, `deactivation_pending`, `suspended`, `inactive`, `rejected` |
+| `isServiceActive` | boolean | Server only; true iff `status == active` |
+| `revision` | integer | Server monotonic revision, starts at 1 |
+| `boundaryId` | string or null | Current boundary draft/review reference |
+| `verifiedBoundaryId` | string or null | Server reference to current verified boundary |
+| `boundaryHash` | lowercase hex SHA-256 or null | Server canonical geometry hash |
+| `verifiedBoundaryRevision` | integer or null | Revision of Zone geometry verified |
+| `currentApprovalId` | string or null | Server reference to current Founder decision |
+| `approvedRevision` | integer or null | Exact approved Zone revision |
+| `approvedBoundaryHash` | string or null | Exact approved boundary hash |
+| `createdBy`, `updatedBy` | UID strings | Server actor identity |
+| `createdAt`, `updatedAt` | timestamps | Server timestamps |
+| `activatedAt`, `deactivatedAt`, `suspendedAt` | timestamps or null | Server lifecycle timestamps |
+| `lastTransitionId` | string | Server idempotency/transition reference |
+
+Do not store client-authoritative approval or verification booleans. Derive readiness from the current verified boundary and current approval references. A status enum is the authoritative lifecycle state; `isServiceActive` is a compatibility/read convenience field updated atomically.
+
+**B. `service_location_boundaries/{boundaryId}` — immutable reviewed evidence**
+
+Required fields: `locationType: zone`, `locationId: zoneId`, `zoneRevision`, `points`, `sourceType`, `sourceName`, `sourceReference`, `geometryHash`, `verificationStatus`, `createdBy`, `createdAt`, `verifiedBy`, `verifiedAt`, `validationMethod`, `validationVersion`, `verificationNotes`.
+
+- Draft geometry is submitted through a callable, not direct client Firestore writes.
+- After submission, geometry and source provenance are immutable. Corrections create a new boundary document.
+- The server validates coordinate ranges, point count, closure normalization, distinct vertices, self-intersection, non-zero area, supported geometry, and canonical parent ownership.
+- Hash canonicalization must be specified in code and tests: normalize to ordered numeric longitude/latitude pairs, normalize closure and numeric representation, serialize deterministically, then SHA-256. Never hash arbitrary Firestore object serialization.
+- Keep the original source reference/provenance; a hash proves integrity of submitted geometry, not that the source is authoritative.
+
+**C. `service_zone_approval_requests/{requestId}` — immutable Founder decision envelope**
+
+Fields: `zoneId`, `zoneRevision`, `boundaryId`, `boundaryHash`, `requestType` (`initial_activation`, `boundary_change`, `deactivation`, `reactivation`), `submittedBy`, `submittedAt`, `decision` (`pending`, `approved`, `rejected`, `changes_required`), `decidedBy`, `decidedAt`, `decisionNotes`, `idempotencyKey`.
+
+- Create a new request for every material revision or lifecycle decision. Never mutate an earlier approved request into approval for a different revision/hash.
+- Founder decision record is append-only after decision; corrections require a new request or explicit superseding record.
+- Deactivation requests can reference the current active approval and Zone revision; emergency suspension remains an immediate safety action, with Founder review/notification captured as a separate event according to policy.
+
+**D. `service_zone_name_indexes/{sha256}` — Zone uniqueness**
+
+Use a separate deterministic key over `["service_zones", [countryId, stateId, districtId, cityId], normalizedName]`. Transactionally reserve the key on create/rename and reject collisions. Do not alter the existing six-type helper silently. Confirm whether Zone names should be unique within City or within District before implementation; the proposed default is unique within the selected City.
+
+**E. `service_zone_audit/{eventId}` — append-only transition evidence**
+
+Fields: `actorUid`, `actorRole`, `action`, `zoneId`, `fromStatus`, `toStatus`, `zoneRevision`, `boundaryId`, `boundaryHash`, `approvalRequestId`, `reason`, `requestId`, `createdAt`, plus optional safe metadata. Audit event and state transition must be committed in the same transaction. Client create/update/delete is always denied.
+
+### 15.3 Authoritative role model
+
+Do not map the legacy `super_admin` role to Founder or Central Admin by assumption. Existing Rules and Functions authorize `super_admin`; this does not satisfy the governance separation.
+
+Proposed authority sources:
+- **Founder:** explicit allowlisted `founder_users/{uid}` document with `isActive == true` and explicit approval permission. Do not infer Founder from email, display name, client-supplied role, or `admin_users.role`.
+- **Central Admin:** `admin_users/{uid}` with `isActive == true`, `role == central_admin`, and explicit Zone operational permission. Until a governed migration establishes this role, no legacy role is automatically promoted.
+- **Area/City Manager:** assigned area/Zone scope in a server-controlled assignment record; read/report and request/escalation only. No Founder decisions or direct activation.
+- **Supervisor:** assigned Zone read/operational reporting only; no boundary verification or activation.
+- **Walker/Partner and Customer:** no Zone administration or approval mutation.
+- **Legacy Super Admin:** retain only its currently approved legacy scope. Any future mapping to Central Admin must be an explicit Founder-approved role migration with audit and least-privilege tests.
+
+For each callable, re-read the authoritative role document inside the transaction before committing. Client token custom claims may assist routing but are not the sole authority for critical state transitions. Never accept `actorUid`, `actorRole`, or approval identity from the request payload.
+
+### 15.4 Callable API target contract
+
+Use Functions v2 callables in `asia-south1`; enforce App Check according to the platform rollout policy, but do not make an untested App Check requirement a surprise production blocker. Every callable validates authentication, actor role, strict payload allowlist, IDs, idempotency, and current revision.
+
+| Callable | Authorized actor | Required payload | Server result / effect |
+|---|---|---|---|
+| `createServiceZoneDraft` | Central Admin | `stateId,districtId,cityId,name,requestId` | Creates inactive draft, validates ancestry, reserves name index |
+| `createServiceZoneBoundaryDraft` | Central Admin | `zoneId,expectedRevision,points,sourceType,sourceName,sourceReference,requestId` | Creates immutable pending boundary draft; does not verify |
+| `reviewServiceZoneBoundary` | Designated boundary reviewer; role separation from submitter where policy requires | `zoneId,boundaryId,expectedRevision,decision,notes,requestId` | Validates geometry, computes hash, binds verified boundary, increments revision |
+| `submitServiceZoneForFounderReview` | Central Admin | `zoneId,expectedRevision,boundaryId,boundaryHash,requestId` | Creates immutable pending approval envelope for exact tuple |
+| `decideServiceZoneFounderApproval` | Founder only | `approvalRequestId,decision,notes,requestId` | Approves/rejects exact immutable envelope; cannot change tuple |
+| `activateServiceZone` | Central Admin | `zoneId,approvalRequestId,expectedRevision,requestId` | Transaction verifies exact current approval/boundary and activates |
+| `requestServiceZoneDeactivation` | Central Admin | `zoneId,reason,expectedRevision,requestId` | Creates deactivation request; does not silently deactivate |
+| `suspendServiceZoneForEmergency` | Central Admin on-call authority only | `zoneId,reason,severity,expectedRevision,requestId` | Immediate suspension with mandatory audit and Founder notification event |
+| `requestServiceZoneReactivation` | Central Admin | `zoneId,reason,expectedRevision,requestId` | Creates reactivation review request |
+| `reactivateServiceZone` | Central Admin after new/current Founder approval | `zoneId,approvalRequestId,expectedRevision,requestId` | Transaction validates current approval and activates |
+
+Standard success envelope: `{ ok: true, zoneId, zoneRevision, status, boundaryId?, boundaryHash?, approvalRequestId?, requestId }`. Errors use stable `HttpsError` codes: `unauthenticated`, `permission-denied`, `invalid-argument`, `not-found`, `already-exists`, `failed-precondition`, `aborted`, `resource-exhausted`, `internal`. Do not leak private user or address data in errors.
+
+### 15.5 State transitions
+
+Allowed transitions must be enforced server-side, not by UI:
+
+- `draft → boundary_pending` when a new boundary draft is accepted.
+- `boundary_pending → founder_review` only after boundary verification and submission of exact revision/hash.
+- `founder_review → approved` only by Founder decision.
+- `approved → active` only by Central Admin activation transaction with exact current approval.
+- `active → deactivation_pending → inactive` through governed deactivation request and approval path.
+- `active → suspended` through emergency suspension; this must immediately block new bookings while preserving in-progress walk safety/handover rules.
+- `suspended/inactive → reactivation review → approved → active` only after current boundary and Founder approval checks.
+- Any material boundary edit creates a new boundary, increments Zone revision, clears current approval references, and returns the Zone to boundary review. An old approval can never authorize the new revision.
+
+### 15.6 Transaction, idempotency, and concurrency requirements
+
+- Every mutation includes a client-generated opaque `requestId`/idempotency key; server stores the result under a deterministic actor+operation+request key and returns the prior result on safe retry.
+- A repeated key with a different payload fingerprint is rejected.
+- Transaction reads Zone, relevant parents, boundary, approval request, actor authority, and idempotency record before any writes.
+- Transaction verifies `expectedRevision`; on mismatch return `aborted` or `failed-precondition` and require refresh.
+- Zone revision increments on every material change; state transition, current references, idempotency result, and audit event are written atomically.
+- Founder approval is bound to `zoneId + zoneRevision + boundaryId + boundaryHash + requestType`; compare all fields in activation transaction.
+- Ensure every document read occurs before transaction writes, consistent with Firestore transaction constraints.
+- Use Admin SDK only inside trusted Functions; never accept a client-provided verified flag/hash/revision/status as authoritative.
+
+### 15.7 Firestore Rules target policy
+
+Rules should make the trusted backend the only writer for Zone lifecycle:
+- `service_zones`: read access according to operational scope; all client create/update/delete denied.
+- `service_location_boundaries`: authorized Central Admin may read drafts and verified evidence within scope; client create/update/delete denied in the target design because the callable owns draft creation too.
+- `service_zone_approval_requests`: Founder and authorized Central Admin may read relevant requests; all client writes denied.
+- `service_zone_name_indexes`: no client writes; read only if UI needs uniqueness feedback, otherwise deny.
+- `service_zone_audit`: scoped read for Founder/Central Admin/auditors; all client writes denied.
+- Legacy `service_areas`, `zones`, and existing booking/walker reads must remain intact during migration. Add explicit collection matches rather than broad wildcard permissions.
+- Security Rules are not the authorization layer for Admin SDK writes; every callable must perform its own authoritative role and data validation.
+
+### 15.8 Required emulator test suites before UI enablement
+
+1. **Schema and ancestry:** valid State/District/City chain; wrong parent IDs; inactive/missing reference; immutable parent change; duplicate Zone name; malformed/unknown fields.
+2. **Role matrix:** Founder, Central Admin, legacy Super Admin, Area Manager assigned/unassigned, Supervisor, Walker, Customer, unauthenticated. Assert every callable and Rules path.
+3. **Boundary integrity:** too few/many points, invalid coordinates, duplicate points, self-intersection, zero area, unsupported antimeridian, wrong Zone owner, missing provenance, source mutation, changed geometry after review.
+4. **Founder approval:** exact tuple approval; wrong Zone ID; wrong revision; wrong boundary ID/hash; stale, rejected, revoked, superseded, replayed approval; non-Founder attempt.
+5. **Lifecycle:** valid activation; City polygon absent; City service-active false but hierarchy valid; routine deactivation; emergency suspension; in-progress walk preservation; reactivation with current approval only.
+6. **Concurrency/idempotency:** two simultaneous activations; boundary edit during approval; parent reassignment attempt; duplicate request retry; same key/different payload; actor deactivation mid-operation.
+7. **Rules forgery:** direct client create/update/delete against every protected collection; attempts to set `isServiceActive`, status, revision, hash, verification, Founder decision, audit fields.
+8. **Compatibility:** old Admin app, new Admin prototype, Partner legacy `zones` reads, Customer booking reads, historical records, and rollback behavior.
+
+### 15.9 Open design decisions — must be resolved before code
+
+- Confirm Zone name uniqueness scope: within City (recommended) or District.
+- Confirm whether boundary reviewer may be a separate Central Admin reviewer or whether a designated security/quality reviewer is required; submitter/reviewer separation is recommended.
+- Confirm exact Founder UID provisioning and recovery process; never infer from email.
+- Confirm deactivation approval threshold and emergency suspension notification SLA.
+- Confirm whether `service_zones` reads are public-to-authenticated, customer-address scoped, or server-mediated; minimize exposure of full boundary geometry.
+- Confirm legacy Partner `zones` to canonical `service_zones` mapping and cutover; do not dual-write without a reconciliation/idempotency plan.
+
+### 15.10 Implementation gate
+
+This design is ready for a focused technical review, not production implementation. Before code changes, reconcile open decisions in 15.9 with the Founder-approved governance policy, verify actual deployed Functions/Rules and current admin identity documents, and create Emulator tests first. No schema, Functions, Rules, data, roles, UI, tests, deployment, or production configuration were changed by this design document.
