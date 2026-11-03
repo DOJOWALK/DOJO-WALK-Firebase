@@ -301,3 +301,26 @@ GitHub API read-back confirms Partner PR #23:
 - PR scope says remove hard-coded demo amounts/counts and fabricated recent transactions, replace with neutral placeholders and a preview-only/non-payable notice. It explicitly defers real-device testing until full platform setup and requires approved verified-walk ledger/rate/bonus/payout contract before live earnings.
 
 This is a relevant safe UI disclosure candidate, but it remains Draft and unmerged. Do not merge without the user's/Founder approval and the Notion policy gate. Its PR body mentions a Monday payout contract dependency; this does not override the current approved Notion policy state or turn a draft proposal into an approved payout commitment.
+
+
+## Live Walk Firestore Rules and Emulator-test coverage spot-check (3 Nov 2026)
+
+A focused read-only check was performed against the same non-production implementation branch:
+
+| Source | Blob SHA | Result |
+|---|---|---|
+| `firestore.rules` | `9bac26b9e13a97d412a0154ec9af70629e82eb47` | No explicit `match /walks/{...}` or `match /walk_locations/{...}` block found. Existing Booking Walker update allowlists include `walkerId` references but do not establish authorization for the full Live Walk completion payload. |
+| `test/firestore.rules.test.mjs` | `e7bfeb73b09438dd6252f8232d41ea78de57cf0f` | Inspected test names/paths cover service-location hierarchy, activation, import and admin boundaries; no explicit Live Walk / walk_locations authorization test found in this file. |
+| `test/walker_lifecycle.rules.test.mjs` | `c636bf67a2be4673bbad0feb13f9c1ba92716c0c` | No literal `walks`, `walk_locations`, start, handover, or completion references surfaced in the file text inspection. |
+| `test/storage.rules.test.mjs` | `8f4dbb093677c620a9cdecc30921ffc1ac101e48` | Storage-only test file; not evidence of Firestore Live Walk lifecycle coverage. |
+| `functions/src/index.ts` | `2b13994aff949f38e626e1929422e5de84755312` | Exported callable functions inspected are service-location operations; no trusted Live Walk start/location/handover/completion callable found. |
+
+### Consequence
+
+The checked-in source currently provides no demonstrated, explicit Firestore Rules contract or Emulator negative/positive test suite for the Partner Live Walk `walks` writes and Admin `walk_locations` reads. Combined with the previously recorded writer/reader mismatch, this is a blocking source-level security and integration gap before any Live Walk production use or Rules/schema migration.
+
+This is a bounded source inspection of checked-in files only. It does not prove the deployed Firestore Rules version, deployed Functions inventory, or production database contents. No tests were executed in this spot-check; no source code, Rules, Functions, data, workflow, merge or deployment was changed.
+
+### Required next gate
+
+Before implementation, obtain/record the Notion-approved Live Walk lifecycle and GPS contract, then freeze collection ownership, event names, stable IDs/idempotency, location cadence/retention, trusted start/handover/completion authorization, role/scope rules and exact Emulator acceptance cases. Do not add permissive wildcard Rules or client-side privileged writes as a shortcut.
