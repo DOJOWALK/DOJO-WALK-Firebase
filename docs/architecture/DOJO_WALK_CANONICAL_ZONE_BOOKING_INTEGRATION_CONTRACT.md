@@ -511,3 +511,70 @@ Every state transition must write an immutable audit record with actor UID and r
 ### 13.7 Evidence boundary
 
 This update is based on Firebase `functions/src/index.ts` SHA `2b13994aff949f38e626e1929422e5de84755312` and `firestore.rules` SHA `9bac26b9e13a97d412a0154ec9af70629e82eb47`. No Functions, Rules, indexes, data, permissions, tests, Emulator, deployment, merge, or production configuration were changed or executed. Admin client callable names are taken from the previously inspected Admin Zone workflow source revision recorded in Section 12; the Admin source file must be re-fetched at its exact branch SHA before implementation.
+
+
+## 14. Admin Zone client workflow — exact source and UI readiness audit — 2026-11-03
+
+### 14.1 Exact Admin source revisions fetched
+
+Fetched from branch `ui/notion-brand-foundation-2026-10-28`:
+
+| File | Blob SHA | Finding |
+|---|---|---|
+| `lib/features/service_location/services/service_zone_workflow_service.dart` | `77c0f290b764f781aa7fcc672c4ff5d1ec49f6cf` | Callable client wrapper and boundary draft payload builder |
+| `lib/features/service_location/screens/add_zone_screen.dart` | `a4d8d27aef295e7e48620abb4d7abd8b024cc0a5` | UI prototype; save and submit remain disabled |
+| `lib/features/service_location/screens/zone_approval_queue_screen.dart` | `57f11cedd805e2bae3eaebfef4f67afa2949cac8` | UI-only illustrative Founder queue; no server actions |
+| `lib/features/service_location/services/service_location_service.dart` | Fetched in same branch; see source blob in branch history | Legacy hierarchy service; its save allowlist maps Country/State/District/City/Area/Locality only |
+
+The Zone workflow service source is now verified at the exact blob SHA above. The Admin branch head previously inspected for PR #51 is `ed01648d9ad3e4649b44047da3a53f05a81ae1e0`; this later commit changes the Emulator test and does not alter the workflow service blob.
+
+### 14.2 Client-to-Firebase callable matrix
+
+The client wrapper calls these callable names and payloads:
+
+| Client method | Callable | Client payload | Firebase main assessment |
+|---|---|---|---|
+| `saveDraft` | `saveServiceLocationWithNameIndex` | `locationType: zone`, optional `locationId`, payload `stateId/districtId/cityId/name` | WRONG CONTRACT: Zone is absent from supported types and mutable fields |
+| `submitForFounderReview` | `submitServiceZoneForFounderReview` | `zoneId` | ABSENT from inspected index |
+| `reviewBoundary` | `reviewServiceLocationBoundary` | `boundaryId`, `decision`, `notes` | WRONG CONTRACT: Firebase accepts City/Area owners, not Zone |
+| `decideFounderApproval` | `decideServiceZoneFounderApproval` | `zoneId`, `decision`, `notes` | ABSENT from inspected index |
+| `activate` | `activateServiceZone` | `zoneId` | ABSENT from inspected index |
+| `requestDeactivation` | `requestServiceZoneDeactivation` | `zoneId`, `notes` | ABSENT from inspected index |
+| `deactivate` | `setServiceLocationStatus` | `locationType: zone`, `locationId`, `isActive: false` | WRONG CONTRACT: Firebase status callable does not accept Zone |
+| `emergencySuspend` | `suspendServiceZoneForEmergency` | `zoneId`, `reason`, `severity` | ABSENT from inspected index |
+| `requestReactivation` | `requestServiceZoneReactivation` | `zoneId`, `reason` | ABSENT from inspected index |
+
+The wrapper uses Functions region `asia-south1`. The mismatch is deterministic at the inspected Firebase main source SHA; it is not a runtime call result because no Emulator or deployed endpoint was exercised.
+
+### 14.3 Direct boundary draft write contract
+
+The wrapper's `createBoundaryDraft` writes directly to `service_location_boundaries` with:
+- `locationId = zoneId`
+- `locationType = zone`
+- `points`
+- `sourceType` in `governmentGis | governmentCadastralMap | importedGeoJson | manuallyDrawn`
+- `sourceName`, `sourceReference`
+- `verificationStatus = pending`
+- server timestamps for `createdAt` and `updatedAt`
+
+Local validation requires 4–10,000 points and non-empty source provenance. This is only client-side input validation; it does not prove polygon topology, boundary ownership, geometry containment, or authoritative source evidence. The Firebase Rules revision previously inspected does not accept `locationType: zone` in `validBoundaryLocation`, and its draft write authorization uses `isAdmin()` (active Super Admin), not a distinct Central Admin role. Thus this direct write path is not proven usable and must not be opened by weakening Rules broadly.
+
+### 14.4 UI readiness: not an enabled end-to-end workflow
+
+The exact Add Zone screen source explicitly labels its polygon as local preview only and states that no boundary is uploaded, verified, or saved. Its Save Draft and Submit for Review buttons are disabled (`onPressed: null`). The screen's validation dialog reports that nothing has been saved.
+
+The exact Founder Approval Queue screen is explicitly a UI-only prototype. It uses illustrative example rows, states that live requests cannot be approved, and disables its action button. Therefore the presence of a callable wrapper does not mean the Zone lifecycle is operational or connected end-to-end.
+
+### 14.5 Integration sequence correction
+
+1. Keep the Add Zone screen and Founder queue in prototype/read-only state until backend contracts and role separation are implemented.
+2. Do not enable the current `saveDraft` wrapper against Firebase main; it sends `locationType: zone` to a callable that rejects Zone.
+3. Add a dedicated Zone draft save contract or deliberately extend the generic save callable with a fully tested Zone schema, immutable parent checks, Zone collection mapping, and server-side role authorization.
+4. Align the direct boundary draft Rules schema with the wrapper payload and a distinct Central Admin permission; keep verification and audit fields server-only.
+5. Implement the missing Founder submission/decision and Zone activation/deactivation/emergency/reactivation callables with exact revision/hash binding and idempotency.
+6. Add Emulator tests for both allowed Central Admin draft creation and denied unauthorized actors, plus every lifecycle transition and direct-write forgery attempt.
+7. Only then wire the disabled UI actions and replace example approval rows with live server-backed records.
+
+### 14.6 Verification boundary
+
+This section is source-level verification of the exact Admin blobs listed in 14.1 against Firebase main source revisions in Section 13. No UI buttons were enabled; no Admin or Firebase source code, Rules, Functions, data, tests, Emulator, deployment, merge, or production configuration was changed or executed.
