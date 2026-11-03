@@ -1460,7 +1460,7 @@ function assignmentIsCurrent(
 ): boolean {
   const statusMatches = expectedStatus === "active"
     ? (typeof data.isActive === "boolean" ? data.isActive === true : data.status === "active")
-    : data.status === "assigned";
+    : data.status === "assigned" && (typeof data.isActive !== "boolean" || data.isActive === true);
   if (!statusMatches || data.revokedAt != null) return false;
   const start = timestampMillis(data.effectiveFrom);
   const end = timestampMillis(data.effectiveTo);
