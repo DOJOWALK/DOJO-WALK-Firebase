@@ -247,7 +247,16 @@ test.after(async () => {
     await signOut(client.auth).catch(() => {});
     await deleteApp(client.app).catch(() => {});
   }
-  if (db) for (const path of docsToClean) await db.doc(path).delete().catch(() => {});
+  if (db) {
+    for (const path of docsToClean) await db.doc(path).delete().catch(() => {});
+    const auditSnapshot = await db.collection("service_zone_audit")
+      .where("actorUid", "in", actors.map(actor => actor.uid)).get().catch(() => null);
+    if (auditSnapshot) {
+      const batch = db.batch();
+      auditSnapshot.docs.forEach(doc => batch.delete(doc.ref));
+      await batch.commit().catch(() => {});
+    }
+  }
   if (adminAuth) for (const actor of actors) await adminAuth.deleteUser(actor.uid).catch(() => {});
   if (adminApp) await deleteAdminApp(adminApp);
 });
