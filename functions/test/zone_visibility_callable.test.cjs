@@ -167,8 +167,12 @@ test.before(async () => {
 test("Founder reads all Zones and an arbitrary Zone boundary", async () => {
   const result = await callAs("test-visibility-founder", "listVisibleServiceZones", { pageSize: 100 });
   assert.deepEqual(zoneIds(result), ["zone-a", "zone-a2", "zone-b"]);
+  assert.equal(result.data.zones[0].points, undefined, "Zone list metadata must not include polygon coordinates.");
   const boundary = await callAs("test-visibility-founder", "getVisibleServiceZoneBoundary", { zoneId: "zone-b" });
   assert.equal(boundary.data.zoneId, "zone-b");
+  const audit = await db.collection("service_zone_audit").where("actorUid", "==", "test-visibility-founder").get();
+  assert.equal(audit.size, 1);
+  assert.equal(audit.docs[0].get("points"), undefined, "Geometry access audit must not store polygon coordinates.");
 });
 
 test("inactive and unregistered Founder identities are denied", async () => {
@@ -206,19 +210,27 @@ test("Walker assignment, not editable onboarding preference, determines Zone vis
 
 test("Reviewer sees only assigned review boundary and cannot list all Zones", async () => {
   await callAs("test-visibility-reviewer", "getVisibleServiceZoneBoundary", { boundaryId: "boundary-a" });
+  const audit = await db.collection("service_zone_audit").where("actorUid", "==", "test-visibility-reviewer").get();
+  assert.equal(audit.size, 1);
+  assert.equal(audit.docs[0].get("action"), "assigned_review_boundary_read");
   await expectPermissionDenied("test-visibility-reviewer", "getVisibleServiceZoneBoundary", { boundaryId: "boundary-own" });
   await expectPermissionDenied("test-visibility-reviewer", "listVisibleServiceZones", { pageSize: 100 });
 });
 
 test("Draft submitter sees own draft only and cannot fetch another boundary", async () => {
   await callAs("test-visibility-submitter", "getVisibleServiceZoneBoundary", { boundaryId: "boundary-own" });
+  const audit = await db.collection("service_zone_audit").where("actorUid", "==", "test-visibility-submitter").get();
+  assert.equal(audit.size, 1);
+  assert.equal(audit.docs[0].get("action"), "own_draft_boundary_read");
   await expectPermissionDenied("test-visibility-submitter", "getVisibleServiceZoneBoundary", { boundaryId: "boundary-a" });
   await expectPermissionDenied("test-visibility-submitter", "listVisibleServiceZones", { pageSize: 100 });
 });
 
-test("Customer and legacy super_admin receive no raw Zone geometry", async () => {
+test("Customer and legacy super_admin receive no raw Zone geometry or audit event", async () => {
   await expectPermissionDenied("test-visibility-customer", "getVisibleServiceZoneBoundary", { zoneId: "zone-a" });
   await expectPermissionDenied("test-visibility-legacy-super-admin", "getVisibleServiceZoneBoundary", { zoneId: "zone-a" });
+  const audit = await db.collection("service_zone_audit").where("actorUid", "==", "test-visibility-customer").get();
+  assert.equal(audit.size, 0, "Denied geometry requests must not create access audit events.");
 });
 
 test("revocation and reassignment invalidate subsequent callable reads", async () => {
