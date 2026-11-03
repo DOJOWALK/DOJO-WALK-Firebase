@@ -80,6 +80,7 @@ test.before(async () => {
     "service_zones/writer-zone-active": { schemaVersion: 1, zoneId: "writer-zone-active", cityId: "writer-city-a", status: "active", isServiceActive: true, revision: 1, verifiedBoundaryId: "writer-boundary-active", verifiedBoundaryRevision: 1, boundaryHash: "d".repeat(64), fixtureOnly: true },
     "service_zones/writer-zone-inactive": { schemaVersion: 1, zoneId: "writer-zone-inactive", cityId: "writer-city-a", status: "inactive", isServiceActive: false, revision: 1, fixtureOnly: true },
     "service_location_boundaries/writer-boundary-active": { locationType: "zone", locationId: "writer-zone-active", zoneId: "writer-zone-active", zoneRevision: 1, revision: 1, verificationStatus: "verified", geometryHash: "d".repeat(64), points: [{ lat: 28.5, lng: 77.3 }, { lat: 28.6, lng: 77.3 }, { lat: 28.6, lng: 77.4 }], fixtureOnly: true },
+    "service_location_boundaries/writer-boundary-reviewer-own": { locationType: "zone", locationId: "writer-zone-active", zoneId: "writer-zone-active", zoneRevision: 1, revision: 2, verificationStatus: "pending", geometryHash: "f".repeat(64), submitted: true, submittedBy: uid.reviewer, fixtureOnly: true },
     "service_zones/writer-zone-other-city": { schemaVersion: 1, zoneId: "writer-zone-other-city", cityId: "writer-city-b", status: "active", isServiceActive: true, revision: 1, verifiedBoundaryId: "writer-boundary-other", verifiedBoundaryRevision: 1, boundaryHash: "e".repeat(64), fixtureOnly: true },
     "service_location_boundaries/writer-boundary-other": { locationType: "zone", locationId: "writer-zone-other-city", zoneId: "writer-zone-other-city", zoneRevision: 1, revision: 1, verificationStatus: "verified", geometryHash: "e".repeat(64), points: [{ lat: 28.5, lng: 77.3 }, { lat: 28.6, lng: 77.3 }, { lat: 28.6, lng: 77.4 }], fixtureOnly: true },
   };
@@ -198,7 +199,7 @@ test("Boundary Reviewer assignment requires explicit review permission and forbi
     assignmentId: "writer-reviewer-no-permission", reason: "no review permission",
   });
   await expectCallableDenied("central", "assignBoundaryReviewer", {
-    reviewerUid: uid.central, boundaryId: "writer-boundary-active",
+    reviewerUid: uid.reviewer, boundaryId: "writer-boundary-reviewer-own",
     assignmentId: "writer-reviewer-self-review", reason: "submitter cannot review",
   });
 });
