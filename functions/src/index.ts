@@ -1534,6 +1534,17 @@ async function resolveZoneReadActor(uid: string): Promise<ZoneReadActor | null> 
   return null;
 }
 
+function isCanonicalZone(data: FirebaseFirestore.DocumentData | undefined): boolean {
+  return data?.schemaVersion === 1 &&
+    typeof data.name === "string" &&
+    typeof data.countryId === "string" &&
+    typeof data.stateId === "string" &&
+    typeof data.districtId === "string" &&
+    typeof data.cityId === "string" &&
+    typeof data.status === "string" &&
+    Number.isInteger(data.revision);
+}
+
 function zoneSummary(
   snapshot: FirebaseFirestore.QueryDocumentSnapshot | FirebaseFirestore.DocumentSnapshot,
 ): Record<string, unknown> {
@@ -1588,15 +1599,23 @@ export const listVisibleServiceZones = onCall({ region: "asia-south1" }, async (
   if (actor.kind === "founder" || actor.kind === "central_admin" || actor.kind === "city_manager") {
     let query: FirebaseFirestore.Query = db.collection("service_zones")
       .orderBy(FieldPath.documentId());
-    if (actor.kind === "city_manager") query = query.where("cityId", "==", actor.cityId);
+    if (actor.kind === "city_manager") {
+      query = query.where("cityId", "==", actor.cityId);
+    } else {
+      query = query.where("schemaVersion", "==", 1);
+    }
     if (pageToken) query = query.startAfter(pageToken);
-    const snapshot = await query.limit(pageSize + 1).get();
-    hasMore = snapshot.docs.length > pageSize;
-    zones = snapshot.docs.slice(0, pageSize).map(zoneSummary);
+    const snapshot = await query.limit(501).get();
+    const eligible = snapshot.docs.filter((doc) =>
+      isCanonicalZone(doc.data()) &&
+      (actor.kind !== "city_manager" || doc.get("cityId") === actor.cityId));
+    hasMore = eligible.length > pageSize;
+    zones = eligible.slice(0, pageSize).map(zoneSummary);
   } else {
     const snapshots = await Promise.all(actor.zoneIds.map((zoneId) => db.doc(`service_zones/${zoneId}`).get()));
     const visible = snapshots
-      .filter((snapshot) => snapshot.exists && zoneAllowedForActor(actor, snapshot.data() ?? {}, snapshot.id))
+      .filter((snapshot) => snapshot.exists && isCanonicalZone(snapshot.data()) &&
+        zoneAllowedForActor(actor, snapshot.data() ?? {}, snapshot.id))
       .sort((a, b) => a.id.localeCompare(b.id))
       .filter((snapshot) => !pageToken || snapshot.id > pageToken);
     hasMore = visible.length > pageSize;
@@ -1665,6 +1684,7 @@ export const getVisibleServiceZoneBoundary = onCall({ region: "asia-south1" }, a
     const zoneSnapshot = await db.doc(`service_zones/${zoneId}`).get();
     if (!zoneSnapshot.exists) throw new HttpsError("not-found", "Zone was not found.");
     const zone = zoneSnapshot.data() ?? {};
+    if (!isCanonicalZone(zone)) throw new HttpsError("not-found", "Zone was not found.");
     if (!zoneAllowedForActor(actor, zone, zoneId)) {
       throw new HttpsError("permission-denied", "Zone is outside the actor's current assigned scope.");
     }
@@ -1702,6 +1722,7 @@ export const getVisibleServiceZoneBoundary = onCall({ region: "asia-south1" }, a
   const zoneSnapshot = await db.doc(`service_zones/${zoneIdForBoundary}`).get();
   if (!zoneSnapshot.exists) throw new HttpsError("not-found", "Zone was not found.");
   const zone = zoneSnapshot.data() ?? {};
+  if (!isCanonicalZone(zone)) throw new HttpsError("not-found", "Zone was not found.");
 
   const admin = await db.doc(`admin_users/${uid}`).get();
   const reviewerPermission = admin.exists && admin.get("isActive") === true &&
