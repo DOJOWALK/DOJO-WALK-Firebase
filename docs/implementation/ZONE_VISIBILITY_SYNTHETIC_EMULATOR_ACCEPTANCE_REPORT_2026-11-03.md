@@ -23,7 +23,7 @@ GitHub Actions:
 - Test Firestore Security Rules run: [41653691172](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41653691172)
 - Firestore Rules Tests run: [41653691301](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41653691301)
 
-Both test jobs reached the Firestore Emulator suite and failed on the same single assertion:
+The primary Rules workflow and the combined geometry/callable workflow reached the Firestore Emulator suite and failed on the same single assertion. A separate Firestore Rules workflow emitted the same failing test output in its job log but its final workflow conclusion was `cancelled`; it is not counted as a second failed workflow:
 
 - Tests: 83
 - Passed: 61
@@ -63,9 +63,14 @@ The following remain TODO until the trusted callable read APIs and trusted assig
 - Customer geometry denial through all callable surfaces.
 - Guessed IDs, pagination, broad query, and scope-tampering resistance.
 
-## 6. Separate Auth + Functions fixture workflow
+## 6. Other exact-head workflow outcomes
 
-Workflow run [41653691186](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41653691186) was still running at report preparation. No PASS is claimed until its final conclusion and logs are checked.
+- [Trusted Location Geometry and Callable Tests run 41653691294](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41653691294) — FAILURE; root `npm test` failed on the same baseline assertion, so downstream Functions test command did not complete.
+- [Zone Auth and Functions Emulator Fixtures run 41653691186](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41653691186) — CANCELLED; no PASS evidence.
+- [Firebase Storage Rules Tests run 41653691116](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41653691116) — CANCELLED; no PASS evidence.
+- [Firestore Rules Tests run 41653691301](https://github.com/DOJOWALK/DOJO-WALK-Firebase/actions/runs/41653691301) — CANCELLED; job log contains the same failing test output before cancellation.
+
+Only run 41653691172 has a final FAILURE conclusion directly attributable to the new test. Cancellation is not PASS and is not counted as a failure of the test assertion.
 
 ## 7. Next safe gate
 
