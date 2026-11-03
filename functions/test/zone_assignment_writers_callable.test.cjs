@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const { initializeApp, deleteApp } = require("firebase/app");
 const { getAuth, connectAuthEmulator, signInWithEmailAndPassword } = require("firebase/auth");
 const { getFunctions, connectFunctionsEmulator, httpsCallable } = require("firebase/functions");
+const { getFirestore: getClientFirestore, connectFirestoreEmulator } = require("firebase/firestore");
 const { initializeApp: initializeAdminApp, deleteApp: deleteAdminApp } = require("firebase-admin/app");
 const { getAuth: getAdminAuth } = require("firebase-admin/auth");
 const { getFirestore } = require("firebase-admin/firestore");
@@ -94,7 +95,9 @@ test.before(async () => {
     if (key !== "unauthenticated") await signInWithEmailAndPassword(auth, email, PASSWORD);
     const functions = getFunctions(app, REGION);
     connectFunctionsEmulator(functions, "127.0.0.1", 5001);
-    clients.set(key, { app, auth, functions });
+    const firestore = getClientFirestore(app);
+    connectFirestoreEmulator(firestore, "127.0.0.1", 8080);
+    clients.set(key, { app, auth, functions, firestore });
   }
 });
 
@@ -255,8 +258,8 @@ test("Assignment mutation rejects missing reason and malformed IDs", async () =>
 
 test("Direct client writes to authority, assignment and approval collections remain denied", async () => {
   const client = clients.get("central");
-  const { getFirestore: getClientFirestore, doc, setDoc } = require("firebase/firestore");
-  const clientDb = getClientFirestore(client.app);
+  const { doc, setDoc } = require("firebase/firestore");
+  const clientDb = client.firestore;
   for (const path of [
     `founder_users/${uid.central}`,
     `admin_scope_assignments/client-forged`,
