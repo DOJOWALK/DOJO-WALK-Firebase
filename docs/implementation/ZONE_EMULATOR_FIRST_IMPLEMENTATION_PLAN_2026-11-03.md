@@ -318,3 +318,13 @@ The three previously Founder-approved defaults in Section 2 and both lifecycle d
 - **No assignment writer tests or runtime mutation callables were added in this gate.** Positive-path tests depend on confirmation of the exact mutation actors; implementing an assumed authority matrix could accidentally grant privilege.
 - Next: Founder confirms or edits the matrix in the audit, then synthetic assignment-writer Emulator tests are authored and run before any new writer Rules/Functions code.
 - No production records, role grants, migration, merge, deployment, Admin/Partner app changes, or Zone activation.
+
+
+### Final assignment lifecycle hardening — 2026-11-03
+
+- Final tested implementation/test SHA: `ecba60fee042449cac8179a81c7907847f63c84b`.
+- Added and passed negative tests for inactive reviewer assignments and expired Supervisor assignments.
+- All five workflows PASS: Firestore Rules Tests `41661097531`; Firebase Storage Rules Tests `41661097545`; Test Firestore Security Rules `41661097557`; Trusted Location Geometry and Callable Tests `41661097552`; Zone Auth and Functions Emulator Fixtures `41661097573`.
+- Counts: Firestore Rules 73 total / 63 PASS / 0 FAIL / 10 pre-existing TODO; Functions 292 PASS / 0 FAIL; Auth + Functions fixture workflow 13/13 PASS (2 fixture bootstrap + 11 callable visibility); Functions build PASS; Storage Rules PASS.
+- This exact-head verification supersedes the previous 651825 code-head result. Full details are in the synthetic acceptance report.
+- PR #64 remains Draft / Open / Unmerged. Production Founder bootstrap, real assignments, legacy Partner mapping, remaining lifecycle TODOs, Admin/Partner consumer integration, release review, deployment, and Zone activation remain gated.
