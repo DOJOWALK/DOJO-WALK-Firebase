@@ -11,15 +11,15 @@ Implement the canonical Zone lifecycle safely, beginning with executable Emulato
 
 This plan does not authorize production deployment, Zone activation, role grants, migration/deletion of legacy collections, or PR merge.
 
-## 2. Working defaults to validate before implementation
+## 2. Founder-approved governance defaults
 
-These defaults are the recommended design choices carried forward for implementation planning. Treat them as pending explicit Founder confirmation if they differ from an already-recorded governance decision:
+Founder explicitly approved these three defaults on 2026-11-03. They are binding design inputs for the implementation and Emulator acceptance tests:
 
 1. **Zone-name uniqueness:** unique within the selected City. Same normalized name may exist in another City.
 2. **Boundary review:** a designated Central Admin reviewer with an explicit boundary-review permission. The submitter cannot review their own boundary. Founder performs final business approval, not routine geometry review.
 3. **Founder identity:** an explicit active `founder_users/{uid}` allowlist record provisioned through a separately controlled, audited bootstrap/recovery process. Never infer Founder from email, display name, `super_admin`, or client claims. The exact initial UID and recovery custodians must be verified from Firebase Auth/admin records before any role provisioning.
 
-Additional policy gates still requiring a recorded decision: deactivation approval threshold, emergency suspension notification SLA, and boundary read visibility.
+Additional policy gates still requiring a recorded decision: deactivation approval threshold, emergency suspension notification SLA, and boundary read visibility. These unresolved items must not be silently inferred or used to grant broader access.
 
 ## 3. Phase 0 — source and environment freeze
 
@@ -34,9 +34,16 @@ Before writing implementation code:
 
 **Exit:** source SHA manifest and reproducible local/CI Emulator commands committed before implementation begins.
 
-## 4. Phase 1 — write failing Emulator tests first
+## 4. Phase 1 — Emulator acceptance tests first
 
-Create isolated test fixtures with synthetic UIDs and deterministic IDs. Tests must not depend on production records.
+Founder-approved governance defaults are now fixed inputs. Create isolated test fixtures with synthetic UIDs and deterministic IDs. Tests must not depend on production records.
+
+### 4.0 Initial test scaffold committed
+
+- Added `test/service_zones.rules.test.mjs` with synthetic actor fixtures for Founder, Central Admin, designated reviewer, Area Manager, Supervisor, legacy `super_admin`, Walker, and Customer.
+- The executable Rules suite checks that all five canonical Zone collections remain server-write-only: client create/update/delete attempts and forged lifecycle/approval/audit fields are denied for every synthetic authenticated actor; unauthenticated create attempts are denied.
+- Added explicit `test.todo` acceptance gates for callable authorization, self-review prevention, exact Founder approval tuple, legacy-role isolation, City-scoped uniqueness, stale revision/hash rejection, idempotency, and concurrency. These require the trusted Zone callable harness and are not represented as passing tests.
+- Test source is committed but has not yet been executed in a local or CI Emulator run. No PASS is claimed.
 
 ### 4.1 Role and authorization matrix
 
