@@ -1457,7 +1457,7 @@ function assignmentIsCurrent(
   now = Date.now(),
 ): boolean {
   const statusMatches = expectedStatus === "active"
-    ? data.isActive === true || data.status === "active"
+    ? (typeof data.isActive === "boolean" ? data.isActive === true : data.status === "active")
     : data.status === "assigned";
   if (!statusMatches || data.revokedAt != null) return false;
   const start = timestampMillis(data.effectiveFrom);
@@ -1486,12 +1486,15 @@ async function resolveZoneReadActor(uid: string): Promise<ZoneReadActor | null> 
   }
 
   const admin = await db.doc(`admin_users/${uid}`).get();
-  if (admin.exists && admin.get("isActive") === true) {
+  if (admin.exists) {
+    // An Admin membership is authoritative for this identity. Inactive or
+    // unrecognized legacy roles cannot fall through into another role path.
+    if (admin.get("isActive") !== true) return null;
     const role = admin.get("role");
     const permissions = permissionMap(admin.data());
 
-    if (role === "central_admin" && permissions.zoneGeometryReadAll === true) {
-      return { uid, kind: "central_admin" };
+    if (role === "central_admin") {
+      return permissions.zoneGeometryReadAll === true ? { uid, kind: "central_admin" } : null;
     }
 
     if (role === "city_manager") {
@@ -1512,6 +1515,10 @@ async function resolveZoneReadActor(uid: string): Promise<ZoneReadActor | null> 
       if (zoneIds.length === 0) return null;
       return { uid, kind: "zone_supervisor", zoneIds };
     }
+
+    // Includes legacy super_admin, admin, and support without explicit scoped
+    // authority. None of these roles is implicitly upgraded to Zone visibility.
+    return null;
   }
 
   const walker = await db.doc(`walkers/${uid}`).get();
@@ -1710,8 +1717,8 @@ export const getVisibleServiceZoneBoundary = onCall({ region: "asia-south1" }, a
   }
 
   const isOwnDraft = (boundary.createdBy === uid || boundary.submittedBy === uid) &&
-    boundary.submitted !== true &&
-    ["draft", "pending"].includes(String(boundary.verificationStatus)) &&
+    boundary.submitted === false &&
+    boundary.verificationStatus === "draft" &&
     boundary.verifiedBy == null && boundary.verifiedAt == null;
   if (isOwnDraft) {
     await recordZoneGeometryRead(uid, "draft_submitter", zoneIdForBoundary, boundaryId,
