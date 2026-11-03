@@ -212,12 +212,16 @@ Phase 0 source inspection is recorded in `docs/implementation/ZONE_PHASE_0_SOURC
 
 ### Phase 2 entry gate — before trusted callable implementation
 
-The next safe engineering action is to prepare the Auth + Functions Emulator harness and test fixtures, but callable authorization behavior must not be coded until these remaining policy/authority inputs are settled:
+Founder decision recorded on 2026-11-03:
 
-1. Confirm routine Zone deactivation approval threshold and who can request/approve it.
-2. Confirm emergency suspension notification SLA and required recipients/escalation.
-3. Confirm boundary geometry read visibility by role/scope.
-4. Securely verify the actual Founder authority document schema and controlled bootstrap/recovery process; never commit real UID or credentials.
-5. Confirm legacy Partner `zones` mapping/cutover approach before any migration or client compatibility changes.
+- **Routine Zone deactivation:** Central Admin may submit a deactivation request; only the Founder may approve it. The Zone is deactivated only after the explicit Founder approval decision is recorded by the trusted backend. Central Admin cannot independently complete routine deactivation.
+- **Emergency suspension:** remains a separate safety action and is not covered by the routine deactivation approval path. Its notification SLA and recipient/escalation rules remain open and must be defined before implementation.
 
-The three Founder-approved defaults in Section 2 remain fixed. Do not reopen them. Build only isolated synthetic test infrastructure while the above gates are open; keep runtime deployment, real role provisioning, Admin UI enablement, PR merge, and Zone activation blocked.
+Remaining policy/authority gates:
+
+1. Confirm emergency suspension notification SLA and required recipients/escalation.
+2. Confirm boundary geometry read visibility by role/scope.
+3. Securely verify the actual Founder authority document schema and controlled bootstrap/recovery process; never commit real UID or credentials.
+4. Confirm legacy Partner `zones` mapping/cutover approach before any migration or client compatibility changes.
+
+The three previously Founder-approved defaults in Section 2 and the routine deactivation decision above are fixed; do not reopen them. Build only isolated synthetic test infrastructure while the remaining gates are open; keep runtime deployment, real role provisioning, Admin UI enablement, PR merge, and Zone activation blocked.
