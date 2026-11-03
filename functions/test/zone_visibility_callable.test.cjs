@@ -40,6 +40,8 @@ const docsToClean = [
   "service_zones/zone-b",
   "service_zones/zone-stale",
   "service_location_boundaries/boundary-a",
+  "service_location_boundaries/boundary-a2",
+  "service_location_boundaries/boundary-b",
   "service_location_boundaries/boundary-own",
   "service_location_boundaries/boundary-reviewer-own",
   "founder_users/test-visibility-founder",
