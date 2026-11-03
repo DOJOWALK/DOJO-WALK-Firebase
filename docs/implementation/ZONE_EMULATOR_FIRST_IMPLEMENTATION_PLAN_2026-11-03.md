@@ -307,3 +307,14 @@ The three previously Founder-approved defaults in Section 2 and both lifecycle d
 - Final counts: Firestore Rules 73 total / 63 PASS / 0 FAIL / 10 pre-existing TODO; Functions 292 PASS / 0 FAIL; Zone visibility callable suite 13 PASS / 0 FAIL; Functions build PASS; Storage Rules PASS.
 - This final exact-head result supersedes the earlier 35a3 code-head verification above. Full evidence: `docs/implementation/ZONE_VISIBILITY_SYNTHETIC_EMULATOR_ACCEPTANCE_REPORT_2026-11-03.md`.
 - PR #64 remains Draft / Open / Unmerged. Production Founder bootstrap, real assignment records, Partner legacy mapping, remaining Zone lifecycle TODOs, Admin/Partner consumer integration, release review, deployment, and Zone activation remain gated.
+
+
+### Next backend gate — assignment writer authority audit (2026-11-03)
+
+- Source audit confirms the current Functions exports only the two Zone visibility read callables for this feature; no trusted assignment create/transfer/revoke or operational Admin role grant/revoke callables exist yet.
+- The approved schema establishes server-owned assignment collections, but does not fully specify which human operational role may mutate each assignment type.
+- Cross-check of POL-037 and POL-004 confirms the governance principles (Founder approves senior appointments; Central Operations owns national assignment configuration; City Manager oversees assigned City's Zones; Supervisor is Zone-scoped) but those Notion policies are still DRAFT and do not define an executable permission matrix.
+- Created `docs/implementation/ZONE_ASSIGNMENT_WRITER_AUTHORITY_GAP_AUDIT_2026-11-03.md` with source evidence, a proposed writer authority matrix, and a 12-case synthetic acceptance matrix.
+- **No assignment writer tests or runtime mutation callables were added in this gate.** Positive-path tests depend on confirmation of the exact mutation actors; implementing an assumed authority matrix could accidentally grant privilege.
+- Next: Founder confirms or edits the matrix in the audit, then synthetic assignment-writer Emulator tests are authored and run before any new writer Rules/Functions code.
+- No production records, role grants, migration, merge, deployment, Admin/Partner app changes, or Zone activation.
