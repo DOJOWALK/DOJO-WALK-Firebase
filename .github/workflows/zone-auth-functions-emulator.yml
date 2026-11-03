@@ -1,0 +1,46 @@
+name: Zone Auth and Functions Emulator Fixtures
+
+on:
+  pull_request:
+    paths:
+      - "functions/**"
+      - "firebase.json"
+      - "package.json"
+      - ".github/workflows/zone-auth-functions-emulator.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zone-auth-functions-emulator-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  synthetic-auth-fixtures:
+    name: Synthetic Auth + Firestore fixture smoke tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact PR revision
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up Java for Firebase Emulators
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install root Firebase CLI and test dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Install Functions dependencies
+        run: npm --prefix functions install --no-audit --no-fund
+
+      - name: Build Functions and run isolated synthetic fixtures
+        run: npm run test:zone-emulator
