@@ -234,3 +234,55 @@ These findings are from the exact source snapshots listed above. They do not est
 ### Verification boundary
 
 Source-only review and indexed code search. No live Firebase Rules read-back, production data query, deployment, test execution, code change, merge or workflow dispatch was performed.
+
+
+## Historical Partner audit-branch reconciliation — GPS and earnings (3 Nov 2026)
+
+### Historical audit evidence discovered
+
+Partner branch `chore/notion-aligned-structure` contains read-only audit/decision documents (commit `276e922f00ec7524e86d99afc59ae7a26b184ad8`):
+
+| Document | Blob SHA | Recorded status |
+|---|---|---|
+| `docs/architecture/PARTNER_LIVE_WALK_GPS_HANDOVER_AUDIT_2026-10-31.md` | `6b6c25281650b974379ebb50675fdf2fdafe1d59` | Read-only audit; P0/P1 gaps |
+| `docs/architecture/PARTNER_EARNINGS_PAYOUT_UI_AUDIT_2026-10-31.md` | `73c1a263174bbb867f190c0e54f8ede92ac04322` | Read-only audit; P0 Finance gates |
+| `docs/decisions/ADR-002-live-walk-idempotency.md` | `a8ad70a9927fda9c84e665568a3a963770165832` | Proposed, not approved/validated |
+| `docs/decisions/ADR-003-firestore-live-walk-rules-gate.md` | `7b6ebbc748d0f3ac740fc4fac0bef986fa4da730` | Confirmed source security/configuration gap; remediation required |
+| `docs/decisions/ADR-005-live-walk-completion-backend-contract.md` | `e91dd7bb82effda90f521503272260e91afd5f5f` | Proposed, not implemented |
+
+### GPS audit reconciliation
+
+The historical audit explicitly records:
+- `Geolocator.getPositionStream()` uses high accuracy and a 3m distance filter; client filters accuracy worse than 35m, jumps above 100m and movement below 3m.
+- GPS points remain in the in-memory route; route is saved to `walks` only on completion. No app lifecycle/background location service, periodic heartbeat, or live `walk_locations` write was found in the audited Partner screen.
+- Start does not visibly call a trusted backend to revalidate assigned Walker, booking/occurrence state and authorization before tracking.
+- Return OTP is compared client-side with a value read from Booking; no trusted one-time verification, expiry, attempt counter or replay prevention was found.
+- Completion used a random walk document ID per screen state; this is not cross-session idempotency.
+- Historical Partner Rules lacked `/walks/{walkId}` and Booking completion fields written by client, making the inspected completion batch incompatible with those rules. This is source evidence, not deployed Rules confirmation.
+- ADR-005 proposes a trusted completion callable and stable idempotency; explicitly not implemented. The current Firebase main `functions/src/index.ts` exports service-location callables only (boundary review, activation/status, save/index, import-run management); no Live Walk start/location/handover/completion callable appears in the 1,410-line entry point.
+
+### Important current-main vs historical-branch earnings discrepancy
+
+Current Partner `main` `lib/screens/home/earnings_screen.dart` blob `9fd6a6bbdc908ce0e92bc4b4466c5a8fb5f7ef6c` contains hard-coded figures and transaction examples:
+- Available earnings ₹1,240 and “Ready for payout”
+- Today ₹120, This Week ₹720, This Month ₹1,240, Walks 12
+- Bruno/Max sample transaction cards ₹120/₹150
+
+A separate Partner branch `fix/earnings-demo-data-disclosure` contains a safer revision at blob `9b9279f6171279132e6a2987b794a5245ab6e8f2`, showing dashes and explicitly saying the preview figures are not live or payable. That branch is not main and no merge status/approval is inferred here. The older `chore/notion-aligned-structure` earnings audit (above) also documents a placeholder, not a live ledger.
+
+**Risk:** Current main's hard-coded amounts can be mistaken for payable balances. Do not treat these as actual earnings, and do not merge or deploy a UI change solely on the basis of a side branch. Record/approve the correct Finance policy and reconcile branch/PR ownership before a controlled fix.
+
+### Finance policy gate
+
+The historical audit found POL-013, POL-033 and POL-034 still Draft/unapproved at the time of review. It specifically warns not to hard-code proposed ₹40/bonus pools or weekly payout timing from a draft; payout frequency/cutoff/threshold/rail remain undecided in the referenced POL-033 draft. This conflicts with older remembered operational payout concepts, so the latest approved Notion policy/Founder decision must govern; no payout rate or schedule is authorized by this source audit.
+
+### Follow-up actions
+
+1. Reconcile Partner `main` with `fix/earnings-demo-data-disclosure` and its PR/status; remove misleading demo amounts only through approved, reviewed implementation and tests.
+2. Keep Live Walk direct writes blocked pending approved POL-006/POL-007/POL-026 policy, trusted start/location/handover/completion contracts, stable idempotency and Emulator tests.
+3. Confirm current deployed Firestore Rules version and target project before asserting production behavior.
+4. Finance/Founder must resolve POL-013/POL-033/POL-034 and record effective-dated payout model before ledger/UI implementation.
+
+### Verification boundary
+
+Historical branch documents and current checked-in source were fetched and compared. No app/Rules source modified, no tests run, no PR merged, no deployment, no production data accessed. Notion verification remains Not checked.
