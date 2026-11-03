@@ -128,7 +128,7 @@ test.before(async () => {
       locationType: "zone", locationId: "zone-a", zoneRevision: 1, zoneId: "zone-a",
       revision: 1, verificationStatus: "draft",
       points: [{ lat: 28.51, lng: 77.31 }, { lat: 28.61, lng: 77.31 }, { lat: 28.61, lng: 77.41 }],
-      submitted: false, submittedBy: "test-visibility-submitter",
+      submitted: false, createdBy: "test-visibility-submitter",
     },
     "founder_users/test-visibility-founder": { authorityType: "founder_ceo", isActive: true, permissions: { zoneGeometryReadAll: true }, fixtureOnly: true },
     "founder_users/test-visibility-founder-inactive": { authorityType: "founder_ceo", isActive: false, fixtureOnly: true },
