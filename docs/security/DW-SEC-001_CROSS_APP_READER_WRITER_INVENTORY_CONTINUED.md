@@ -120,3 +120,57 @@ The newly surfaced Partner schedule/home/navigation/summary/completion files and
 ### Search limitations
 
 The search was performed against GitHub's indexed code results, which may be incomplete, branch/ref-dependent, or omit generated/ignored files. No repository checkout grep, production Firestore/Storage scan, deployed Functions listing, external integration inspection, or tests were performed. No code or production resources were changed.
+
+
+## Individual inspection of newly surfaced Partner and Admin screens (3 Nov 2026)
+
+### Additional exact source snapshots
+
+| Repository | Path | Blob SHA |
+|---|---|---|
+| Partner | `lib/screens/home/schedule_screen.dart` | `02b07aa81bfbc32fa8e5cd0d5d083cd2d3c0aa25` |
+| Partner | `lib/screens/home/partner_home_screen.dart` | `9a1c14fe13e05eaa7fd2df55942a20b02ce82074` |
+| Partner | `lib/screens/home/working_schedule_screen.dart` | `e9f13b0627c5a07f2c5b3a0af09734cd007bb26c` |
+| Partner | `lib/screens/home/walk_summary_screen.dart` | `0189ebde502f5b317c678a2ed5af8d7eeefa2e62` |
+| Partner | `lib/screens/home/navigation_screen.dart` | `28571975921f8e5b075925742691697016b3b6f4` |
+| Partner | `lib/screens/home/walk_completed_screen.dart` | `b61a68273dbf1e590c6c29c188ebf81753ef7668` |
+| Partner | `lib/features/live_walk/screens/live_walk_screen.dart` | `1ca731246d58cc3742606dd3de8e04755d744cf0` |
+| Admin | `lib/screens/live/live_operations_screen.dart` | `15bf852258b273f753a45d9b107528dc027829e5` |
+| Admin | `lib/screens/dashboard/dashboard_screen.dart` | `ce4bd363279e15e707cf1ac8bfcb21ec451ac50d` |
+
+### Partner — schedule, booking and walk writes
+
+1. `partner_home_screen.dart` reads the full own `walkers/{uid}` document and extracts `workingSchedule`, `fullName`, and `walkerId`.
+2. It queries `bookings` by `walkerId == auth.uid`, then filters today's date and active statuses client-side. It reads booking fields used for time, dog, duration and location display.
+3. It queries `walks` by `walkerId == auth.uid` (limit 50) and checks `status`, `reviewStatus`, `dogName`, `createdAt`, `endedAt`, and `startedAt`.
+4. Walker review submission writes `reviewStatus`, `reviewedAt`, `updatedAt`, and optionally `reviewRating` / `reviewNote` to `walks/{walkId}`. Skip-review writes status/timestamps to the same document. Errors are caught and the prompt is hidden locally even if the write fails; UI acknowledgement is therefore not proof of persisted review.
+5. `working_schedule_screen.dart` reads own `walkers/{uid}.workingSchedule`; writes `workingSchedule.status`, `workingSchedule.days.{day}.enabled/start/end`, and `updatedAt` using merge. This is a direct Partner client write to the restricted Walker parent.
+6. `schedule_screen.dart`, `walk_summary_screen.dart`, and `walk_completed_screen.dart` are presentation/route parameter screens in the inspected snapshots; no direct Firestore reader/writer found in those files.
+7. `navigation_screen.dart` directly updates parent Booking `status` to `accepted`, `picked_up`, and `walking` with `updatedAt`. It has no trusted callable shown in this screen for these transitions.
+
+### Partner — Live Walk event and GPS payload
+
+1. Live Walk reads the booking document to obtain customer pickup coordinates (latitude/longitude or GeoPoint) for return-location verification.
+2. It tracks device positions in memory, compacts the route, then writes one `walks/{generatedWalkId}` document at completion. Observed fields include `peeCount`, `poopCount`, `startedAt`, `endedAt`, `dogReturned`, compacted `route` GeoPoints, optional `bookingId`, and start/end coordinate values. It then separately updates the related Booking with completion/return fields.
+3. Walk document creation and Booking update are separate client writes; there is no transaction/batch or server-authoritative operation shown in the inspected completion block.
+4. The Admin Live Operations screen reads `walk_locations`, while this Partner Live Walk source writes the compact route to `walks/{walkId}.route`. The inspected source does not show a corresponding `walk_locations` writer. Treat this as a data-contract/source mismatch requiring wider search; do not assume Admin route points are being populated by this screen.
+
+### Admin — Live Operations and Dashboard
+
+1. Live Operations listens to `walkers` filtered by `isOnline == true` and spreads every returned parent document into an in-memory map. It uses `currentLocation` and `name` for map markers. This is a broad online-Walker parent read, not a location-only projection.
+2. Selecting a Walker queries `walk_locations` by `walkerId`, orders by `timestamp`, limits to 300 and reads `latitude`/`longitude` to draw a route.
+3. Live Operations loads a linked Booking by document ID and renders up to 12 non-null fields by key/value without an explicit field allowlist in the inspected code. This can expose more booking fields in the Admin UI than the route panel needs.
+4. Dashboard uses generic collection-wide count streams for `bookings`, `users`, and `walkers`; counts `walkers` where `isOnline == true`; counts Booking statuses; streams recent bookings ordered by `createdAt`; streams `payments` where `status == paid` and sums `amount`; and streams recent `audit_logs`. This is a wide operational/financial dashboard read surface. The UI does not by itself prove the actor has the required least-privilege scope.
+5. Dashboard Booking status cards use mixed casing (e.g. `Pending` alongside lowercase statuses elsewhere); status taxonomy consistency is a separate contract issue, not resolved by this Walker-data inventory.
+
+### Updated risk and migration implications
+
+- Partner self-service profile, schedule and onboarding currently depend on direct reads/writes to `walkers/{uid}`. Migration must preserve own-Walker access while separating private address/KYC and operational/availability fields.
+- Admin Live Operations currently receives whole online Walker documents to display a name and current location. Target design should define a minimal, purpose-scoped live-operations projection/API with geographic scope and active-role checks; no new projection schema is approved in this inventory.
+- `walk_locations` has a live Admin reader in source, but no writer was found in the inspected Partner Live Walk file; its writer and Rules coverage remain unresolved.
+- Admin Dashboard reads collection-wide counts and payment totals. These aggregate permissions need explicit role/scope and data-minimization decisions; do not infer that all Admin users may read full underlying documents.
+- Partner Walk review writes and Booking lifecycle status writes are client-authoritative in inspected source; those lifecycle operations need their own approved callable/API contract. Do not silently fold them into DW-SEC-001 implementation.
+
+### Verification boundary
+
+These findings are from the exact source snapshots listed above. They do not establish deployed Rules behavior, production data contents, whether a different app version writes `walk_locations`, or whether backend integrations exist elsewhere. No app/Rules/Functions source was changed and no tests, production reads, merge or deployment were performed.
