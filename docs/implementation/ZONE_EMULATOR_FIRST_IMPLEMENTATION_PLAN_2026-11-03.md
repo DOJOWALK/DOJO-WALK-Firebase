@@ -19,7 +19,7 @@ Founder explicitly approved these three defaults on 2026-11-03. They are binding
 2. **Boundary review:** a designated Central Admin reviewer with an explicit boundary-review permission. The submitter cannot review their own boundary. Founder performs final business approval, not routine geometry review.
 3. **Founder identity:** an explicit active `founder_users/{uid}` allowlist record provisioned through a separately controlled, audited bootstrap/recovery process. Never infer Founder from email, display name, `super_admin`, or client claims. The exact initial UID and recovery custodians must be verified from Firebase Auth/admin records before any role provisioning.
 
-Additional policy gates still requiring a recorded decision: deactivation approval threshold, emergency suspension notification SLA, and boundary read visibility. These unresolved items must not be silently inferred or used to grant broader access.
+Additional policy gate still requiring a recorded decision: boundary geometry read visibility. Routine deactivation authority and emergency suspension authority/Founder-notification requirements were explicitly approved on 2026-11-03 and are recorded in the Phase 2 entry gate below. Technical notification delivery/retry/escalation mechanics remain an implementation-design item, not a reason to weaken immediate Founder notification.
 
 ## 3. Phase 0 — source and environment freeze
 
