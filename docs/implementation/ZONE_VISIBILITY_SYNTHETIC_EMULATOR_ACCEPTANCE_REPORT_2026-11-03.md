@@ -184,7 +184,7 @@ PR #64 remains Draft / Unmerged. No production Firestore data, real authority re
 
 Final tested implementation/test code SHA: `651825cfe09193f9aff5ee138683cf572b0c7422`.
 
-The callable contract suite was expanded beyond the initial 12 cases to cover:
+The callable contract suite was expanded beyond the initial 10 callable cases to 11 executable callable tests, covering:
 - Inactive Central Admin denial.
 - Immediate loss of Central Admin geometry visibility when the explicit permission is revoked.
 - Reviewer self-review denial, even when the reviewer is assigned that exact boundary.
@@ -205,11 +205,11 @@ All five workflows completed SUCCESS on this exact head:
 Final exact totals from the combined Emulator workflow:
 - Firestore Rules: 73 total / 63 passed / 0 failed / 10 TODO.
 - Functions: 292 passed / 0 failed / 0 TODO.
-- Zone visibility callable suite: 13 passed / 0 failed / 0 TODO.
+- Auth + Functions fixture workflow: 13 total / 13 passed / 0 TODO (2 synthetic fixture bootstrap tests + 11 callable visibility tests).
 - Functions TypeScript build: SUCCESS.
 - Storage Rules: SUCCESS.
 
-The 10 Firestore Rules TODO entries are the pre-existing Zone lifecycle/approval gates; they remain explicitly outside the completed read-visibility scope and are not counted as PASS. All 13 new callable visibility tests pass, including the expanded revocation, self-review, and stale-boundary cases.
+The 10 Firestore Rules TODO entries are the pre-existing Zone lifecycle/approval gates; they remain explicitly outside the completed read-visibility scope and are not counted as PASS. All 11 callable visibility tests pass, including the expanded inactive-admin, permission-revocation, self-review, reassignment, and stale-boundary cases. The other 2 passing tests are synthetic Auth/Firestore fixture bootstrap checks.
 
 This exact head supersedes the earlier 2026-11-03 exact-head results in Sections 3 and 11 for current implementation verification. The earlier baseline and intermediate failures remain in this report as historical test-first evidence.
 
