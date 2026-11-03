@@ -18,6 +18,7 @@ const internalAuthorityCollections = [
   'admin_scope_assignments',
   'walker_zone_assignments',
   'zone_boundary_review_assignments',
+  'service_zone_audit',
 ];
 const actors = [
   { uid: 'visibility-founder', label: 'Founder' },
@@ -142,3 +143,12 @@ test('clients cannot forge or mutate Founder and assignment authority records', 
 });
 
 // Callable visibility contracts are exercised through the Auth + Functions Emulator suite in functions/test/zone_visibility_callable.test.cjs.
+
+test('legacy super_admin cannot grant Central Admin Zone geometry permission through client writes', async () => {
+  const db = env.authenticatedContext('visibility-legacy-super-admin').firestore();
+  await assertFails(updateDoc(doc(db, 'admin_users/visibility-central-admin'), {
+    role: 'central_admin',
+    isActive: true,
+    permissions: { zoneGeometryReadAll: true },
+  }));
+});
