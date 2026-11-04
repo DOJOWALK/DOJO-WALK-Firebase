@@ -131,6 +131,9 @@ export function normalizeBookingScheduleRequest(
 
   if (bookingPlan === "regular") {
     exactKeys(schedule, ["startDate", "endDate", "walks"], "BOOKING_SCHEDULE_FIELD_INVALID");
+    if (typeof schedule.startDate !== "string" || typeof schedule.endDate !== "string") {
+      throw new Error("BOOKING_SCHEDULE_FIELD_INVALID");
+    }
     const startDate = validDate(schedule.startDate);
     const endDate = validDate(schedule.endDate);
     const dates = daysInclusive(startDate, endDate);
