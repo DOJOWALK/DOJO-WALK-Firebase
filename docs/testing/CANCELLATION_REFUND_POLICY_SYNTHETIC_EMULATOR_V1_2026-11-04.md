@@ -1,8 +1,8 @@
 # Cancellation & Refund Policy — Synthetic Emulator Test Record
 
-**Policy source:** Notion POL-029 — Booking Cancellation, Rescheduling, No-Show & Refund Policy  
-**Decision date:** 2026-11-05  
-**Test scope:** Synthetic reference oracle using an isolated demo Firestore Emulator project.  
+**Policy source:** Notion POL-029 — Booking Cancellation, Rescheduling, No-Show & Refund Policy\
+**Decision date:** 2026-11-05\
+**Test scope:** Synthetic reference oracle using an isolated demo Firestore Emulator project.\
 **Status:** Test-only reference suite; latest recorded correction removes whole-subscription early-termination logic from this suite.
 
 ## Approved business rules represented
