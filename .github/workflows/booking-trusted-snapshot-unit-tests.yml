@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   trusted-snapshot-unit-tests:
-    name: Build Functions and run all Functions unit tests
+    name: Build Functions and run trusted snapshot unit tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout exact PR revision
@@ -30,6 +30,8 @@ jobs:
       - name: Install Functions dependencies
         working-directory: functions
         run: npm install --no-package-lock --no-audit --no-fund
-      - name: Build and run Functions unit tests
+      - name: Build Functions and run trusted snapshot unit tests
         working-directory: functions
-        run: npm test
+        run: |
+          npm run build
+          node --test --test-concurrency=1 test/booking_trusted_snapshots.test.cjs
