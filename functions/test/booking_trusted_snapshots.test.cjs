@@ -123,3 +123,30 @@ test("pickup snapshot rejects invalid coordinates and invalid identifiers", () =
   assert.throws(() => buildCanonicalPickupSnapshot(" ", {}), /BOOKING_ADDRESS_ID_INVALID/);
   assert.throws(() => buildCanonicalPickupSnapshot("address-4", []), /BOOKING_ADDRESS_RECORD_INVALID/);
 });
+
+test("pickup snapshot rejects blank, non-numeric, and non-scalar coordinates", () => {
+  assert.throws(() => buildCanonicalPickupSnapshot("address-5", {
+    latitude: " ", longitude: "77.4",
+  }), /BOOKING_ADDRESS_COORDINATES_INVALID/);
+  assert.throws(() => buildCanonicalPickupSnapshot("address-5", {
+    latitude: "", longitude: "77.4",
+  }), /BOOKING_ADDRESS_COORDINATES_INVALID/);
+  assert.throws(() => buildCanonicalPickupSnapshot("address-5", {
+    latitude: true, longitude: 77.4,
+  }), /BOOKING_ADDRESS_COORDINATES_INVALID/);
+  assert.throws(() => buildCanonicalPickupSnapshot("address-5", {
+    latitude: "north", longitude: "77.4",
+  }), /BOOKING_ADDRESS_COORDINATES_INVALID/);
+});
+
+test("pickup snapshot accepts valid numeric coordinate strings", () => {
+  assert.deepEqual(
+    buildCanonicalPickupSnapshot("address-6", {
+      latitude: "28.6", longitude: "77.4",
+    }),
+    {
+      pickupAddressId: "address-6",
+      pickupAddress: { latitude: 28.6, longitude: 77.4 },
+    },
+  );
+});
