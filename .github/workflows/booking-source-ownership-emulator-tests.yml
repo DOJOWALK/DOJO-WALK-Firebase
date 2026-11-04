@@ -41,3 +41,5 @@ jobs:
           GCLOUD_PROJECT: demo-dojo-booking-source-ownership
         run: |
           npx firebase emulators:exec --only firestore --project demo-dojo-booking-source-ownership "node --test --test-concurrency=1 functions/test/booking_source_records_emulator.test.cjs"
+
+# PR #81 also imports the Automatic Booking reference-model suite through the existing test entrypoint.
