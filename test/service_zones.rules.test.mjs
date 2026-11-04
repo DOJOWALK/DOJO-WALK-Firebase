@@ -99,15 +99,9 @@ test('unauthenticated clients cannot create canonical Zone lifecycle records', a
   }
 });
 
-// These remain explicit acceptance gates. They are enabled as callable tests
-// only after the trusted Zone API and its Emulator Auth/Functions harness exist.
-test.todo('Central Admin with zone-operation permission can create a Zone draft');
-test.todo('Central Admin without boundary-review permission cannot review a boundary');
-test.todo('boundary submitter cannot review their own submitted boundary');
-test.todo('Founder allowlist UID can decide only the exact current approval request');
-test.todo('legacy super_admin without Founder/Central authority cannot approve or activate');
-test.todo('Area Manager access is limited to assigned City/Zone scope');
-test.todo('same normalized Zone name is rejected within one City but allowed in another');
-test.todo('stale boundary revision or hash cannot be approved or activated');
-test.todo('idempotent retries return the original result and conflicting payload reuse fails');
-test.todo('concurrent activation attempts produce one valid state transition');
+// Canonical Zone lifecycle acceptance gates live in
+// functions/test/zone_lifecycle_acceptance.test.cjs and run under the
+// Auth + Functions + Firestore Emulator harness (npm run test:zone-emulator).
+// Keep this Rules suite focused on direct client access: canonical Zone
+// collections are server-write-only; callable authorization/state transitions
+// are asserted by the dedicated Functions acceptance suite.
