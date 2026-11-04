@@ -1,8 +1,8 @@
 # DOJO WALK — Approved Zone Visibility: Source Schema Audit
 
-**Date:** 2026-11-03  
-**Status:** Source audit completed for the exact refs below; runtime implementation remains blocked.  
-**Decision:** `docs/decisions/ZONE_BOUNDARY_GEOMETRY_READ_VISIBILITY_DECISION_2026-11-03.md`  
+**Date:** 2026-11-03\
+**Status:** Source audit completed for the exact refs below; runtime implementation remains blocked.\
+**Decision:** `docs/decisions/ZONE_BOUNDARY_GEOMETRY_READ_VISIBILITY_DECISION_2026-11-03.md`\
 **Branch:** `implementation/zone-emulator-first-plan-2026-11-03`
 
 ## 1. Purpose
