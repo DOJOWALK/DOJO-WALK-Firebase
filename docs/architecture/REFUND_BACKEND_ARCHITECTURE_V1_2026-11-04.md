@@ -1,7 +1,7 @@
 # DOJO WALK — Refund Backend Architecture V1
 
-**Date:** 2026-11-04  
-**Status:** Architecture proposal only — not production implementation  
+**Date:** 2026-11-04\
+**Status:** Architecture proposal only — not production implementation\
 **Policy:** POL-029 cancellation settlement direction (2026-11-05); synthetic policy tests PR #85 and subscription tests PR #87
 
 ## 1. Objective
@@ -137,11 +137,11 @@ Transaction flow:
 
 ## 10. Implementation gates
 
-A. Approve payment allocation schema, refund collections and role mapping.  
-B. Build pure production domain calculator/state machine with unit tests.  
-C. Implement actual callable + Auth/Functions/Firestore Emulator integration tests.  
-D. Select provider and implement sandbox adapter, signature verification, idempotency and reconciliation.  
-E. Integrate Customer/Admin status and approval UI; no client financial writes.  
+A. Approve payment allocation schema, refund collections and role mapping.\
+B. Build pure production domain calculator/state machine with unit tests.\
+C. Implement actual callable + Auth/Functions/Firestore Emulator integration tests.\
+D. Select provider and implement sandbox adapter, signature verification, idempotency and reconciliation.\
+E. Integrate Customer/Admin status and approval UI; no client financial writes.\
 F. Legal/provider review, monitoring, support runbook, reconciliation reporting and explicit Founder rollout approval.
 
 ## 11. Current status
