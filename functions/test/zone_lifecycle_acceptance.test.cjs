@@ -421,7 +421,7 @@ test("16 — Full synthetic activation path: draft → Boundary review → Found
   assert.equal(finalZone.get("isServiceActive"), true);
   assert.equal(finalZone.get("revision"), 6);
   assert.equal(finalZone.get("verifiedBoundaryHash"), boundary.get("geometryHash"));
-  assert.equal((await db.collection("service_zone_audit").where("zoneId", "==", zoneId).get()).size, 5);
+  assert.equal((await db.collection("service_zone_audit").where("zoneId", "==", zoneId).get()).size, 6);
 });
 
 test.after(async () => {
