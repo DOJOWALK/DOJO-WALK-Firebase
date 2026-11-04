@@ -52,9 +52,13 @@ A Zone is eligible for a new booking only when all conditions are true at resolu
    - `zoneId == zoneId`
    - `verificationStatus == "verified"`
 5. The Zone's verified Boundary ID and verified Boundary hash match the current Boundary document and its server-recomputed canonical geometry hash.
-6. The Zone's approved Boundary ID/hash match the currently verified Boundary ID/hash.
-7. The Zone's approval reference resolves to an approved activation request whose Zone ID, revision, Boundary ID and Boundary hash match the Zone's recorded approval tuple.
-8. The polygon is valid and can be evaluated by the trusted server geometry implementation.
+6. The Zone's `approvedBoundaryId` and `approvedBoundaryHash` match `verifiedBoundaryId` and `verifiedBoundaryHash`.
+7. `approvedRequestId` resolves in `service_zone_approval_requests/{approvalRequestId}` to a record with `status == "approved"`, `requestType == "activation"`, matching `zoneId`, `revision == approvedRevision`, `boundaryId == approvedBoundaryId`, and `boundaryHash == approvedBoundaryHash`.
+8. `approvedRevision` is the revision pinned by that approval; activation may increment the Zone's current `revision`, so the resolver must not incorrectly require `approvedRevision == current revision`.
+9. `verifiedBoundaryRevision` matches the current Boundary document's `revision`; its `zoneRevision` must be consistent with the Zone revision history and must not be treated as the Boundary document revision.
+10. The polygon is valid and can be evaluated by the trusted server geometry implementation.
+
+These names follow the current PR #71 Zone Lifecycle API v1 contract candidate and implementation. Do not substitute `currentApprovalRequestId` for `approvedRequestId` when validating the completed activation approval; `currentApprovalRequestId` identifies the currently pending decision request.
 
 A draft, pending, rejected, inactive, suspended, stale, malformed, or partially populated Zone/Boundary/approval tuple is not eligible. A previously active Zone that is suspended or deactivated must not accept new bookings. This predicate does not cancel or terminate an already-running walk.
 
@@ -89,7 +93,7 @@ Evaluate the trusted point against eligible Zone polygons and require **exactly 
 | 1 | Continue with that Zone's trusted server snapshot |
 | 2 or more | Reject as ambiguous coverage; do not choose the first, smallest, nearest, or highest-priority Zone |
 
-A point on a polygon edge or shared boundary must not be assigned arbitrarily. Until a single deterministic edge policy is explicitly approved and tested, treat an edge/border hit as ambiguous and fail closed.
+A pickup GPS point alone cannot implement the Founder-approved majority-of-house rule: a point contains no information about the area/shape of the house. For a pickup on or near a shared Zone boundary, use a trusted, verified building-footprint polygon (not a user-asserted Zone ID) and calculate its area intersection with each eligible Zone polygon. Select the Zone containing strictly more than 50% of the verified footprint area. If a verified footprint is unavailable, invalid, intersects no eligible Zone, or produces an exact tie / numerically indeterminate result, do not guess: return an Admin-review-required outcome and do not confirm the booking. A point on an outer service boundary with no qualifying majority is also not service coverage. The footprint source, verification process, geometry precision/tolerance and audit evidence must be specified before implementation. Never approximate majority by choosing the Zone containing the saved GPS point.
 
 The resolver must not use radius-only coverage. A geospatial candidate index may be used for performance only if it is server-maintained, complete for all eligible Zones, and followed by exact polygon evaluation. The index itself is not proof of coverage.
 
@@ -146,7 +150,9 @@ All tests must use synthetic data and a `demo-*` Firebase project. The harness m
 19. Saved address has only latitude or only longitude → reject.
 20. Coordinates are strings/booleans/NaN/infinite/out of range when not supported by the canonical saved-address schema → reject.
 21. Two eligible Zone polygons overlap at the pickup point → ambiguous; reject and create no booking/task.
-22. Pickup lies on a polygon edge or shared edge → ambiguous; reject until edge policy is approved.
+22. Pickup is on/near a shared edge and no verified building footprint exists → Admin review required; no booking/task writes.
+23. Verified building footprint overlaps two eligible Zones and one contains strictly more than 50% of its area → resolve to that Zone; record the measured intersection ratios and footprint evidence.
+24. Verified footprint is exactly 50/50, numerically indeterminate, invalid, or has no eligible majority → Admin review required; no booking/task writes.
 23. A Zone is suspended/deactivated after candidate discovery but before booking commit → commit rejected.
 24. Boundary is replaced or approval invalidated after candidate discovery but before booking commit → commit rejected.
 25. A second Zone becomes eligible after candidate discovery but before commit and overlaps the point → commit rejected; exactly-one condition must be re-established.
@@ -156,30 +162,24 @@ All tests must use synthetic data and a `demo-*` Firebase project. The harness m
 
 Every denial test must assert both the expected callable error and that no booking, Walk Task, payment intent, assignment or trusted snapshot write occurred.
 
-## 7. Timezone contract — decision required
+## 7. Timezone contract — Founder decision recorded
 
-The booking schedule is customer-entered local civil time. It must be interpreted using an IANA timezone derived from trusted service-location configuration, not the device timezone and not a client-supplied timezone.
+**Decision:** All DOJO WALK India bookings use the IANA timezone `Asia/Kolkata` (IST), regardless of City or Zone. A Zone must not override this India-wide policy.
 
-**Not yet selected:** whether the canonical timezone is stored on `service_cities/{cityId}`, `service_zones/{zoneId}`, or a separate authoritative location configuration. The current inspected Zone lifecycle source does not establish a canonical IANA timezone field.
+- The trusted server-side country configuration for India is the source of truth; clients and device timezone settings are never authoritative.
+- The booking acceptance service must resolve the India country configuration and validate `Asia/Kolkata` against the runtime IANA timezone database. Do not accept a client-supplied `timeZone` or `serviceTimeZone`.
+- Persist the resolved timezone as server-authored `serviceTimeZone: "Asia/Kolkata"` in the booking's trusted service snapshot, alongside the original local date/time and computed UTC instant.
+- The India country configuration source/document path and its revision must be pinned in the implementation contract before runtime code is written. Do not invent or silently assume a Firestore country-config collection that is not yet present.
+- A future non-India launch requires a separate country-level timezone policy; it must not change already accepted booking instants.
+- India currently has no daylight-saving clock changes. The generic conversion layer must still define deterministic behavior for ambiguous/nonexistent local times in other future country configurations; no silent guessing is permitted.
 
-Before implementation, approve:
-
-1. One authoritative timezone source and field name.
-2. Whether Zone may override City timezone (recommended default: no; inherit from City unless a documented exception is required).
-3. Validation against the IANA timezone database.
-4. Snapshot field name and revision/change behavior.
-5. Policy for ambiguous/nonexistent local times caused by daylight-saving transitions.
-
-Required tests after decision:
-
-- Convert a selected local date/time using the pinned IANA timezone to a UTC timestamp.
-- Persist the original local date, local time, IANA timezone and UTC instant together.
-- A device timezone change must not alter the booking instant.
-- A timezone configuration change after booking must not rewrite an already accepted booking.
-- Invalid or missing timezone must fail closed.
-- Ambiguous/nonexistent local times must follow the explicitly approved policy; never silently guess.
-
-India pilot note: `Asia/Kolkata` is the expected IANA zone for the current Gautam Buddha Nagar pilot, but this document does **not** hardcode it into runtime or declare the authoritative schema field.
+Required tests:
+1. India service location resolves to `Asia/Kolkata` from trusted country configuration.
+2. Client timezone fields and device timezone changes cannot alter the resolved timezone or UTC instant.
+3. Original local date, local time, IANA timezone, UTC instant and source-config revision are persisted together.
+4. Missing, invalid or unsupported trusted timezone configuration fails closed.
+5. A later country-config change does not rewrite an already accepted booking.
+6. The conversion layer's ambiguous/nonexistent local-time behavior is explicit and tested before any non-India timezone is enabled.
 
 ## 8. Booking flow placement
 
@@ -191,7 +191,7 @@ The intended server sequence is:
 4. Build canonical pet and pickup snapshots from trusted records.
 5. Validate saved pickup coordinates.
 6. Resolve exactly one eligible Zone and pin its trusted revision/Boundary/approval snapshot.
-7. Resolve and pin the authoritative IANA timezone after Section 7 is approved.
+7. Resolve and pin `Asia/Kolkata` from trusted India country configuration and persist the timezone/config revision.
 8. Normalize the schedule and convert local occurrences to UTC.
 9. Check availability and capacity for the resolved Zone and requested time slots.
 10. Quote and collect payment only after availability is confirmed, according to the approved payment contract.
@@ -205,8 +205,8 @@ These are not to be silently guessed:
 
 - Final Zone schema and status/eligibility tuple must be frozen against the merged PR #71 contract.
 - Exact-one spatial resolution strategy, index completeness and transaction/race design.
-- Polygon edge/shared-boundary semantics.
-- Canonical timezone field/source and DST policy.
+- Verified building-footprint source/verification and majority-area algorithm for shared Zone boundaries; no point-only approximation.
+- Canonical India country-configuration document path/revision and deterministic generic DST policy before non-India launch.
 - Coordinate precision and accepted saved-address schema.
 - Booking availability/capacity semantics and Zone scoping.
 - Booking idempotency key/retention and final transaction boundaries.
@@ -231,8 +231,8 @@ This contract candidate does not:
 ## 11. Review sequence
 
 1. Review this contract against the final Zone Lifecycle API contract and PR #71.
-2. Resolve the timezone source and edge/overlap semantics.
-3. Implement synthetic Emulator fixtures and resolver acceptance tests only.
+2. Record the trusted India country-config source/revision and the verified building-footprint source, verification and area-measurement/tolerance contract.
+3. Implement synthetic Emulator fixtures and resolver acceptance tests only, including strict-majority, exact-tie, missing-footprint and race cases.
 4. Run the negative cases first against the unimplemented resolver baseline; distinguish expected missing-endpoint failures from harness failures.
 5. Implement the resolver on a dedicated branch only after tests are executable.
 6. Add authenticated Booking callable only after resolver, timezone and ownership tests pass.
