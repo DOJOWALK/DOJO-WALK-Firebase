@@ -233,7 +233,7 @@ This is not an unrestricted customer callable. It is invoked only after verified
 ### 5.5 Automatic Walker assignment
 
 - After paid tasks are materialized, the assignment service attempts eligible Walkers automatically; routine Central Admin approval is not a prerequisite.
-- Candidate Walker must be `isActive == true`, `isApproved == true`, `status == "approved"`, and have a current active `walker_zone_assignments` record for the exact `serviceZoneId`.
+- Candidate Walker must be proven eligible from the current Partner/Walker source schema before implementation: active and approved state, exact Zone assignment, availability, schedule overlap, skills and workload capacity must all be checked server-side. The field names `isActive`, `isApproved`, `status == "approved"` and collection `walker_zone_assignments` are **unverified candidates**, not approved canonical schema. Do not implement against these names until the Partner repository and current assignment model are audited and the exact contract is recorded.
 - Assignment also checks schedule overlap, availability, skills/operational eligibility and capacity using the finalized Walker schema; no profile preference alone authorizes assignment.
 - Assignment uses a transaction/lease so two tasks cannot consume the same Walker availability concurrently.
 - If no eligible Walker is available, task remains unassigned with `assignmentStatus: "backup_required"` or `exception`; do not falsely confirm a Walker. Notify operations through outbox/exception. The already paid Booking remains visible with an honest operational status and applicable customer communication.
@@ -243,6 +243,8 @@ This is not an unrestricted customer callable. It is invoked only after verified
 ## 6. Zone and building-footprint evidence pinned to Booking
 
 Booking stores the resolution evidence so later Zone edits cannot silently rewrite history:
+
+Before a resolver treats a Zone as eligible, it must re-read and validate the live Zone document and the referenced approval record: `workflowStatus == "active"`, `isServiceActive == true`, verified Boundary ID/revision/hash match, and the exact `approvedRequestId` document must exist with `status == "approved"`, `requestType == "activation"`, matching `zoneId`, `revision == approvedRevision`, `boundaryId == approvedBoundaryId` and `boundaryHash == approvedBoundaryHash`. This mirrors the activation/approval checks in the Zone lifecycle callable; an `approved` label alone is insufficient.
 
 - `serviceZoneId`, `cityId`
 - `zoneRevisionAtResolution`
