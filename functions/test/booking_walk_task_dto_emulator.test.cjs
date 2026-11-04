@@ -210,6 +210,7 @@ test("finite Regular booking keeps every generated occurrence and never creates 
 
 test("Immediate ignores client device time and cannot create a confirmed task from ASAP alone", async () => {
   const input = baseInput({ request: { bookingPlan: "immediate", schedule: { preferredTime: "ASAP", clientNow: "2099-01-01T00:00:00Z" } } });
+  input.bookingId = "booking-immediate-no-slot";
   assert.throws(() => validateRequest({ ...input.request, scheduledAt: "2099-01-01T00:00:00Z" }), /FORGED_OR_UNKNOWN_FIELD/);
   assert.equal(input.request.schedule.preferredTime, "ASAP");
   // Immediate has no server-verified slot in this fixture, so no aggregate is written.
