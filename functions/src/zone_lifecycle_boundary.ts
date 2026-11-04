@@ -197,7 +197,7 @@ export const submitServiceZoneForFounderReview = onCall({ region: REGION }, asyn
       zone.verifiedBoundaryId !== boundaryId || zone.currentBoundaryId !== boundaryId ||
       boundary.locationType !== "zone" || boundary.locationId !== zoneId || boundary.zoneId !== zoneId ||
       boundary.verificationStatus !== "verified" || boundary.geometryHash !== zone.verifiedBoundaryHash ||
-      boundary.revision !== zone.verifiedBoundaryRevision || boundary.zoneRevision !== env.expectedRevision) {
+      boundary.revision !== zone.verifiedBoundaryRevision || boundary.zoneRevision > env.expectedRevision) {
       throw new HttpsError("failed-precondition", "Only the exact current verified Boundary can be submitted.");
     }
     if (pending.docs.length) throw new HttpsError("failed-precondition", "A pending activation approval request already exists.");
