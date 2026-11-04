@@ -193,6 +193,26 @@ test("past scheduled occurrence without a started event requires review, not an 
   assert.equal(result.basis, "past_due_operations_review");
 });
 
+test("company failure with an available backup enters replacement workflow without automatic refund", () => {
+  assert.deepEqual(serviceFailureRemedy({ backupAvailable: true }), {
+    action: "replacement_workflow", automaticRefundPaise: 0,
+  });
+});
+
+test("company failure without backup offers reschedule or full affected-walk refund", () => {
+  assert.deepEqual(serviceFailureRemedy({ backupAvailable: false }), {
+    action: "offer_refund_or_reschedule", automaticRefundPaise: 0,
+  });
+  assert.equal(serviceFailureRemedy({ backupAvailable: false, customerChoice: "refund" }).automaticRefundPaise,
+    "full_affected_walk_amount");
+  assert.equal(serviceFailureRemedy({ backupAvailable: false, customerChoice: "reschedule" }).action, "reschedule");
+});
+
+test("customer confirmation is required before cancellation is committed", () => {
+  assert.throws(() => assertCustomerConfirmed(false), /CUSTOMER_CONFIRMATION_REQUIRED/);
+  assert.doesNotThrow(() => assertCustomerConfirmed(true));
+});
+
 test("₹2,000 refund routes to Central Admin approval", () => {
   assert.equal(refundApprover(200000), "central_admin");
 });
