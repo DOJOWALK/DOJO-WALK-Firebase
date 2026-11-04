@@ -377,6 +377,53 @@ test("15 — Reactivation requires Founder approval of the exact request before 
   assert.equal(after.get("revision"), 33);
 });
 
+
+test("16 — Full synthetic activation path: draft → Boundary review → Founder approval → Central activation", async () => {
+  const created = await callAs("central", "createServiceZoneDraft", {
+    requestId: "full-flow-create-16", expectedRevision: 0, stateId: "state-test",
+    districtId: "district-test", cityId: `${PREFIX}-city-a`, name: "Full Lifecycle Synthetic Zone"
+  });
+  const zoneId = created.data.zoneId;
+  const boundaryDraft = await callAs("central", "createServiceZoneBoundaryDraft", {
+    requestId: "full-flow-boundary-16", expectedRevision: 1, zoneId,
+    points: [{lat:28.51,lng:77.31},{lat:28.51,lng:77.41},{lat:28.61,lng:77.41},{lat:28.51,lng:77.31}],
+    sourceType: "governmentGis", sourceName: "Synthetic city GIS", sourceReference: "fixture:full-flow-16"
+  });
+  const boundaryId = boundaryDraft.data.boundaryId;
+  track(`service_location_boundaries/${boundaryId}`);
+  const assignmentPath = `zone_boundary_review_assignments/${PREFIX}-full-flow-review`;
+  track(assignmentPath);
+  await seed(assignmentPath, { reviewerUid: uid["reviewer-submitter"], zoneId, boundaryId, status: "assigned", isActive: true });
+  const reviewed = await callAs("reviewer-submitter", "reviewServiceZoneBoundary", {
+    requestId: "full-flow-review-16", expectedRevision: 2, zoneId, boundaryId,
+    decision: "verified", notes: "Synthetic geometry validated"
+  });
+  assert.equal(reviewed.data.workflowStatus, "boundary_verified");
+  const submitted = await callAs("central", "submitServiceZoneForFounderReview", {
+    requestId: "full-flow-submit-16", expectedRevision: 3, zoneId, boundaryId
+  });
+  assert.equal(submitted.data.workflowStatus, "founder_review_pending");
+  track(`service_zone_approval_requests/${submitted.data.approvalRequestId}`);
+  const boundary = await db.doc(`service_location_boundaries/${boundaryId}`).get();
+  const founderDecision = await callAs("founder", "decideServiceZoneFounderApproval", {
+    requestId: "full-flow-founder-16", expectedRevision: 4,
+    approvalRequestId: submitted.data.approvalRequestId, zoneId, revision: 4, boundaryId,
+    boundaryHash: boundary.get("geometryHash"), requestType: "activation",
+    decision: "approved", notes: "Synthetic exact-tuple approval"
+  });
+  assert.equal(founderDecision.data.workflowStatus, "approved");
+  const activated = await callAs("central", "activateServiceZone", {
+    requestId: "full-flow-activate-16", expectedRevision: 5, zoneId
+  });
+  assert.equal(activated.data.workflowStatus, "active");
+  const finalZone = await db.doc(`service_zones/${zoneId}`).get();
+  assert.equal(finalZone.get("workflowStatus"), "active");
+  assert.equal(finalZone.get("isServiceActive"), true);
+  assert.equal(finalZone.get("revision"), 6);
+  assert.equal(finalZone.get("verifiedBoundaryHash"), boundary.get("geometryHash"));
+  assert.equal((await db.collection("service_zone_audit").where("zoneId", "==", zoneId).get()).size, 5);
+});
+
 test.after(async () => {
   for (const client of clients.values()) await deleteApp(client.app).catch(() => {});
   if (db) {
