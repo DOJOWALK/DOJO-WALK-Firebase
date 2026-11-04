@@ -1752,3 +1752,271 @@ export const getVisibleServiceZoneBoundary = onCall({ region: "asia-south1" }, a
 
   throw new HttpsError("permission-denied", "Boundary is outside the actor's current review or draft scope.");
 });
+
+
+// -----------------------------------------------------------------------------
+// Trusted Zone assignment writers — callable-only mutations.
+// Founder/Central Admin authority is resolved from server-side membership docs;
+// client role claims, onboarding preferences and legacy super_admin are ignored.
+// -----------------------------------------------------------------------------
+
+function requireSafeId(value: unknown, field: string): string {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(value)) {
+    throw new HttpsError("invalid-argument", `${field} is invalid.`);
+  }
+  return value;
+}
+
+function requireReason(value: unknown): string {
+  if (typeof value !== "string" || value.trim().length < 3 || value.trim().length > 500) {
+    throw new HttpsError("invalid-argument", "A reason between 3 and 500 characters is required.");
+  }
+  return value.trim();
+}
+
+async function requireCentralZoneOperator(uid: string): Promise<void> {
+  const snap = await db.doc(`admin_users/${uid}`).get();
+  if (!snap.exists || snap.get("isActive") !== true || snap.get("role") !== "central_admin" ||
+      permissionMap(snap.data()).zoneOperations !== true) {
+    throw new HttpsError("permission-denied", "Active Central Admin Zone Operations permission is required.");
+  }
+}
+
+async function requireFounderAppointmentAuthority(uid: string): Promise<void> {
+  const snap = await db.doc(`founder_users/${uid}`).get();
+  if (!snap.exists || snap.get("isActive") !== true || snap.get("authorityType") !== "founder_ceo" ||
+      permissionMap(snap.data()).cityManagerAppointmentApproval !== true) {
+    throw new HttpsError("permission-denied", "Founder appointment approval authority is required.");
+  }
+}
+
+async function requireActiveZoneWithVerifiedBoundary(tx: FirebaseFirestore.Transaction, zoneId: string): Promise<FirebaseFirestore.DocumentData> {
+  const zoneRef = db.doc(`service_zones/${zoneId}`);
+  const zoneSnap = await tx.get(zoneRef);
+  if (!zoneSnap.exists) throw new HttpsError("not-found", "Zone was not found.");
+  const zone = zoneSnap.data() ?? {};
+  if (!isCanonicalZone(zone) || zone.status !== "active" || zone.isServiceActive !== true ||
+      typeof zone.verifiedBoundaryId !== "string" || !zone.verifiedBoundaryId ||
+      !Number.isInteger(zone.verifiedBoundaryRevision) || typeof zone.boundaryHash !== "string") {
+    throw new HttpsError("failed-precondition", "Zone must be canonical, active and service-enabled with a verified boundary.");
+  }
+  const boundarySnap = await tx.get(db.doc(`service_location_boundaries/${zone.verifiedBoundaryId}`));
+  const boundary = boundarySnap.data() ?? {};
+  if (!boundarySnap.exists || boundary.locationType !== "zone" || boundary.locationId !== zoneId ||
+      boundary.verificationStatus !== "verified" ||
+      boundary.zoneRevision !== zone.verifiedBoundaryRevision ||
+      boundary.geometryHash !== zone.boundaryHash) {
+    throw new HttpsError("failed-precondition", "Zone verified boundary revision/hash is not current.");
+  }
+  return zone;
+}
+
+function writeAssignmentAudit(
+  tx: FirebaseFirestore.Transaction,
+  actorUid: string,
+  action: string,
+  assignmentType: string,
+  assignmentId: string,
+  targetUid: string,
+  scopeId: string,
+  reason: string,
+): void {
+  const auditRef = db.collection("service_zone_assignment_audit").doc();
+  tx.create(auditRef, {
+    actorUid, action, assignmentType, assignmentId, targetUid, scopeId, reason,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+}
+
+export const approveCityManagerAppointment = onCall({ region: "asia-south1" }, async (request) => {
+  const actorUid = request.auth?.uid;
+  if (!actorUid) throw new HttpsError("unauthenticated", "Sign-in is required.");
+  const targetUid = requireSafeId(request.data?.targetUid, "targetUid");
+  const cityId = requireSafeId(request.data?.cityId, "cityId");
+  const approvalId = requireSafeId(request.data?.approvalId, "approvalId");
+  const reason = requireReason(request.data?.reason);
+  if (targetUid === actorUid) throw new HttpsError("permission-denied", "Self-appointment is forbidden.");
+  await requireFounderAppointmentAuthority(actorUid);
+  const target = await db.doc(`admin_users/${targetUid}`).get();
+  if (!target.exists || target.get("isActive") !== true || target.get("role") !== "city_manager") {
+    throw new HttpsError("failed-precondition", "Target must be an active City Manager membership.");
+  }
+  const ref = db.doc(`founder_appointment_approvals/${approvalId}`);
+  await db.runTransaction(async (tx) => {
+    const existing = await tx.get(ref);
+    if (existing.exists) throw new HttpsError("already-exists", "Approval ID already exists.");
+    tx.create(ref, {
+      approvalId, targetUid, cityId, approvedBy: actorUid, reason,
+      status: "approved", consumed: false,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+  });
+  return { ok: true, approvalId };
+});
+
+export const assignCityManager = onCall({ region: "asia-south1" }, async (request) => {
+  const actorUid = request.auth?.uid;
+  if (!actorUid) throw new HttpsError("unauthenticated", "Sign-in is required.");
+  const targetUid = requireSafeId(request.data?.targetUid, "targetUid");
+  const cityId = requireSafeId(request.data?.cityId, "cityId");
+  const approvalId = requireSafeId(request.data?.approvalId, "approvalId");
+  const assignmentId = requireSafeId(request.data?.assignmentId, "assignmentId");
+  const reason = requireReason(request.data?.reason);
+  if (targetUid === actorUid) throw new HttpsError("permission-denied", "Self-assignment is forbidden.");
+  await requireCentralZoneOperator(actorUid);
+  const approvalRef = db.doc(`founder_appointment_approvals/${approvalId}`);
+  const targetRef = db.doc(`admin_users/${targetUid}`);
+  const assignmentRef = db.doc(`admin_scope_assignments/${assignmentId}`);
+  await db.runTransaction(async (tx) => {
+    const [approval, target, existing, byCity, byManager] = await Promise.all([
+      tx.get(approvalRef), tx.get(targetRef), tx.get(assignmentRef),
+      tx.get(db.collection("admin_scope_assignments").where("role", "==", "city_manager").where("scopeType", "==", "city").where("scopeId", "==", cityId)),
+      tx.get(db.collection("admin_scope_assignments").where("adminUid", "==", targetUid).where("role", "==", "city_manager").where("scopeType", "==", "city")),
+    ]);
+    if (!approval.exists || approval.get("status") !== "approved" || approval.get("consumed") === true ||
+        approval.get("targetUid") !== targetUid || approval.get("cityId") !== cityId) {
+      throw new HttpsError("failed-precondition", "A matching unused Founder approval is required.");
+    }
+    if (!target.exists || target.get("isActive") !== true || target.get("role") !== "city_manager") {
+      throw new HttpsError("failed-precondition", "Target must be an active City Manager.");
+    }
+    if (existing.exists) throw new HttpsError("already-exists", "Assignment ID already exists.");
+    const activeCity = byCity.docs.filter((d) => assignmentIsCurrent(d.data(), "active"));
+    const activeManager = byManager.docs.filter((d) => assignmentIsCurrent(d.data(), "active"));
+    if (activeCity.length || activeManager.length) throw new HttpsError("already-exists", "City or Manager already has an active City Manager assignment.");
+    tx.update(approvalRef, { consumed: true, consumedBy: actorUid, consumedAt: FieldValue.serverTimestamp(), assignmentId });
+    tx.create(assignmentRef, {
+      adminUid: targetUid, role: "city_manager", scopeType: "city", scopeId: cityId,
+      status: "active", isActive: true, reason, createdBy: actorUid,
+      createdAt: FieldValue.serverTimestamp(), effectiveFrom: FieldValue.serverTimestamp(),
+    });
+    writeAssignmentAudit(tx, actorUid, "city_manager_assigned", "admin_scope", assignmentId, targetUid, cityId, reason);
+  });
+  return { ok: true, assignmentId };
+});
+
+export const assignZoneSupervisor = onCall({ region: "asia-south1" }, async (request) => {
+  const actorUid = request.auth?.uid;
+  if (!actorUid) throw new HttpsError("unauthenticated", "Sign-in is required.");
+  const targetUid = requireSafeId(request.data?.targetUid, "targetUid");
+  const zoneId = requireSafeId(request.data?.zoneId, "zoneId");
+  const assignmentId = requireSafeId(request.data?.assignmentId, "assignmentId");
+  const reason = requireReason(request.data?.reason);
+  if (targetUid === actorUid) throw new HttpsError("permission-denied", "Self-assignment is forbidden.");
+  await requireCentralZoneOperator(actorUid);
+  const targetRef = db.doc(`admin_users/${targetUid}`);
+  const assignmentRef = db.doc(`admin_scope_assignments/${assignmentId}`);
+  await db.runTransaction(async (tx) => {
+    const [target, existing, zone] = await Promise.all([
+      tx.get(targetRef), tx.get(assignmentRef), requireActiveZoneWithVerifiedBoundary(tx, zoneId),
+    ]);
+    if (!target.exists || target.get("isActive") !== true || target.get("role") !== "zone_supervisor") {
+      throw new HttpsError("failed-precondition", "Target must be an active Zone Supervisor.");
+    }
+    if (existing.exists) throw new HttpsError("already-exists", "Assignment ID already exists.");
+    const current = await tx.get(db.collection("admin_scope_assignments")
+      .where("role", "==", "zone_supervisor").where("scopeType", "==", "zone").where("scopeId", "==", zoneId));
+    if (current.docs.some((d) => assignmentIsCurrent(d.data(), "active"))) {
+      throw new HttpsError("already-exists", "This Zone already has a primary Supervisor.");
+    }
+    tx.create(assignmentRef, {
+      adminUid: targetUid, role: "zone_supervisor", scopeType: "zone", scopeId: zoneId,
+      status: "active", isActive: true, reason, createdBy: actorUid,
+      createdAt: FieldValue.serverTimestamp(), effectiveFrom: FieldValue.serverTimestamp(),
+    });
+    writeAssignmentAudit(tx, actorUid, "zone_supervisor_assigned", "admin_scope", assignmentId, targetUid, zoneId, reason);
+  });
+  return { ok: true, assignmentId, zoneId: zone.zoneId ?? zoneId };
+});
+
+export const assignWalkerToZone = onCall({ region: "asia-south1" }, async (request) => {
+  const actorUid = request.auth?.uid;
+  if (!actorUid) throw new HttpsError("unauthenticated", "Sign-in is required.");
+  const targetUid = requireSafeId(request.data?.targetUid, "targetUid");
+  const zoneId = requireSafeId(request.data?.zoneId, "zoneId");
+  const assignmentId = requireSafeId(request.data?.assignmentId, "assignmentId");
+  const reason = requireReason(request.data?.reason);
+  if (targetUid === actorUid) throw new HttpsError("permission-denied", "Self-assignment is forbidden.");
+  await requireCentralZoneOperator(actorUid);
+  const walkerRef = db.doc(`walkers/${targetUid}`);
+  const assignmentRef = db.doc(`walker_zone_assignments/${assignmentId}`);
+  await db.runTransaction(async (tx) => {
+    const [walker, existing] = await Promise.all([tx.get(walkerRef), tx.get(assignmentRef)]);
+    await requireActiveZoneWithVerifiedBoundary(tx, zoneId);
+    if (!walker.exists || walker.get("isApproved") !== true || walker.get("isActive") !== true || walker.get("status") !== "approved") {
+      throw new HttpsError("failed-precondition", "Walker must be Approved and Active.");
+    }
+    if (existing.exists) throw new HttpsError("already-exists", "Assignment ID already exists.");
+    tx.create(assignmentRef, {
+      walkerUid: targetUid, zoneId, status: "active", isActive: true,
+      reason, createdBy: actorUid, createdAt: FieldValue.serverTimestamp(),
+      effectiveFrom: FieldValue.serverTimestamp(),
+    });
+    writeAssignmentAudit(tx, actorUid, "walker_zone_assigned", "walker_zone", assignmentId, targetUid, zoneId, reason);
+  });
+  return { ok: true, assignmentId, zoneId };
+});
+
+export const assignBoundaryReviewer = onCall({ region: "asia-south1" }, async (request) => {
+  const actorUid = request.auth?.uid;
+  if (!actorUid) throw new HttpsError("unauthenticated", "Sign-in is required.");
+  const reviewerUid = requireSafeId(request.data?.reviewerUid, "reviewerUid");
+  const boundaryId = requireSafeId(request.data?.boundaryId, "boundaryId");
+  const assignmentId = requireSafeId(request.data?.assignmentId, "assignmentId");
+  const reason = requireReason(request.data?.reason);
+  if (reviewerUid === actorUid) throw new HttpsError("permission-denied", "Self-assignment is forbidden.");
+  await requireCentralZoneOperator(actorUid);
+  const reviewerRef = db.doc(`admin_users/${reviewerUid}`);
+  const boundaryRef = db.doc(`service_location_boundaries/${boundaryId}`);
+  const assignmentRef = db.doc(`zone_boundary_review_assignments/${assignmentId}`);
+  await db.runTransaction(async (tx) => {
+    const [reviewer, boundary, existing] = await Promise.all([tx.get(reviewerRef), tx.get(boundaryRef), tx.get(assignmentRef)]);
+    if (!reviewer.exists || reviewer.get("isActive") !== true || permissionMap(reviewer.data()).zoneBoundaryReview !== true) {
+      throw new HttpsError("failed-precondition", "Reviewer must be active and explicitly permitted.");
+    }
+    if (!boundary.exists || boundary.get("locationType") !== "zone" || typeof boundary.get("locationId") !== "string") {
+      throw new HttpsError("not-found", "Zone boundary was not found.");
+    }
+    if (boundary.get("createdBy") === reviewerUid || boundary.get("submittedBy") === reviewerUid) {
+      throw new HttpsError("permission-denied", "A submitter cannot review their own boundary.");
+    }
+    if (existing.exists) throw new HttpsError("already-exists", "Review assignment ID already exists.");
+    tx.create(assignmentRef, {
+      reviewerUid, zoneId: boundary.get("locationId"), boundaryId,
+      status: "assigned", isActive: true, reason, createdBy: actorUid,
+      createdAt: FieldValue.serverTimestamp(), effectiveFrom: FieldValue.serverTimestamp(),
+    });
+    writeAssignmentAudit(tx, actorUid, "boundary_reviewer_assigned", "zone_boundary_review", assignmentId, reviewerUid, boundary.get("locationId"), reason);
+  });
+  return { ok: true, assignmentId, boundaryId };
+});
+
+export const revokeZoneAssignment = onCall({ region: "asia-south1" }, async (request) => {
+  const actorUid = request.auth?.uid;
+  if (!actorUid) throw new HttpsError("unauthenticated", "Sign-in is required.");
+  const assignmentType = request.data?.assignmentType;
+  const assignmentId = requireSafeId(request.data?.assignmentId, "assignmentId");
+  const reason = requireReason(request.data?.reason);
+  const collection = assignmentType === "walker_zone" ? "walker_zone_assignments"
+    : assignmentType === "admin_scope" ? "admin_scope_assignments"
+    : assignmentType === "zone_boundary_review" ? "zone_boundary_review_assignments" : null;
+  if (!collection) throw new HttpsError("invalid-argument", "assignmentType is invalid.");
+  await requireCentralZoneOperator(actorUid);
+  const ref = db.doc(`${collection}/${assignmentId}`);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new HttpsError("not-found", "Assignment was not found.");
+    if (!assignmentIsCurrent(snap.data() ?? {}, collection === "zone_boundary_review_assignments" ? "assigned" : "active")) {
+      throw new HttpsError("failed-precondition", "Assignment is not active.");
+    }
+    const data = snap.data() ?? {};
+    const targetUid = String(data.walkerUid ?? data.adminUid ?? data.reviewerUid ?? "");
+    const scopeId = String(data.zoneId ?? data.scopeId ?? data.boundaryId ?? "");
+    tx.update(ref, {
+      status: "revoked", isActive: false, revokedAt: FieldValue.serverTimestamp(),
+      revokedBy: actorUid, revokeReason: reason, updatedAt: FieldValue.serverTimestamp(),
+    });
+    writeAssignmentAudit(tx, actorUid, "zone_assignment_revoked", assignmentType, assignmentId, targetUid, scopeId, reason);
+  });
+  return { ok: true, assignmentId, status: "revoked" };
+});
