@@ -5,6 +5,7 @@ on:
     paths:
       - "functions/src/booking_source_records.ts"
       - "functions/test/booking_source_records_emulator.test.cjs"
+      - "functions/test/automatic_booking_acceptance_emulator.test.cjs"
       - "functions/package.json"
       - "functions/tsconfig.json"
       - "firebase.json"
