@@ -2066,3 +2066,4 @@ export {
   activateServiceZone,
 } from "./zone_lifecycle";
 export { createServiceZoneBoundaryDraft, submitServiceZoneForFounderReview } from "./zone_lifecycle_boundary";
+\nexport { requestServiceZoneDeactivation, suspendServiceZoneForEmergency, requestServiceZoneReactivation, reactivateServiceZone } from "./zone_lifecycle_operations";
