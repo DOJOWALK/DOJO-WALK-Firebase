@@ -1,9 +1,9 @@
 # Automatic Booking — Synthetic Firestore Emulator Acceptance Plan V1
 
-**Status:** Test-first acceptance suite / pre-implementation reference model  
-**Approved scope:** Automatic Booking across all eligible Active Zones without routine Central Admin approval.  
-**Date:** 2026-11-04  
-**Base context:** Booking PRs #76–#79, Zone lifecycle PR #71, Zone→Booking contract PR #80.  
+**Status:** Test-first acceptance suite / pre-implementation reference model\
+**Approved scope:** Automatic Booking across all eligible Active Zones without routine Central Admin approval.\
+**Date:** 2026-11-04\
+**Base context:** Booking PRs #76–#79, Zone lifecycle PR #71, Zone→Booking contract PR #80.\
 **Safety:** Synthetic demo project only. No production data, live payment, app UI, Rules, callable, migration, merge or deployment.
 
 ## 1. Approved behavior
