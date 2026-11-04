@@ -424,6 +424,40 @@ test("16 — Full synthetic activation path: draft → Boundary review → Found
   assert.equal((await db.collection("service_zone_audit").where("zoneId", "==", zoneId).get()).size, 6);
 });
 
+test("17 — Boundary review rejects coordinates whose stored canonical geometry hash was altered", async () => {
+  const zoneId = `${PREFIX}-zone-hash-mismatch`;
+  const boundaryId = `${PREFIX}-boundary-hash-mismatch`;
+  const assignmentPath = `zone_boundary_review_assignments/${PREFIX}-review-hash-mismatch`;
+  track(`service_zones/${zoneId}`);
+  track(`service_location_boundaries/${boundaryId}`);
+  track(assignmentPath);
+  await seed(`service_zones/${zoneId}`, {
+    schemaVersion: 1, zoneId, cityId: `${PREFIX}-city-a`, name: "Hash mismatch",
+    workflowStatus: "boundary_review_pending", isServiceActive: false, revision: 2,
+    currentBoundaryId: boundaryId
+  });
+  await seed(`service_location_boundaries/${boundaryId}`, {
+    locationType: "zone", locationId: zoneId, zoneId, zoneRevision: 2, revision: 1,
+    points: [{lat:28.5,lng:77.3},{lat:28.5,lng:77.4},{lat:28.6,lng:77.4},{lat:28.5,lng:77.3}],
+    sourceType: "manuallyDrawn", sourceName: "Synthetic test", sourceReference: "fixture:hash-mismatch",
+    verificationStatus: "pending", geometryHash: "f".repeat(64), submittedBy: uid.central
+  });
+  await seed(assignmentPath, {
+    reviewerUid: uid["reviewer-submitter"], zoneId, boundaryId, status: "assigned", isActive: true
+  });
+  await expectCode("reviewer-submitter", "reviewServiceZoneBoundary", {
+    requestId: "review-hash-mismatch-17", expectedRevision: 2, zoneId, boundaryId,
+    decision: "verified", notes: "Stored hash must match canonical coordinates"
+  }, "failed-precondition");
+  await assertZoneUnchanged(zoneId, {
+    workflowStatus: "boundary_review_pending", revision: 2, isServiceActive: false
+  });
+  const boundary = await db.doc(`service_location_boundaries/${boundaryId}`).get();
+  assert.equal(boundary.get("verificationStatus"), "pending");
+  assert.equal(boundary.get("reviewedBy"), undefined);
+  assert.equal((await db.collection("service_zone_audit").where("zoneId", "==", zoneId).get()).size, 0);
+});
+
 test.after(async () => {
   for (const client of clients.values()) await deleteApp(client.app).catch(() => {});
   if (db) {
