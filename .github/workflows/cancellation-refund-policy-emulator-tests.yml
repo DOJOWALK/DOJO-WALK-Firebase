@@ -5,6 +5,7 @@ on:
     paths:
       - "functions/test/cancellation_refund_policy_emulator.test.cjs"
       - ".github/workflows/cancellation-refund-policy-emulator-tests.yml"
+      - "functions/package.json"
       - "package.json"
       - "firebase.json"
 
@@ -12,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: cancellation-refund-policy-\${{ github.event.pull_request.number || github.ref }}
+  group: cancellation-refund-policy-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -28,6 +29,8 @@ jobs:
           node-version: 22
       - name: Install Firebase CLI dependencies
         run: npm install --no-package-lock --no-audit --no-fund
+      - name: Install Functions dependencies
+        run: npm --prefix functions install --no-package-lock --no-audit --no-fund
       - name: Run synthetic Cancellation and Refund Policy Emulator tests
         env:
           GCLOUD_PROJECT: demo-dojo-cancellation-refund
