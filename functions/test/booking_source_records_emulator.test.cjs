@@ -76,3 +76,50 @@ test("rejects malformed identity values before any document lookup", async () =>
   await assert.rejects(loadOwnedBookingSourceRecords(db, `${PREFIX}-alice`, "../bob-dog", "alice-home"), /BOOKING_DOG_ID_INVALID/);
   await assert.rejects(loadOwnedBookingSourceRecords(db, `${PREFIX}-alice`, "alice-dog", ""), /BOOKING_ADDRESS_ID_INVALID/);
 });
+
+
+const { validateAndNormalizeBookingRequest } = require("../lib/booking_request_validator");
+
+test("composes authenticated-UID source loading with canonical Booking request validation", async () => {
+  const request = {
+    bookingPlan: "one_time",
+    dogId: "alice-dog",
+    pickupAddressId: "alice-home",
+    schedule: {
+      date: "2026-11-10",
+      walks: [{ time: "06:30", durationMinutes: 30 }],
+    },
+  };
+  const trustedSources = await loadOwnedBookingSourceRecords(
+    db,
+    `${PREFIX}-alice`,
+    request.dogId,
+    request.pickupAddressId,
+  );
+  const normalized = validateAndNormalizeBookingRequest(request, trustedSources);
+
+  assert.equal(normalized.dog.dogId, "alice-dog");
+  assert.equal(normalized.dog.dogName, "Alice Dog");
+  assert.equal(normalized.pickup.pickupAddressId, "alice-home");
+  assert.equal(normalized.pickup.pickupAddress.area, "Synthetic Alice Address");
+  assert.deepEqual(normalized.schedule, {
+    kind: "scheduled_occurrences",
+    occurrences: [{
+      localDate: "2026-11-10",
+      localTime: "06:30",
+      durationMinutes: 30,
+      walkNumber: 1,
+    }],
+  });
+});
+
+test("does not pass another customer's source records into canonical request validation", async () => {
+  await assert.rejects(
+    loadOwnedBookingSourceRecords(db, `${PREFIX}-alice`, "bob-dog", "alice-home"),
+    /BOOKING_DOG_NOT_FOUND/,
+  );
+  await assert.rejects(
+    loadOwnedBookingSourceRecords(db, `${PREFIX}-alice`, "alice-dog", "bob-home"),
+    /BOOKING_ADDRESS_NOT_FOUND/,
+  );
+});
