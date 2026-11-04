@@ -89,12 +89,12 @@ test.before(async () => {
   await seed(`zone_boundary_review_assignments/${PREFIX}-reviewer-own`, { reviewerUid: uid["reviewer-submitter"], zoneId: `${PREFIX}-zone-self`, boundaryId: `${PREFIX}-boundary-self`, status: "assigned" });
 
   await seed(`service_zones/${PREFIX}-zone-self`, { schemaVersion: 1, zoneId: `${PREFIX}-zone-self`, stateId: "state-test", districtId: "district-test", cityId: `${PREFIX}-city-a`, name: "Self Review", normalizedName: "self review", workflowStatus: "boundary_review_pending", isServiceActive: false, revision: 2, currentBoundaryId: `${PREFIX}-boundary-self` });
-  await seed(`service_location_boundaries/${PREFIX}-boundary-self`, { locationType: "zone", locationId: `${PREFIX}-zone-self`, zoneId: `${PREFIX}-zone-self`, zoneRevision: 2, revision: 1, points: [[77.3,28.5],[77.4,28.5],[77.4,28.6],[77.3,28.5]], sourceType: "manuallyDrawn", sourceName: "Synthetic fixture", sourceReference: "fixture:self", verificationStatus: "pending", submittedBy: uid["reviewer-submitter"] });
+  await seed(`service_location_boundaries/${PREFIX}-boundary-self`, { locationType: "zone", locationId: `${PREFIX}-zone-self`, zoneId: `${PREFIX}-zone-self`, zoneRevision: 2, revision: 1, points: [{ lat: 28.5, lng: 77.3 }, { lat: 28.5, lng: 77.4 }, { lat: 28.6, lng: 77.4 }, { lat: 28.5, lng: 77.3 }], sourceType: "manuallyDrawn", sourceName: "Synthetic fixture", sourceReference: "fixture:self", verificationStatus: "pending", submittedBy: uid["reviewer-submitter"] });
 
   const approvalZone = `${PREFIX}-zone-approval`;
   const approvalBoundary = `${PREFIX}-boundary-approval`;
   await seed(`service_zones/${approvalZone}`, { schemaVersion: 1, zoneId: approvalZone, stateId: "state-test", districtId: "district-test", cityId: `${PREFIX}-city-a`, name: "Approval Zone", normalizedName: "approval zone", workflowStatus: "founder_review_pending", isServiceActive: false, revision: 3, currentBoundaryId: approvalBoundary, verifiedBoundaryId: approvalBoundary, verifiedBoundaryRevision: 1, verifiedBoundaryHash: "a".repeat(64) });
-  await seed(`service_location_boundaries/${approvalBoundary}`, { locationType: "zone", locationId: approvalZone, zoneId: approvalZone, zoneRevision: 3, revision: 1, points: [[77.3,28.5],[77.4,28.5],[77.4,28.6],[77.3,28.5]], sourceType: "governmentGis", sourceName: "Synthetic GIS", sourceReference: "fixture:approval", verificationStatus: "verified", geometryHash: "a".repeat(64), submittedBy: uid.central });
+  await seed(`service_location_boundaries/${approvalBoundary}`, { locationType: "zone", locationId: approvalZone, zoneId: approvalZone, zoneRevision: 3, revision: 1, points: [{ lat: 28.5, lng: 77.3 }, { lat: 28.5, lng: 77.4 }, { lat: 28.6, lng: 77.4 }, { lat: 28.5, lng: 77.3 }], sourceType: "governmentGis", sourceName: "Synthetic GIS", sourceReference: "fixture:approval", verificationStatus: "verified", geometryHash: "a".repeat(64), submittedBy: uid.central });
   await seed(`service_zone_approval_requests/${PREFIX}-approval-current`, { zoneId: approvalZone, revision: 3, boundaryId: approvalBoundary, boundaryHash: "a".repeat(64), requestType: "activation", status: "pending", requestedBy: uid.central });
 
   const legacyZone = `${PREFIX}-zone-legacy`;
@@ -110,7 +110,7 @@ test.before(async () => {
     [`${PREFIX}-zone-city-b`, `${PREFIX}-city-b`, `${PREFIX}-boundary-city-b`, "d".repeat(64)],
   ]) {
     await seed(`service_zones/${zoneId}`, { schemaVersion: 1, zoneId, stateId: "state-test", districtId: "district-test", cityId, name: zoneId, workflowStatus: "active", status: "active", isServiceActive: true, revision: 1, verifiedBoundaryId: boundaryId, verifiedBoundaryRevision: 1, verifiedBoundaryHash: hash });
-    await seed(`service_location_boundaries/${boundaryId}`, { locationType: "zone", locationId: zoneId, zoneId, zoneRevision: 1, revision: 1, points: [[77.3,28.5],[77.4,28.5],[77.4,28.6],[77.3,28.5]], verificationStatus: "verified", geometryHash: hash, submittedBy: uid.central });
+    await seed(`service_location_boundaries/${boundaryId}`, { locationType: "zone", locationId: zoneId, zoneId, zoneRevision: 1, revision: 1, points: [{ lat: 28.5, lng: 77.3 }, { lat: 28.5, lng: 77.4 }, { lat: 28.6, lng: 77.4 }, { lat: 28.5, lng: 77.3 }], verificationStatus: "verified", geometryHash: hash, submittedBy: uid.central });
   }
 
   const raceZone = `${PREFIX}-zone-race`;
