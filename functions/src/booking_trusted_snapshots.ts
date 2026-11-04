@@ -78,6 +78,14 @@ function optionalStringList(
   return result;
 }
 
+function requiredCoordinate(value: unknown): number {
+  if (typeof value === "number") return value;
+  if (typeof value === "string" && value.trim()) {
+    return Number(value.trim());
+  }
+  throw new Error("BOOKING_ADDRESS_COORDINATES_INVALID");
+}
+
 /**
  * Builds a minimal operational dog snapshot from the trusted pet document.
  * Unknown/private pet fields are deliberately ignored. The document ID is
@@ -157,8 +165,8 @@ export function buildCanonicalPickupSnapshot(
     throw new Error("BOOKING_ADDRESS_COORDINATES_INCOMPLETE");
   }
   if (hasLatitude && hasLongitude) {
-    const latitude = typeof rawLatitude === "number" ? rawLatitude : Number(rawLatitude);
-    const longitude = typeof rawLongitude === "number" ? rawLongitude : Number(rawLongitude);
+    const latitude = requiredCoordinate(rawLatitude);
+    const longitude = requiredCoordinate(rawLongitude);
     if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
         !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
       throw new Error("BOOKING_ADDRESS_COORDINATES_INVALID");
