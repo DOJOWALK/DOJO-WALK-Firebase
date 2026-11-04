@@ -85,6 +85,15 @@ test.before(async () => {
   await seed(`admin_users/${uid.legacy}`, { role: "super_admin", isActive: true });
   await seed(`admin_users/${uid.customer}`, { role: "customer", isActive: true });
 
+  // Canonical synthetic hierarchy used by Zone draft parent-chain checks.
+  await seed("service_countries/india", { name: "India", isActive: true });
+  await seed("service_states/state-test", { countryId: "india", name: "Synthetic State", isActive: true });
+  await seed("service_districts/district-test", { countryId: "india", stateId: "state-test", name: "Synthetic District", isServiceActive: true });
+  await seed("service_districts/district-other", { countryId: "india", stateId: "state-test", name: "Other Synthetic District", isServiceActive: true });
+  await seed(`service_cities/${PREFIX}-city-a`, { countryId: "india", stateId: "state-test", districtId: "district-test", name: "Synthetic City A", isServiceActive: true });
+  await seed(`service_cities/${PREFIX}-city-b`, { countryId: "india", stateId: "state-test", districtId: "district-test", name: "Synthetic City B", isServiceActive: true });
+  await seed(`service_cities/${PREFIX}-city-wrong-parent`, { countryId: "india", stateId: "state-test", districtId: "district-other", name: "Wrong Parent City", isServiceActive: true });
+
   await seed(`admin_scope_assignments/${PREFIX}-manager-city-a`, { adminUid: uid.manager, role: "city_manager", scopeType: "city", scopeId: `${PREFIX}-city-a`, status: "active", isActive: true });
   await seed(`zone_boundary_review_assignments/${PREFIX}-reviewer-own`, { reviewerUid: uid["reviewer-submitter"], zoneId: `${PREFIX}-zone-self`, boundaryId: `${PREFIX}-boundary-self`, status: "assigned" });
 
@@ -96,6 +105,9 @@ test.before(async () => {
   await seed(`service_zones/${approvalZone}`, { schemaVersion: 1, zoneId: approvalZone, stateId: "state-test", districtId: "district-test", cityId: `${PREFIX}-city-a`, name: "Approval Zone", normalizedName: "approval zone", workflowStatus: "founder_review_pending", isServiceActive: false, revision: 3, currentBoundaryId: approvalBoundary, verifiedBoundaryId: approvalBoundary, verifiedBoundaryRevision: 1, verifiedBoundaryHash: "a".repeat(64) });
   await seed(`service_location_boundaries/${approvalBoundary}`, { locationType: "zone", locationId: approvalZone, zoneId: approvalZone, zoneRevision: 3, revision: 1, points: [{ lat: 28.5, lng: 77.3 }, { lat: 28.5, lng: 77.4 }, { lat: 28.6, lng: 77.4 }, { lat: 28.5, lng: 77.3 }], sourceType: "governmentGis", sourceName: "Synthetic GIS", sourceReference: "fixture:approval", verificationStatus: "verified", geometryHash: "a".repeat(64), submittedBy: uid.central });
   await seed(`service_zone_approval_requests/${PREFIX}-approval-current`, { zoneId: approvalZone, revision: 3, boundaryId: approvalBoundary, boundaryHash: "a".repeat(64), requestType: "activation", status: "pending", requestedBy: uid.central });
+  await seed(`service_zone_approval_requests/${PREFIX}-approval-not-current`, { zoneId: approvalZone, revision: 3, boundaryId: approvalBoundary, boundaryHash: "a".repeat(64), requestType: "activation", status: "pending", requestedBy: uid.central });
+  const approvalZoneSnap = await db.doc(`service_zones/${approvalZone}`).get();
+  await approvalZoneSnap.ref.update({ currentApprovalRequestId: `${PREFIX}-approval-current` });
 
   const legacyZone = `${PREFIX}-zone-legacy`;
   await seed(`service_zones/${legacyZone}`, { schemaVersion: 1, zoneId: legacyZone, stateId: "state-test", districtId: "district-test", cityId: `${PREFIX}-city-a`, name: "Legacy Zone", normalizedName: "legacy zone", workflowStatus: "approved", isServiceActive: false, revision: 4, verifiedBoundaryId: approvalBoundary, verifiedBoundaryRevision: 1, verifiedBoundaryHash: "a".repeat(64), approvedRevision: 4, approvedBoundaryId: approvalBoundary, approvedBoundaryHash: "a".repeat(64), approvedRequestId: `${PREFIX}-approval-legacy` });
@@ -156,6 +168,8 @@ test("04 — Founder may decide only the exact current approval tuple", async ()
   const zoneId = `${PREFIX}-zone-approval`;
   const common = { requestId: "founder-decision-04", expectedRevision: 3, approvalRequestId: `${PREFIX}-approval-current`, zoneId, revision: 3, boundaryId: `${PREFIX}-boundary-approval`, boundaryHash: "a".repeat(64), requestType: "activation", decision: "approved", notes: "Synthetic exact-tuple approval" };
   await expectCode("founder", "decideServiceZoneFounderApproval", { ...common, boundaryHash: "f".repeat(64) }, "failed-precondition");
+  await expectCode("founder", "decideServiceZoneFounderApproval", { ...common, approvalRequestId: `${PREFIX}-approval-not-current` }, "failed-precondition");
+  await assertZoneUnchanged(zoneId, { workflowStatus: "founder_review_pending", revision: 3, isServiceActive: false, currentApprovalRequestId: `${PREFIX}-approval-current` });
   const result = await callAs("founder", "decideServiceZoneFounderApproval", common);
   assert.equal(result.data.ok, true);
   const approval = await db.doc(`service_zone_approval_requests/${PREFIX}-approval-current`).get();
@@ -456,6 +470,18 @@ test("17 — Boundary review rejects coordinates whose stored canonical geometry
   assert.equal(boundary.get("verificationStatus"), "pending");
   assert.equal(boundary.get("reviewedBy"), undefined);
   assert.equal((await db.collection("service_zone_audit").where("zoneId", "==", zoneId).get()).size, 0);
+});
+
+test("18 — Zone creation rejects a City whose stored District parent does not match the requested District", async () => {
+  const request = { requestId: "wrong-city-parent-18", expectedRevision: 0, stateId: "state-test",
+    districtId: "district-test", cityId: `${PREFIX}-city-wrong-parent`, name: "Wrong Parent Zone" };
+  await expectCode("central", "createServiceZoneDraft", request, "failed-precondition");
+  const zones = await db.collection("service_zones").where("name", "==", "Wrong Parent Zone").get();
+  assert.equal(zones.size, 0, "Invalid parent chain must not create a Zone.");
+  const indexes = await db.collection("service_zone_name_indexes").where("normalizedName", "==", "wrong parent zone").get();
+  assert.equal(indexes.size, 0, "Invalid parent chain must not reserve a name index.");
+  const audit = await db.collection("service_zone_audit").where("requestId", "==", "wrong-city-parent-18").get();
+  assert.equal(audit.size, 0, "Invalid parent chain must not write an audit event.");
 });
 
 test.after(async () => {
