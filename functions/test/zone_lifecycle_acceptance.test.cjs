@@ -241,7 +241,7 @@ test("11 — Central creates a canonical pending Boundary draft and advances the
   const zoneId = `${PREFIX}-zone-boundary-create`;
   await seed(`service_zones/${zoneId}`, { schemaVersion: 1, zoneId, stateId: "state-test", districtId: "district-test",
     cityId: `${PREFIX}-city-a`, name: "Boundary Draft Zone", normalizedName: "boundary draft zone",
-    workflowStatus: "draft", isServiceActive: false, revision: 1 });
+    workflowStatus: "draft", isServiceActive: false, revision: 1, createdBy: uid.central });
   const result = await callAs("central", "createServiceZoneBoundaryDraft", {
     requestId: "boundary-create-11", expectedRevision: 1, zoneId,
     points: [{lat:28.5,lng:77.3},{lat:28.5,lng:77.4},{lat:28.6,lng:77.4},{lat:28.5,lng:77.3}],
@@ -269,7 +269,7 @@ test("12 — Central submits only the exact verified Boundary and persists the F
   track(`service_zones/${zoneId}`);
   await seed(`service_zones/${zoneId}`, { schemaVersion: 1, zoneId, stateId: "state-test", districtId: "district-test",
     cityId: `${PREFIX}-city-a`, name: "Submission Zone", normalizedName: "submission zone",
-    workflowStatus: "boundary_verified", isServiceActive: false, revision: 4, currentBoundaryId: boundaryId,
+    workflowStatus: "boundary_verified", isServiceActive: false, revision: 4, createdBy: uid.central, currentBoundaryId: boundaryId,
     verifiedBoundaryId: boundaryId, verifiedBoundaryRevision: 1, verifiedBoundaryHash: boundaryHash });
   track(`service_location_boundaries/${boundaryId}`);
   await seed(`service_location_boundaries/${boundaryId}`, { locationType: "zone", locationId: zoneId, zoneId,
