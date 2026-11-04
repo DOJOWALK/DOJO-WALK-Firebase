@@ -1636,8 +1636,14 @@ export const listVisibleServiceZones = onCall({ region: "asia-south1" }, async (
       }
       if (snapshot.size < batchLimit || eligible.length > pageSize) break;
     }
+    // If the scan reached its hard cap exactly, probe one document beyond the
+    // cursor. This distinguishes an exhausted collection from a collection
+    // that still has unseen records without scanning past the configured cap.
     if (scanned >= 10000 && eligible.length <= pageSize) {
-      throw new HttpsError("resource-exhausted", "Too many non-canonical Zone records to complete this page safely.");
+      const probe = await query.startAfter(cursor!).limit(1).get();
+      if (!probe.empty) {
+        throw new HttpsError("resource-exhausted", "Too many non-canonical Zone records to complete this page safely.");
+      }
     }
     hasMore = eligible.length > pageSize;
     zones = eligible.slice(0, pageSize).map(zoneSummary);
