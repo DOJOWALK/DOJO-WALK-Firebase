@@ -105,8 +105,12 @@ test.before(async () => {
   await seed(`service_zones/${staleZone}`, { schemaVersion: 1, zoneId: staleZone, stateId: "state-test", districtId: "district-test", cityId: `${PREFIX}-city-a`, name: "Stale Zone", normalizedName: "stale zone", workflowStatus: "founder_review_pending", isServiceActive: false, revision: 8, currentBoundaryId: approvalBoundary, verifiedBoundaryId: approvalBoundary, verifiedBoundaryRevision: 7, verifiedBoundaryHash: "b".repeat(64) });
   await seed(`service_zone_approval_requests/${PREFIX}-approval-stale`, { zoneId: staleZone, revision: 7, boundaryId: approvalBoundary, boundaryHash: "a".repeat(64), requestType: "activation", status: "pending", requestedBy: uid.central });
 
-  for (const [zoneId, cityId] of [[`${PREFIX}-zone-city-a`, `${PREFIX}-city-a`], [`${PREFIX}-zone-city-b`, `${PREFIX}-city-b`]]) {
-    await seed(`service_zones/${zoneId}`, { schemaVersion: 1, zoneId, stateId: "state-test", districtId: "district-test", cityId, name: zoneId, workflowStatus: "active", status: "active", isServiceActive: true, revision: 1, verifiedBoundaryId: approvalBoundary, verifiedBoundaryRevision: 1, verifiedBoundaryHash: "a".repeat(64) });
+  for (const [zoneId, cityId, boundaryId, hash] of [
+    [`${PREFIX}-zone-city-a`, `${PREFIX}-city-a`, `${PREFIX}-boundary-city-a`, "c".repeat(64)],
+    [`${PREFIX}-zone-city-b`, `${PREFIX}-city-b`, `${PREFIX}-boundary-city-b`, "d".repeat(64)],
+  ]) {
+    await seed(`service_zones/${zoneId}`, { schemaVersion: 1, zoneId, stateId: "state-test", districtId: "district-test", cityId, name: zoneId, workflowStatus: "active", status: "active", isServiceActive: true, revision: 1, verifiedBoundaryId: boundaryId, verifiedBoundaryRevision: 1, verifiedBoundaryHash: hash });
+    await seed(`service_location_boundaries/${boundaryId}`, { locationType: "zone", locationId: zoneId, zoneId, zoneRevision: 1, revision: 1, points: [[77.3,28.5],[77.4,28.5],[77.4,28.6],[77.3,28.5]], verificationStatus: "verified", geometryHash: hash, submittedBy: uid.central });
   }
 
   const raceZone = `${PREFIX}-zone-race`;
