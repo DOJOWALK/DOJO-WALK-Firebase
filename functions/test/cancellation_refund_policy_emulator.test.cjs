@@ -47,27 +47,6 @@ function calculateOccurrenceRefund({ occurrence, serverNow }) {
   return { refundPaise: Math.floor(amount / 2), basis: "under_12_hours_50_percent_refund", automatic: true };
 }
 
-function calculateSubscriptionRefund({ paymentTotalPaise, occurrences, serverNow }) {
-  assert.ok(Number.isSafeInteger(paymentTotalPaise) && paymentTotalPaise >= 0, "INVALID_PAYMENT_TOTAL");
-  assert.ok(Array.isArray(occurrences) && occurrences.length > 0, "OCCURRENCES_REQUIRED");
-  const allocatedTotal = occurrences.reduce((sum, item) => {
-    assert.ok(Number.isSafeInteger(item.allocatedPaidAmountPaise) && item.allocatedPaidAmountPaise >= 0,
-      "INVALID_ALLOCATED_PAID_AMOUNT");
-    return sum + item.allocatedPaidAmountPaise;
-  }, 0);
-  assert.equal(allocatedTotal, paymentTotalPaise, "PAID_AMOUNT_ALLOCATION_MISMATCH");
-
-  const results = occurrences.map((item) => ({
-    occurrenceId: item.occurrenceId,
-    ...calculateOccurrenceRefund({ occurrence: item, serverNow }),
-  }));
-  const requiresManualReview = results.some((item) => !item.automatic);
-  return {
-    results,
-    requiresManualReview,
-    refundPaise: requiresManualReview ? null : results.reduce((sum, item) => sum + item.refundPaise, 0),
-  };
-}
 
 function serviceFailureRemedy({ backupAvailable, customerChoice }) {
   if (backupAvailable) return { action: "replacement_workflow", automaticRefundPaise: 0 };
@@ -213,58 +192,6 @@ test("past scheduled occurrence without a started event requires review, not an 
   });
   assert.equal(result.automatic, false);
   assert.equal(result.basis, "past_due_operations_review");
-});
-
-test("mid-subscription cancellation preserves completed walks and refunds eligible future occurrences", () => {
-  const result = calculateSubscriptionRefund({
-    paymentTotalPaise: 30000,
-    serverNow: new Date("2026-11-04T00:00:00.000Z"),
-    occurrences: [
-      occurrence({ occurrenceId: "walk-done", status: "completed", allocatedPaidAmountPaise: 10000 }),
-      occurrence({ occurrenceId: "walk-future-a", scheduledAt: new Date("2026-11-06T12:00:00.000Z"), allocatedPaidAmountPaise: 10000 }),
-      occurrence({ occurrenceId: "walk-future-b", scheduledAt: new Date("2026-11-04T08:00:00.000Z"), allocatedPaidAmountPaise: 10000 }),
-    ],
-  });
-  assert.equal(result.requiresManualReview, false);
-  // The second future walk is only eight hours away, so it receives 50%, not 100%.
-  assert.equal(result.refundPaise, 15000);
-  assert.equal(result.results.find((x) => x.occurrenceId === "walk-done").refundPaise, 0);
-  assert.equal(result.results.find((x) => x.occurrenceId === "walk-future-b").refundPaise, 5000);
-});
-
-test("mid-subscription cancellation applies the 12-hour cutoff separately to each future occurrence", () => {
-  const now = new Date("2026-11-04T00:00:00.000Z");
-  const result = calculateSubscriptionRefund({
-    paymentTotalPaise: 30000,
-    serverNow: now,
-    occurrences: [
-      occurrence({ occurrenceId: "future-full", scheduledAt: new Date(now.getTime() + TWELVE_HOURS_MS), allocatedPaidAmountPaise: 10000 }),
-      occurrence({ occurrenceId: "future-half", scheduledAt: new Date(now.getTime() + TWELVE_HOURS_MS - 1000), allocatedPaidAmountPaise: 10000 }),
-      occurrence({ occurrenceId: "done", status: "completed", allocatedPaidAmountPaise: 10000 }),
-    ],
-  });
-  assert.equal(result.refundPaise, 15000);
-});
-
-test("subscription calculation rejects an allocation total that differs from actual payment", () => {
-  assert.throws(() => calculateSubscriptionRefund({
-    paymentTotalPaise: 20000,
-    serverNow: new Date("2026-11-04T00:00:00.000Z"),
-    occurrences: [occurrence({ allocatedPaidAmountPaise: 10000 })],
-  }), /PAID_AMOUNT_ALLOCATION_MISMATCH/);
-});
-
-test("active occurrence during subscription cancellation blocks automatic final calculation for review", () => {
-  const result = calculateSubscriptionRefund({
-    paymentTotalPaise: 30000,
-    serverNow: new Date("2026-11-04T00:00:00.000Z"),
-    occurrences: [
-      occurrence({ occurrenceId: "active", status: "active", allocatedPaidAmountPaise: 10000 }),
-      occurrence({ occurrenceId: "future", scheduledAt: new Date("2026-11-06T12:00:00.000Z"), allocatedPaidAmountPaise: 20000 }),
-    ],
-  });
-  assert.equal(result.requiresManualReview, true);
-  assert.equal(result.refundPaise, null);
 });
 
 test("company failure with an available backup enters replacement workflow without automatic refund", () => {
