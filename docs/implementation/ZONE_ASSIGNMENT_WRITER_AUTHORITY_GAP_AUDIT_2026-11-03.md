@@ -1,8 +1,8 @@
 # DOJO WALK — Zone Assignment Writer Authority Gap Audit
 
-**Date:** 2026-11-03  
-**Status:** Evidence audit complete; Founder approved the proposed writer authority matrix on 2026-11-03. Synthetic callable acceptance suite added; baseline Emulator execution is in progress.  
-**Related approved decision:** `ZONE_VISIBILITY_AUTHORITY_AND_ASSIGNMENT_SCHEMA_PROPOSAL_2026-11-03.md`  
+**Date:** 2026-11-03\
+**Status:** Evidence audit complete; Founder approved the proposed writer authority matrix on 2026-11-03. Synthetic callable acceptance suite added; baseline Emulator execution is in progress.\
+**Related approved decision:** `ZONE_VISIBILITY_AUTHORITY_AND_ASSIGNMENT_SCHEMA_PROPOSAL_2026-11-03.md`\
 **Current PR:** #64 — Draft / Open / Unmerged.
 
 ## 1. Why this audit exists
