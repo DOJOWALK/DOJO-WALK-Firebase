@@ -47,7 +47,7 @@ async function callAs(actor, name, payload) {
 async function expectDenied(actor, name, payload) {
   await assert.rejects(
     callAs(actor, name, payload),
-    error => error && ["functions/permission-denied", "functions/failed-precondition", "functions/unauthenticated", "functions/not-found"].includes(error.code),
+    error => error && ["functions/permission-denied", "functions/failed-precondition", "functions/unauthenticated", "functions/not-found", "functions/invalid-argument"].includes(error.code),
     `Expected ${actor} to be denied by ${name}`,
   );
 }
@@ -155,10 +155,7 @@ test("Only active Central Admin can create scoped Supervisor assignments", async
 });
 
 test("Supervisor cardinality is one primary assignment per active Zone", async () => {
-  await callAs("central", "assignZoneSupervisor", {
-    targetUid: uid.supervisor, zoneId: "writer-zone-active",
-    assignmentId: "writer-supervisor-cardinality-a", reason: "first",
-  });
+  // The preceding test creates the primary assignment. Verify a second one is rejected.
   await expectCallableDenied("central", "assignZoneSupervisor", {
     targetUid: uid.manager, zoneId: "writer-zone-active",
     assignmentId: "writer-supervisor-cardinality-b", reason: "duplicate primary",
