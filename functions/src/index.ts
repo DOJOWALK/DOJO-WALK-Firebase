@@ -1611,9 +1611,11 @@ export const listVisibleServiceZones = onCall({ region: "asia-south1" }, async (
     let cursor: FirebaseFirestore.QueryDocumentSnapshot | undefined;
     if (pageToken) {
       const tokenSnapshot = await db.collection("service_zones").doc(pageToken).get();
-      if (!tokenSnapshot.exists) throw new HttpsError("invalid-argument", "pageToken is no longer valid.");
+      if (!tokenSnapshot.exists || !isCanonicalZone(tokenSnapshot.data()) ||
+          (actor.kind === "city_manager" && tokenSnapshot.get("cityId") !== actor.cityId)) {
+        throw new HttpsError("invalid-argument", "pageToken is no longer valid.");
+      }
       cursor = tokenSnapshot as FirebaseFirestore.QueryDocumentSnapshot;
-      query = query.startAfter(cursor);
     }
     const eligible: FirebaseFirestore.QueryDocumentSnapshot[] = [];
     let scanned = 0;
