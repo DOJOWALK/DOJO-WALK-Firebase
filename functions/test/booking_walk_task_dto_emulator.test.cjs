@@ -205,12 +205,12 @@ test("finite Regular booking keeps every generated occurrence and never creates 
   const stored = await readAggregate(parent.bookingId);
   assert.equal(stored.parent.get("occurrenceCount"), 4);
   assert.equal(stored.tasks.size, 4);
-  assert.equal(stored.tasks.docs.every((d) => d.get("scheduledAt") instanceof Date), true);
+  assert.equal(stored.tasks.docs.every((d) => typeof d.get("scheduledAt").toDate === "function"), true);
 });
 
 test("Immediate ignores client device time and cannot create a confirmed task from ASAP alone", async () => {
   const input = baseInput({ request: { bookingPlan: "immediate", schedule: { preferredTime: "ASAP", clientNow: "2099-01-01T00:00:00Z" } } });
-  assert.throws(() => validateRequest({ ...input.request, clientNow: "2099-01-01T00:00:00Z" }), /FORGED_OR_UNKNOWN_FIELD/);
+  assert.throws(() => validateRequest({ ...input.request, scheduledAt: "2099-01-01T00:00:00Z" }), /FORGED_OR_UNKNOWN_FIELD/);
   assert.equal(input.request.schedule.preferredTime, "ASAP");
   // Immediate has no server-verified slot in this fixture, so no aggregate is written.
   const stored = await readAggregate(input.bookingId);
