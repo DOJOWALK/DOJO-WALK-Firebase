@@ -1,0 +1,35 @@
+name: Booking Trusted Snapshot Unit Tests
+
+on:
+  pull_request:
+    paths:
+      - "functions/src/booking_trusted_snapshots.ts"
+      - "functions/test/booking_trusted_snapshots.test.cjs"
+      - "functions/package.json"
+      - "functions/tsconfig.json"
+      - ".github/workflows/booking-trusted-snapshot-unit-tests.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: booking-trusted-snapshot-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  trusted-snapshot-unit-tests:
+    name: Build Functions and run all Functions unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact PR revision
+        uses: actions/checkout@v4
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Functions dependencies
+        working-directory: functions
+        run: npm install --no-package-lock --no-audit --no-fund
+      - name: Build and run Functions unit tests
+        working-directory: functions
+        run: npm test
