@@ -1,0 +1,41 @@
+name: Booking and Walk Task DTO Emulator Contract Tests
+
+on:
+  pull_request:
+    paths:
+      - "functions/test/booking_walk_task_dto_emulator.test.cjs"
+      - ".github/workflows/booking-walk-task-dto-emulator-tests.yml"
+      - "functions/package.json"
+      - "firebase.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: booking-walk-task-dto-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  booking-walk-task-dto:
+    name: Synthetic Booking and Walk Task DTO Firestore Emulator tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact PR revision
+        uses: actions/checkout@v5
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Install root Firebase CLI dependencies
+        run: npm install --no-package-lock --no-audit --no-fund
+      - name: Install Functions dependencies
+        working-directory: functions
+        run: npm install --no-package-lock --no-audit --no-fund
+      - name: Build Functions
+        working-directory: functions
+        run: npm run build
+      - name: Run synthetic Booking and Walk Task DTO Emulator tests
+        env:
+          GCLOUD_PROJECT: demo-dojo-booking-walk-task-dto
+        run: |
+          npx firebase emulators:exec --only firestore --project demo-dojo-booking-walk-task-dto "node --test --test-concurrency=1 functions/test/booking_walk_task_dto_emulator.test.cjs"
