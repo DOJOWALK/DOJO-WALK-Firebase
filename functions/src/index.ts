@@ -1604,11 +1604,38 @@ export const listVisibleServiceZones = onCall({ region: "asia-south1" }, async (
     } else {
       query = query.where("schemaVersion", "==", 1);
     }
-    if (pageToken) query = query.startAfter(pageToken);
-    const snapshot = await query.limit(501).get();
-    const eligible = snapshot.docs.filter((doc) =>
-      isCanonicalZone(doc.data()) &&
-      (actor.kind !== "city_manager" || doc.get("cityId") === actor.cityId));
+    // Scan the ordered raw collection in bounded batches until we have enough
+    // canonical, visible Zones to fill this page plus one look-ahead record.
+    // A fixed raw limit (for example 501) can hide valid Zones behind legacy or
+    // malformed documents and incorrectly report that pagination has ended.
+    let cursor: FirebaseFirestore.QueryDocumentSnapshot | undefined;
+    if (pageToken) {
+      const tokenSnapshot = await db.collection("service_zones").doc(pageToken).get();
+      if (!tokenSnapshot.exists) throw new HttpsError("invalid-argument", "pageToken is no longer valid.");
+      cursor = tokenSnapshot as FirebaseFirestore.QueryDocumentSnapshot;
+      query = query.startAfter(cursor);
+    }
+    const eligible: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+    let scanned = 0;
+    while (eligible.length <= pageSize && scanned < 10000) {
+      let batchQuery = query.limit(200);
+      if (cursor) batchQuery = batchQuery.startAfter(cursor);
+      const snapshot = await batchQuery.get();
+      if (snapshot.empty) break;
+      for (const doc of snapshot.docs) {
+        scanned += 1;
+        cursor = doc;
+        if (isCanonicalZone(doc.data()) &&
+            (actor.kind !== "city_manager" || doc.get("cityId") === actor.cityId)) {
+          eligible.push(doc);
+          if (eligible.length > pageSize) break;
+        }
+      }
+      if (snapshot.size < 200 || eligible.length > pageSize) break;
+    }
+    if (scanned >= 10000 && eligible.length <= pageSize) {
+      throw new HttpsError("resource-exhausted", "Too many non-canonical Zone records to complete this page safely.");
+    }
     hasMore = eligible.length > pageSize;
     zones = eligible.slice(0, pageSize).map(zoneSummary);
   } else {
