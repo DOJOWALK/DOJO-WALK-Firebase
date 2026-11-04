@@ -191,6 +191,47 @@ test("Founder reads all Zones and an arbitrary Zone boundary", async () => {
   assert.equal(audit.docs[0].get("points"), undefined, "Geometry access audit must not store polygon coordinates.");
 });
 
+test("Founder Zone pagination scans past more than 500 non-canonical legacy records without gaps", async () => {
+  const fixtureBatch = "zone-pagination-regression";
+  const refs = Array.from({ length: 510 }, (_, index) =>
+    db.collection("service_zones").doc(`000-pagination-legacy-${String(index).padStart(4, "0")}`));
+  try {
+    for (let offset = 0; offset < refs.length; offset += 400) {
+      const batch = db.batch();
+      refs.slice(offset, offset + 400).forEach(ref => batch.set(ref, {
+        schemaVersion: 1,
+        fixtureOnly: true,
+        fixtureBatch,
+        legacyPayload: true,
+      }));
+      await batch.commit();
+    }
+
+    const collected = [];
+    let pageToken = undefined;
+    for (let page = 0; page < 5; page += 1) {
+      const result = await callAs("test-visibility-founder", "listVisibleServiceZones", {
+        pageSize: 2,
+        ...(pageToken ? { pageToken } : {}),
+      });
+      const ids = result.data.zones.map(zone => zone.zoneId);
+      collected.push(...ids);
+      pageToken = result.data.nextPageToken;
+      if (!pageToken) break;
+    }
+
+    assert.deepEqual(collected, ["zone-a", "zone-a2", "zone-b", "zone-stale"]);
+    assert.equal(new Set(collected).size, collected.length, "Pages must not repeat Zones.");
+    assert.equal(pageToken, null, "Pagination must terminate after the final eligible Zone.");
+  } finally {
+    for (let offset = 0; offset < refs.length; offset += 400) {
+      const batch = db.batch();
+      refs.slice(offset, offset + 400).forEach(ref => batch.delete(ref));
+      await batch.commit();
+    }
+  }
+});
+
 test("inactive and unregistered Founder identities are denied", async () => {
   await expectPermissionDenied("test-visibility-founder-inactive", "listVisibleServiceZones", { pageSize: 100 });
   await expectPermissionDenied("test-visibility-central-inactive", "listVisibleServiceZones", { pageSize: 100 });
