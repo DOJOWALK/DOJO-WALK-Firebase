@@ -123,3 +123,7 @@ test("does not pass another customer's source records into canonical request val
     /BOOKING_ADDRESS_NOT_FOUND/,
   );
 });
+
+
+// Include the synthetic Automatic Booking reference-model suite in this Emulator run.
+require("./automatic_booking_acceptance_emulator.test.cjs");
