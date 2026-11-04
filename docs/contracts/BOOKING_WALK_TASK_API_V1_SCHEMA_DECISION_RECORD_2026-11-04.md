@@ -1,8 +1,8 @@
 # Booking + Walk Task API V1 — Schema Decision Record
 
-**Date:** 2026-11-04  
-**Status:** Founder-directed schema decision record; documentation only. Runtime implementation and production rollout remain gated.  
-**Repository:** `DOJOWALK/DOJO-WALK-Firebase`  
+**Date:** 2026-11-04\
+**Status:** Founder-directed schema decision record; documentation only. Runtime implementation and production rollout remain gated.\
+**Repository:** `DOJOWALK/DOJO-WALK-Firebase`\
 **Basis:** `BOOKING_WALK_TASK_API_V1_DECISION_CANDIDATE_2026-11-04.md`, canonical field alignment in `BOOKING_WALK_TASK_CONTRACT_V1_DRAFT.md` Section 12, Zone lifecycle PR #71, Booking validation/ownership PRs #76–#79, and approved DOJO WALK booking/Zone policies.
 
 ## 1. Decision scope
