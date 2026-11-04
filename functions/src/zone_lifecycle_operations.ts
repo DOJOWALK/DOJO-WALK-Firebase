@@ -147,7 +147,10 @@ export const suspendServiceZoneForEmergency = onCall({ region: REGION }, async (
   const payloadHash = fingerprint({ expectedRevision, zoneId, reason, severity });
   const outboxRef = db.collection("service_zone_notification_outbox").doc();
   return db.runTransaction(async (tx) => {
-    const [idem, zoneSnap] = await Promise.all([tx.get(idempotencyRef), tx.get(zoneRef)]);
+    const [idem, zoneSnap, pendingApprovals] = await Promise.all([
+      tx.get(idempotencyRef), tx.get(zoneRef),
+      tx.get(db.collection("service_zone_approval_requests").where("zoneId", "==", zoneId).where("status", "==", "pending")),
+    ]);
     const prior = replay(idem, payloadHash);
     if (prior) return prior;
     if (!zoneSnap.exists) throw new HttpsError("not-found", "Zone was not found.");
@@ -165,6 +168,7 @@ export const suspendServiceZoneForEmergency = onCall({ region: REGION }, async (
       escalationAfterFailures: 5, lastErrorCode: null, createdAt: now });
     writeAudit(tx, zoneId, "zone_emergency_suspended", actor, requestId, expectedRevision, nextRevision,
       String(zone.workflowStatus), "suspended", reason);
+    for (const pending of pendingApprovals.docs) tx.update(pending.ref, { status: "superseded", updatedAt: now });
     idemWrite(tx, idempotencyRef, uid, "suspendServiceZoneForEmergency", requestId, payloadHash, response);
     return response;
   });
