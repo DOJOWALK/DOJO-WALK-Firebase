@@ -232,6 +232,36 @@ test("Founder Zone pagination scans past more than 500 non-canonical legacy reco
   }
 });
 
+test("Founder pagination treats an exactly exhausted 10,000-document scan as complete", async () => {
+  const refs = Array.from({ length: 9996 }, (_, index) =>
+    db.collection("service_zones").doc(`000-cap-legacy-${String(index).padStart(5, "0")}`));
+  try {
+    for (let offset = 0; offset < refs.length; offset += 400) {
+      const batch = db.batch();
+      refs.slice(offset, offset + 400).forEach(ref => batch.set(ref, {
+        schemaVersion: 1,
+        fixtureOnly: true,
+        fixtureBatch: "zone-pagination-exact-cap",
+        legacyPayload: true,
+      }));
+      await batch.commit();
+    }
+
+    // The 9,996 malformed records plus the four canonical fixtures make
+    // exactly 10,000 matching documents. The final one-document probe must
+    // confirm exhaustion rather than incorrectly returning resource-exhausted.
+    const result = await callAs("test-visibility-founder", "listVisibleServiceZones", { pageSize: 4 });
+    assert.deepEqual(result.data.zones.map(zone => zone.zoneId), ["zone-a", "zone-a2", "zone-b", "zone-stale"]);
+    assert.equal(result.data.nextPageToken, null);
+  } finally {
+    for (let offset = 0; offset < refs.length; offset += 400) {
+      const batch = db.batch();
+      refs.slice(offset, offset + 400).forEach(ref => batch.delete(ref));
+      await batch.commit();
+    }
+  }
+});
+
 test("inactive and unregistered Founder identities are denied", async () => {
   await expectPermissionDenied("test-visibility-founder-inactive", "listVisibleServiceZones", { pageSize: 100 });
   await expectPermissionDenied("test-visibility-central-inactive", "listVisibleServiceZones", { pageSize: 100 });
