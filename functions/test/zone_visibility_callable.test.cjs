@@ -250,6 +250,18 @@ test("Central Admin requires active membership and explicit global geometry perm
 test("City Manager sees assigned City Zones only and cannot widen scope in payload", async () => {
   const result = await callAs("test-visibility-manager", "listVisibleServiceZones", { pageSize: 100, cityId: "city-b" });
   assert.deepEqual(zoneIds(result), ["zone-a", "zone-a2"]);
+  const firstPage = await callAs("test-visibility-manager", "listVisibleServiceZones", { pageSize: 1 });
+  assert.deepEqual(zoneIds(firstPage), ["zone-a"]);
+  assert.equal(firstPage.data.nextPageToken, "zone-a");
+  const secondPage = await callAs("test-visibility-manager", "listVisibleServiceZones", {
+    pageSize: 1, pageToken: firstPage.data.nextPageToken,
+  });
+  assert.deepEqual(zoneIds(secondPage), ["zone-a2"]);
+  await assert.rejects(
+    callAs("test-visibility-manager", "listVisibleServiceZones", { pageSize: 1, pageToken: "zone-b" }),
+    error => error && error.code === "functions/invalid-argument",
+    "A City Manager must not use another city's Zone as a pagination cursor.",
+  );
   await callAs("test-visibility-manager", "getVisibleServiceZoneBoundary", { zoneId: "zone-a" });
   await expectPermissionDenied("test-visibility-manager", "getVisibleServiceZoneBoundary", { zoneId: "zone-b" });
 });
