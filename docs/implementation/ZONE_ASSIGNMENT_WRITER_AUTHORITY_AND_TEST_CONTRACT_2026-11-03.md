@@ -1,7 +1,7 @@
 # Zone Assignment Writer — Approved Authority Matrix and Emulator Test Contract
 
-**Date:** 2026-11-03  
-**Status:** Founder approval received in chat (“Ok karo”); synthetic acceptance suite added; baseline Emulator execution pending.  
+**Date:** 2026-11-03\
+**Status:** Founder approval received in chat (“Ok karo”); synthetic acceptance suite added; baseline Emulator execution pending.\
 **Scope:** Test-first only. No trusted writer callable or runtime Rules change is included in this step.
 
 ## Approved authority matrix
