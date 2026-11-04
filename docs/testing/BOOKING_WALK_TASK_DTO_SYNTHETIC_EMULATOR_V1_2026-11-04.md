@@ -62,3 +62,28 @@ The current confirmation screen is not yet compatible with the canonical callabl
 8. Preserve parent Booking read compatibility while rendering child Walk Tasks after the staged backend cutover.
 
 These are not tested by this PR's synthetic Firebase Emulator oracle. The current actual-callable/app-adapter integration gate remains BLOCKED until the Customer adapter and backend callable are implemented together with the agreed enum, finite Regular policy and trusted Zone/timezone gates.
+
+## Follow-up source inspection — booking plan semantics and service type
+
+Additional Customer source inspected at `DOJOWALK/DOJO-WALK-Customer` main commit `4a50ccd29aa1354c6478ac6e2c32c7213acec18d`:
+
+- `lib/features/booking/screens/choose_walk_screen.dart` (blob `0ab692f470a7cf675f1c30006c4e8157126b1736`)
+- `lib/features/booking/services/walk_pricing_service.dart` (blob `fe8db3da4268449f9516099b685f0c5ef0b056b0`)
+
+Verified compatibility findings:
+1. The UI calls the immediate request **“Walk Now”** but represents it internally as `WalkBookingType.oneTime` plus `schedule.isImmediate == true`. The confirmation screen therefore currently sends `bookingPlan: "one_time"` while also sending `preferredTime: "ASAP"` and device `DateTime.now()`. The V1 request enum distinguishes `immediate` from `one_time`; an explicit adapter must map by the `isImmediate` intent first, not just the enum name.
+2. The three legacy service values are `regular_walk`, `custom_walk`, and `temporary_walk`; the confirmation screen derives them from the booking plan. No approved canonical service catalogue enum was located in the inspected Customer files. V1 must not assume these legacy values are canonical service types. The adapter should receive a separately selected/approved service type; final enum mapping remains a contract gate.
+3. Regular currently says it repeats daily Monday–Sunday and serializes `frequency: "Daily"`, `walksPerWeek: 7`, and a `dailyWalkTemplate` without an end date. This conflicts with the approved finite calendar-month Regular policy (calendar-month period, e.g. start on the 7th and end on the 6th of the next month). The current UI needs an explicit finite period/end-date model and tests before it can emit a complete Regular occurrence set. Month-end handling for start dates on the 29th–31st must be specified in the adapter contract rather than guessed.
+4. The schedule editor permits custom durations 1–240 minutes, while the booking confirmation currently accepts only 20, 30, 45, or 60 minutes. The backend V1 policy range is 20–60 minutes. Both screens need one shared validation rule; unsupported custom durations must be rejected before request submission.
+5. The price service currently has only a draft 30-minute ₹149 estimate. It is not an authoritative rate table. All price fields in the current screen payload must remain excluded from the callable request and final quote must come from the backend.
+
+### Current status after source inspection
+
+- Backend synthetic DTO Emulator reference suite: PASS (8/8 on exact PR #84 head).
+- Existing backend geometry/callable test suite: PASS (379/379 on same commit).
+- Existing synthetic Auth/Functions fixture suite: PASS (45/45 on same commit).
+- Firestore Rules Emulator suite: PASS (66/66 on same commit).
+- Customer App adapter implementation: NOT STARTED.
+- Actual authenticated Booking callable integration: BLOCKED (callable and required backend services do not yet exist).
+
+No Customer App source, Rules, or production backend runtime files were modified in this test-only PR.
