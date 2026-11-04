@@ -1,8 +1,8 @@
 # DOJO WALK — Zone Boundary Geometry Read Visibility Decision
 
-**Status:** Founder-approved policy — implementation and Emulator verification pending  
-**Decision date:** 2026-11-03  
-**Branch:** `implementation/zone-emulator-first-plan-2026-11-03`  
+**Status:** Founder-approved policy — implementation and Emulator verification pending\
+**Decision date:** 2026-11-03\
+**Branch:** `implementation/zone-emulator-first-plan-2026-11-03`\
 **Parent:** `docs/architecture/DOJO_WALK_CANONICAL_ZONE_BOOKING_INTEGRATION_CONTRACT.md`
 
 ## 1. Approved policy
