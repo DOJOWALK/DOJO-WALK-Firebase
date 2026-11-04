@@ -186,7 +186,8 @@ export const reactivateServiceZone = onCall({ region: REGION }, async (request) 
     if (!zoneSnap.exists) throw new HttpsError("not-found", "Zone was not found.");
     const zone = zoneSnap.data() ?? {};
     if (zone.revision !== expectedRevision || zone.workflowStatus !== "reactivation_pending" ||
-      zone.isServiceActive !== false || zone.approvedRevision !== expectedRevision - 1 ||\n      zone.approvedBoundaryId !== zone.verifiedBoundaryId || zone.approvedBoundaryHash !== zone.verifiedBoundaryHash ||
+      zone.isServiceActive !== false || zone.approvedRevision !== expectedRevision - 1 ||
+      zone.approvedBoundaryId !== zone.verifiedBoundaryId || zone.approvedBoundaryHash !== zone.verifiedBoundaryHash ||
       typeof zone.approvedRequestId !== "string") {
       throw new HttpsError("failed-precondition", "A current exact Founder reactivation approval is required.");
     }
