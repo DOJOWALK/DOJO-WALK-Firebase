@@ -240,6 +240,23 @@ test.after(async () => {
   for (const client of clients.values()) await deleteApp(client.app).catch(() => {});
   if (db) {
     for (const path of cleanupPaths) await db.doc(path).delete().catch(() => {});
+    // Remove records created by the synthetic actors during the test. These are
+    // not fixtureOnly because callable writes must use the same schema as real
+    // server writes; leaking them into later tests changes pagination results.
+    const createdZones = await db.collection("service_zones").where("createdBy", "==", uid.central).get().catch(() => null);
+    if (createdZones) {
+      for (const zone of createdZones.docs) {
+        const zoneId = zone.id;
+        const indexes = await db.collection("service_zone_name_indexes").where("zoneId", "==", zoneId).get().catch(() => null);
+        const audits = await db.collection("service_zone_audit").where("zoneId", "==", zoneId).get().catch(() => null);
+        for (const doc of [...(indexes?.docs ?? []), ...(audits?.docs ?? [])]) await doc.ref.delete().catch(() => {});
+        await zone.ref.delete().catch(() => {});
+      }
+    }
+    for (const actorUid of Object.values(uid)) {
+      const idempotency = await db.collection("service_zone_idempotency").where("actorUid", "==", actorUid).get().catch(() => null);
+      if (idempotency) for (const doc of idempotency.docs) await doc.ref.delete().catch(() => {});
+    }
     for (const collection of ["service_zones", "service_location_boundaries", "service_zone_approval_requests", "service_zone_name_indexes", "service_zone_idempotency", "service_zone_audit", "service_zone_notification_outbox", "admin_scope_assignments", "zone_boundary_review_assignments"]) {
       const snap = await db.collection(collection).where("fixtureOnly", "==", true).get().catch(() => null);
       if (snap) for (const doc of snap.docs) await doc.ref.delete().catch(() => {});
