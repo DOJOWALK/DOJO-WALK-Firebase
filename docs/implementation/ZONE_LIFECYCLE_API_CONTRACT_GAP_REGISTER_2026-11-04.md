@@ -1,7 +1,7 @@
 # DOJO WALK — Zone Lifecycle API Contract Gap Register
 
-Date: 2026-11-04  
-Status: Documentation-only audit; **not an executable API contract and not implementation authorization**.  
+Date: 2026-11-04\
+Status: Documentation-only audit; **not an executable API contract and not implementation authorization**.\
 Base: `implementation/zone-emulator-first-plan-2026-11-03` at `c4d7a6facb08cdd738534371c5af01ad2735fcf4`.
 
 ## 1. Purpose
