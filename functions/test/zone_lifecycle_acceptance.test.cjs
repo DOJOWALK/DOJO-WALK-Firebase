@@ -85,7 +85,7 @@ test.before(async () => {
   await seed(`admin_users/${uid.legacy}`, { role: "super_admin", isActive: true });
   await seed(`admin_users/${uid.customer}`, { role: "customer", isActive: true });
 
-  await seed(`admin_scope_assignments/${PREFIX}-manager-city-a`, { adminUid: uid.manager, role: "city_manager", scopeType: "city", scopeId: `${PREFIX}-city-a`, isActive: true });
+  await seed(`admin_scope_assignments/${PREFIX}-manager-city-a`, { adminUid: uid.manager, role: "city_manager", scopeType: "city", scopeId: `${PREFIX}-city-a`, status: "active", isActive: true });
   await seed(`zone_boundary_review_assignments/${PREFIX}-reviewer-own`, { reviewerUid: uid["reviewer-submitter"], zoneId: `${PREFIX}-zone-self`, boundaryId: `${PREFIX}-boundary-self`, status: "assigned" });
 
   await seed(`service_zones/${PREFIX}-zone-self`, { schemaVersion: 1, zoneId: `${PREFIX}-zone-self`, stateId: "state-test", districtId: "district-test", cityId: `${PREFIX}-city-a`, name: "Self Review", normalizedName: "self review", workflowStatus: "boundary_review_pending", isServiceActive: false, revision: 2, currentBoundaryId: `${PREFIX}-boundary-self` });
@@ -109,7 +109,7 @@ test.before(async () => {
     [`${PREFIX}-zone-city-a`, `${PREFIX}-city-a`, `${PREFIX}-boundary-city-a`, "c".repeat(64)],
     [`${PREFIX}-zone-city-b`, `${PREFIX}-city-b`, `${PREFIX}-boundary-city-b`, "d".repeat(64)],
   ]) {
-    await seed(`service_zones/${zoneId}`, { schemaVersion: 1, zoneId, stateId: "state-test", districtId: "district-test", cityId, name: zoneId, workflowStatus: "active", status: "active", isServiceActive: true, revision: 1, verifiedBoundaryId: boundaryId, verifiedBoundaryRevision: 1, verifiedBoundaryHash: hash });
+    await seed(`service_zones/${zoneId}`, { schemaVersion: 1, zoneId, countryId: "india", stateId: "state-test", districtId: "district-test", cityId, name: zoneId, workflowStatus: "active", status: "active", isServiceActive: true, revision: 1, verifiedBoundaryId: boundaryId, verifiedBoundaryRevision: 1, verifiedBoundaryHash: hash, boundaryHash: hash });
     await seed(`service_location_boundaries/${boundaryId}`, { locationType: "zone", locationId: zoneId, zoneId, zoneRevision: 1, revision: 1, points: [{ lat: 28.5, lng: 77.3 }, { lat: 28.5, lng: 77.4 }, { lat: 28.6, lng: 77.4 }, { lat: 28.5, lng: 77.3 }], verificationStatus: "verified", geometryHash: hash, submittedBy: uid.central });
   }
 
