@@ -156,12 +156,12 @@ All tests must use synthetic data and a `demo-*` Firebase project. The harness m
 22. Pickup is on/near a shared edge and no verified building footprint exists → Admin review required; no booking/task writes.
 23. Verified building footprint spans adjacent, non-overlapping eligible Zones and one Zone contains strictly more than 50% of the entire footprint → resolve to that Zone; record measured area ratios and footprint evidence.
 24. Verified footprint is exactly 50/50, numerically indeterminate, invalid, or has no eligible majority → Admin review required; no booking/task writes.
-23. A Zone is suspended/deactivated after candidate discovery but before booking commit → commit rejected.
-24. Boundary is replaced or approval invalidated after candidate discovery but before booking commit → commit rejected.
-25. A second Zone becomes eligible after candidate discovery but before commit and overlaps the point → commit rejected; exactly-one condition must be re-established.
-26. Client supplies forged `serviceZoneId`, `zoneId`, Boundary ID/hash or timezone → invalid request; no trusted writes.
-27. Authenticated user references another user's saved address → ownership failure before Zone resolution.
-28. Unauthenticated request → denied before reading user-owned records.
+25. A Zone is suspended/deactivated after candidate discovery but before booking commit → commit rejected.
+26. Boundary is replaced or approval invalidated after candidate discovery but before commit → commit rejected.
+27. A second Zone becomes eligible after candidate discovery but before commit and intersects the verified footprint → recompute; reject if the majority is no longer unique.
+28. Client supplies forged `serviceZoneId`, `zoneId`, Boundary ID/hash or timezone → invalid request; no trusted writes.
+29. Authenticated user references another user's saved address → ownership failure before Zone resolution.
+30. Unauthenticated request → denied before reading user-owned records.
 
 Every denial test must assert both the expected callable error and that no booking, Walk Task, payment intent, assignment or trusted snapshot write occurred.
 
