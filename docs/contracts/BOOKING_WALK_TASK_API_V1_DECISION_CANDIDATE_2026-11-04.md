@@ -1,7 +1,7 @@
 # Booking + Walk Task API Contract V1 — Decision Candidate
 
-**Date:** 2026-11-04  
-**Status:** Candidate for Founder review. Proposed defaults are not production-approved.  
+**Date:** 2026-11-04\
+**Status:** Candidate for Founder review. Proposed defaults are not production-approved.\
 **Based on:** Canonical field alignment in `BOOKING_WALK_TASK_CONTRACT_V1_DRAFT.md` Section 12 and the Emulator acceptance plan.
 
 ## 1. Purpose and invariants
