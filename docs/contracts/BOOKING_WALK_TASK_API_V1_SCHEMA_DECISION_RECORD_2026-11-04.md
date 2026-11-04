@@ -272,6 +272,26 @@ Additional cross-repository evidence from Admin `main`:
 - Admin `docs/STEP_200_BOOKING_ASSIGNMENT_SECURITY_CONTRACT.md` says its bounded source search did not identify an authoritative booking-assignment writer. The actual assignment writer, any external/manual process, and final assignment transition remain unresolved. No existing automatic assignment implementation is proven by the reviewed source.
 - Therefore the proposed `walk_tasks` assignment contract must not assume the existing Partner `zones` list is equivalent to `service_zones`, and no automatic assignment should launch until an explicit reviewed mapping/assignment contract and tests exist.
 
+## 5.7 Customer App source audit and request-adapter gate
+
+Source audit: `DOJOWALK/DOJO-WALK-Customer` `main`, inspected `lib/features/booking/screens/booking_confirmation_screen.dart` and `lib/features/booking/screens/my_bookings_screen.dart`.
+
+Verified current Customer booking submission behavior:
+- The app currently creates a document ID locally and writes directly to `bookings/{bookingId}` using Firestore `.set(bookingData)`; this is not yet the proposed authenticated `createBookingRequest` callable.
+- Current payload includes `customerId`, `bookingPlan`, `serviceType`, `serviceName`, `petName`, `dogId`, full client-copied `petDetails`, `pickupAddressId`, full client-copied `pickupAddress`, `scheduledAt`, `duration`, `preferredTime`, `walkCount`, `walkSchedules`, `status: "pending"`, `walkerId: null`, and client timestamps. Regular and Choose-Dates add their own legacy fields including `frequency`, `walksPerDay`, `planStatus`, `dailyWalkTemplate`, `selectedDates`, and nested `dateSchedules`.
+- Before writing, the UI reads `users/{uid}/pets/{dogId}`; the proposed callable must repeat this read server-side and build the canonical pet snapshot itself. Client-supplied `petDetails` and `pickupAddress` are not trusted request inputs.
+- Choose-Dates currently sends finite date schedules with nested walks. The request adapter must preserve every selected date and every walk occurrence, not just the first date or `walkSchedules` for the first day.
+- Immediate currently sets `scheduledAt` from device `DateTime.now()` and `preferredTime: "ASAP"`. The server must ignore the device timestamp as an appointment authority and keep Immediate in the approved operations/availability path until a real slot is checked.
+- The Customer My Bookings UI currently reads parent `bookings` documents and displays `scheduledAt`, `walkSchedules`, `dateSchedules`, status, price and Walker details. A parent/child migration must retain the parent Booking read model and add task detail/read paths without treating one parent as one executable walk.
+- Current Firebase `main` Rules still permit legacy direct booking creation through `validBookingBase` and plan validators. The new API design requires a coordinated Rules change to deny direct client writes to canonical Booking/Walk Task lifecycle fields and permit only trusted Functions writes. Do not change deployed Rules in this documentation step.
+
+Request adapter requirements:
+1. Map the current UI's selected plan, service type, dog ID, saved address ID and all schedule entries into the strict callable allowlist. Add a client-generated UUID v4 idempotency key and request version.
+2. Strip all client-authored identity, snapshots, status, Walker, Zone/City, price/payment, task IDs and timestamps from the callable request.
+3. Preserve current UI display/summary behavior by reading the canonical parent Booking and its child Walk Tasks; do not trust locally calculated prices as payable quotes.
+4. Introduce a staged app/Rules cutover so older app versions cannot silently continue creating records with the legacy direct-write contract after trusted callable enforcement is enabled.
+5. Add Customer Emulator/contract tests for One-Time, Choose-Dates nested occurrences, finite Regular calendar dates, Immediate device-clock rejection, forged snapshots, duplicate retries and legacy read compatibility.
+
 ## 6. Zone and building-footprint evidence pinned to Booking
 
 Booking stores the resolution evidence so later Zone edits cannot silently rewrite history:
