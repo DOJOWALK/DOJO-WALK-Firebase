@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-04  
 **Status:** Architecture proposal only — not production implementation  
-**Policy:** POL-029 approved business decisions; synthetic test PR #85
+**Policy:** POL-029 cancellation settlement direction (2026-11-05); synthetic policy tests PR #85 and subscription tests PR #87
 
 ## 1. Objective
 
@@ -12,11 +12,11 @@ Customer apps submit a cancellation request. Trusted backend code validates owne
 
 1. Use trusted server time; customer schedule timezone is `Asia/Kolkata`.
 2. **Single-occurrence cancellation (existing rule):** remaining time >= 12 hours: 100% of that occurrence's allocated paid amount; remaining time < 12 hours: 50%. Apply separately to each occurrence. This is not an automatic 50% deduction on early termination of the entire subscription.
-3. **Customer-initiated early subscription termination (new proposed rule):** permit cancellation at any time. Reconcile only walks actually completed. A Short-Term/One-Time repricing adjustment may be applied to completed walks only if the exact rate and calculation were clearly disclosed before subscription purchase and the customer affirmatively accepted that term. Do not introduce a retroactive rate or charge not accepted at checkout.
-4. Refund the remaining captured amount after the permitted completed-walk adjustment and any separately itemised, actual, evidenced, non-refundable third-party expense that was disclosed before purchase and is legally permissible. No blanket percentage penalty, arbitrary admin/cancellation fee, duplicate expense deduction, or amount above the actual captured payment.
-5. If no valid pre-purchase repricing consent exists, calculate completed walks using the agreed subscription allocation/rate; do not retroactively impose Short-Term pricing. Legal review is required before publishing any repricing term.
+3. **Customer-initiated early subscription termination:** permit cancellation at any time. Charge verified completed walks only at their agreed subscription allocation/rate. Remove Short-Term/One-Time repricing completely; never retroactively reprice completed walks.
+4. Use one customer-facing line item, **Cancellation Charge**, only for actual, evidenced, non-recoverable cancellation-related operational cost that was disclosed before purchase, is legally permissible, and is within a pre-disclosed maximum cap. If no qualifying cost or evidence exists, Cancellation Charge = ₹0. Do not create a separate Refund Processing Fee; ordinary gateway/transaction costs are company operating expenses.
+5. A genuinely additional, non-refundable provider refund fee may be considered only if actually charged, itemised within the single Cancellation Charge, pre-disclosed, legally permissible, and not recovered elsewhere. No arbitrary percentage penalty, hidden admin fee, duplicate deduction, or amount above the actual captured payment. Numeric cap is not yet approved and must be set from pilot cost evidence plus legal review.
 6. Completed walks are not refunded as unused services; active/started walks and ambiguous past-due occurrences require Operations review and safe handover. Do not invent no-show fees.
-7. **Company/Walker service failure:** attempt backup; if none is available and the customer does not accept rescheduling, offer a full refund of the affected walk's allocated paid amount. Do not apply customer early-termination repricing or cancellation fees to company-caused failure.
+7. **Company/Walker service failure:** attempt backup/reschedule; if none is available and the customer declines rescheduling, refund the full allocated paid amount for the affected walk. Do not apply a customer Cancellation Charge to company-caused failure.
 8. Refund <= ₹2,000: Central Admin approval. Refund > ₹2,000: Founder/CEO approval. Suspicious cases: escalation regardless of amount.
 9. Mark refund complete only after verified provider success and reconciliation.
 10. One occurrence may not be refunded twice, including retries with different request keys.
@@ -68,13 +68,15 @@ Provider timeout is not proof of failure. Keep pending and reconcile by provider
 - Source is the captured, reconciled payment—not displayed price or client quote.
 - Quote/payment ledger must deterministically allocate actual paid amount across occurrences before subscription refunds are enabled.
 - Single-occurrence cancellation retains the existing 12-hour rule: >=12h = 100%; <12h = 50%, per occurrence.
-- Early termination of the whole subscription is a separate calculation: only completed walks may be repriced to the pre-disclosed Short-Term rate if affirmative checkout consent is recorded. Without that consent, use the agreed subscription allocation/rate; never retroactively reprice.
-- Refund the residual captured amount after permitted completed-walk charges and any evidenced, pre-disclosed, legally permissible non-refundable third-party expense. No arbitrary percentage/admin penalty or duplicate deduction. Company-caused service failure is not customer early termination.
+- Early termination of the whole subscription: completed walks are charged only at their agreed subscription allocation/rate. Short-Term/One-Time repricing is prohibited.
+- One Cancellation Charge may include only actual, evidenced, non-recoverable cancellation-related operational cost, disclosed before purchase, legally permissible, and within a pre-disclosed cap. If evidence is missing or no qualifying cost exists, charge ₹0.
+- Ordinary gateway/transaction costs are company operating expenses; do not add a separate Refund Processing Fee. Any genuinely additional provider refund fee must be actually charged, pre-disclosed, lawful, and included within the single Cancellation Charge without duplication.
+- Refund = actual captured payment − agreed completed-walk charges − one permitted Cancellation Charge. Company-caused service failure carries no customer Cancellation Charge.
 - If any occurrence is active, started, or past-due with ambiguous event history, hold subscription calculation for Operations review.
 - Sum of occurrence allocations must equal captured payment total; otherwise block and raise an exception.
 - For 50%, round down to whole paise and retain exact calculation breakdown.
 - Deterministic allocation of actual captured subscription payment across occurrences remains unresolved and must be approved before production calculations.
-- Whether Short-Term repricing is enforceable for the intended subscription product requires Indian consumer-law review and explicit pre-purchase consent design.
+- The numeric Cancellation Charge cap is unresolved; determine it from pilot cost evidence and Indian consumer-law review before launch.
 - No-show grace/fee, tax/provider-fee deduction and gateway refund SLA remain unresolved; do not implement deductions or fees until separately approved.
 
 Transaction flow:
