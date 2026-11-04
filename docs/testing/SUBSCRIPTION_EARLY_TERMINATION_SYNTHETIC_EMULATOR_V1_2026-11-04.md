@@ -1,7 +1,7 @@
 # Subscription Early Termination — Synthetic Emulator Test Record
 
-**Policy source:** POL-029 section 21, single Cancellation Settlement model (2026-11-05)  
-**Date:** 2026-11-05  
+**Policy source:** POL-029 section 21, single Cancellation Settlement model (2026-11-05)\
+**Date:** 2026-11-05\
 **Status:** Test-only reference oracle; no production implementation.
 
 ## Rules and coverage
