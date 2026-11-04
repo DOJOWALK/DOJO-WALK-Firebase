@@ -75,7 +75,7 @@ function audit(tx: FirebaseFirestore.Transaction, zoneId: string, action: string
     requestId, fromRevision, toRevision, fromStatus, toStatus, reason: null, createdAt: FieldValue.serverTimestamp() });
 }
 
-function canonicalBoundary(value: unknown): { points: Array<{lat: number; lng: number}>; geometryHash: string } {
+export function canonicalBoundary(value: unknown): { points: Array<{lat: number; lng: number}>; geometryHash: string } {
   if (!Array.isArray(value) || value.length < 4) throw new HttpsError("invalid-argument", "points must be a closed polygon ring with at least four positions.");
   const points = value.map((item, index) => {
     if (!item || typeof item !== "object" || Array.isArray(item)) throw new HttpsError("invalid-argument", `points[${index}] is invalid.`);
