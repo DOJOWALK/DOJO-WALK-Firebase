@@ -99,6 +99,8 @@ test.after(async () => {
 
 test("valid Active Zone processes without a Central Admin approval document", async () => {
   await seed({});
+  const adminApprovals = await db.collection(PREFIX + "_admin_approvals").get();
+  assert.equal(adminApprovals.empty, true, "Normal booking fixture must not contain an Admin approval gate.");
   const result = await reserveReferenceBooking({
     requestKey: "admin-offline", payloadHash: "payload-1",
     zoneId: "zone-a", slotId: "slot-a", walkerUid: "walker-a",
