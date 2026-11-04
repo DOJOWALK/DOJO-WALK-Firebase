@@ -2056,3 +2056,12 @@ export const revokeZoneAssignment = onCall({ region: "asia-south1" }, async (req
   });
   return { ok: true, assignmentId, status: "revoked" };
 });
+
+
+// Canonical Zone lifecycle callables (separate from legacy City/Area workflows).
+export {
+  createServiceZoneDraft,
+  reviewServiceZoneBoundary,
+  decideServiceZoneFounderApproval,
+  activateServiceZone,
+} from "./zone_lifecycle";
