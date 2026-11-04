@@ -93,3 +93,21 @@ For success cases, assert:
 6. Transaction contract for Zone/Boundary/footprint revalidation at booking commit.
 
 Until these are decided, this document is an acceptance plan only. Do not add placeholder Rules or runtime code that could accidentally permit client access.
+
+
+## 7. Geometry implementation audit (2026-11-04)
+
+The current Firebase Functions geometry helper `functions/src/location_geometry.ts` uses Turf validity and containment helpers and includes defensive ring checks. It validates Zone/Area polygons and parent containment; it does **not** currently calculate polygon intersection area or a building-footprint majority share.
+
+The current Functions dependencies include `@turf/boolean-valid`, `@turf/boolean-contains` and `@turf/helpers`; the reviewed package manifest does not declare Turf intersection/area modules. Do not implement majority by applying the existing point-in-polygon helper, by using the pickup point, or by dividing raw latitude/longitude degree-squared values.
+
+Before coding the resolver, select and pin a deterministic geospatial implementation that:
+- Validates footprint and Zone polygons and handles holes/multipolygons if they are allowed by the final schema.
+- Computes polygon intersection and area in a documented metric/equal-area model suitable for the pilot geography, not raw degree-squared arithmetic.
+- Defines numerical precision, tolerance, tie/near-tie behavior and invalid-topology handling.
+- Has synthetic unit fixtures with known area ratios and regression tests.
+- Produces an auditable set of per-Zone intersection areas/shares and geometry/version hashes.
+
+The current Zone review callable provides a useful independent-review pattern: active reviewer permission, exact assignment in `zone_boundary_review_assignments`, submitter self-review rejection, and transaction-time revalidation. Footprint review should use a dedicated assignment scope/collection and a dedicated callable, not the Zone Boundary review assignment record.
+
+This section records read-only findings and does not approve a library, schema, permissions or callable names.
