@@ -147,3 +147,51 @@ Tests must use deterministic synthetic Auth UIDs and Emulator-only Firestore doc
 ## 9. Explicit non-effects
 
 This register does not select unresolved field names or state enums, implement or export callables, change Rules, create production documents, provision real users, migrate legacy data, enable Admin UI, activate Zones, deploy, merge PRs, or change `main`.
+
+
+## 10. Reconciliation with the deeper Phase 1 / Phase 2 plans
+
+A second pass against `ZONE_EMULATOR_FIRST_IMPLEMENTATION_PLAN_2026-11-03.md` (blob `d1cc0136d5ff0ce9dba29d03e24529781ea403a7`) and `ZONE_PHASE_2_AUTH_FUNCTIONS_EMULATOR_HARNESS_2026-11-03.md` (blob `a2631beb19b39d8d54a8e1dc09d8308c3e408d37`) narrows several gaps. These items are already specified at the semantic/algorithm level and must not be re-opened as blank decisions:
+
+### 10.1 Already pinned by the implementation plan
+
+- Every state-changing callable validates an expected revision and an idempotency key, in addition to authentication, authoritative role record, strict allowlisted payload, parent IDs and transaction preconditions.
+- Geometry hash algorithm family is SHA-256 over canonical ordered longitude/latitude pairs, computed server-side. It is **not** a hash of arbitrary Firestore serialization.
+- Boundary draft evidence becomes immutable after submission; corrections create a new Boundary document.
+- A new Boundary revision increments the Zone revision and clears current approval references.
+- Name-index reservation, Zone creation, and rename/release are transactional; same normalized name is unique within City only.
+- State transition, revision, audit event and idempotency result commit atomically.
+- A successful Founder approval is exact to Zone ID + revision + Boundary ID + Boundary hash + request type.
+- Routine deactivation requires a Central Admin request followed by Founder approval. Emergency suspension is immediate, separate, blocks new booking eligibility, and does not terminate an in-progress walk.
+- Emergency suspension must durably record an immediate Founder notification request. Delivery failure must remain observable, retryable and escalated; it cannot be silently dropped or downgraded to a digest.
+- Emulator callable tests must assert both callable response/error and resulting Firestore state/audit evidence. An expected denial is not sufficient if protected state is not also proven unchanged.
+
+### 10.2 Remaining precision gaps (do not overstate as wholly unspecified)
+
+| Area | Already fixed | Still needs exact contract detail |
+|---|---|---|
+| Expected revision | Required on state-changing callables; transaction preconditions | Exact field name/type for each callable, whether create uses an explicit absent/zero sentinel, and response revision shape |
+| Idempotency | Actor + operation + request ID + same payload replays; conflicting payload fails; atomic persistence | Exact request field name, document path/key, fingerprint canonicalization, retention and response replay envelope |
+| Geometry hash | Server SHA-256 over canonical ordered longitude/latitude pairs | Coordinate numeric precision/serialization, ring closure and hole policy, orientation/start-vertex normalization, canonicalization version |
+| Boundary revisions | New submitted Boundary creates a new revision and invalidates approval | Exact distinction among Zone revision, Boundary revision, and Boundary's bound Zone revision fields |
+| Name uniqueness | Normalized key scoped to City; transactional reservation/release | Exact Unicode normalization/case-fold/whitespace algorithm, index path/key, collision error code |
+| Approval | Exact tuple and distinct reviewer vs Founder roles | Approval collection path/ID, request type and decision enums, supersede/revoke rules, exact duplicate-decision behavior |
+| Lifecycle | Routine deactivation, emergency suspension and reactivation are distinct | Complete canonical status enum/table and precise allowed transitions, including whether a rejected request leaves Zone state unchanged |
+| Notification | Immediate durable notification request; observable retry/escalation | Provider/transport, outbox document schema, retry schedule, escalation owner and acknowledgement definition |
+| API envelope | All state-changing calls require expected revision and idempotency key | Common vs per-call request envelope, stable ID generation, success/error response fields and strict unknown-field handling |
+
+### 10.3 Current test reality (reconfirmed)
+
+The current `test/service_zones.rules.test.mjs` blob `537a0519a3ab4cc8e124b7ca65af139fd04410c6` contains five server-write-only collection checks and exactly ten `test.todo` entries. It does not yet exercise lifecycle callable behavior. The Functions assignment-writer suite and the Phase 2 fixture smoke suite are separate tests; neither substitutes for those ten lifecycle acceptance gates.
+
+The Phase 2 fixture smoke test uses synthetic Auth identities and fixture-only authority documents, but does not call lifecycle endpoints. The callable-presence baseline PR #68 is an additional inventory test that expects `functions/not-found` for the ten missing endpoint names; it is not a lifecycle acceptance test.
+
+## 11. Updated safe next step
+
+The remaining work is now a **contract freeze**, not further broad discovery. Produce a versioned API contract draft that:
+1. carries forward every fixed semantic and algorithmic requirement in Section 10.1;
+2. selects explicit field names, document paths, enums, error codes and canonicalization details only where the source evidence supports them;
+3. clearly labels any still-open product/security decision rather than silently selecting it;
+4. aligns the Admin wrapper to the approved canonical API as a later, separately tested integration change.
+
+Do not implement lifecycle Functions/Rules or enable Admin UI actions until the exact contract is reviewed and the ten synthetic callable acceptance tests are written and run.
