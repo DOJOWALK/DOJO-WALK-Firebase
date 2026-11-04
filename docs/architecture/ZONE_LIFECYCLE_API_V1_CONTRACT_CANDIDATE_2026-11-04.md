@@ -1,10 +1,10 @@
 # DOJO WALK — Zone Lifecycle API v1 Contract
 
-Date: 2026-11-04  
-Status: **Founder approved for synthetic Emulator acceptance-test freeze only**  
+Date: 2026-11-04\
+Status: **Founder approved for synthetic Emulator acceptance-test freeze only**\
 Approval scope: Contract fields, callable names, workflow statuses, geometry canonicalization and explicit `zoneEmergencySuspend` permission are approved as the test target. This is not approval to implement runtime Functions/Rules, merge, deploy, provision production authority, or modify `main`.
 
-Parent: `docs/implementation/ZONE_LIFECYCLE_API_CONTRACT_GAP_REGISTER_2026-11-04.md`  
+Parent: `docs/implementation/ZONE_LIFECYCLE_API_CONTRACT_GAP_REGISTER_2026-11-04.md`\
 Base contract branch: `implementation/zone-emulator-first-plan-2026-11-03`
 
 ## 1. Purpose and boundary
@@ -109,4 +109,3 @@ Emergency suspension transaction atomically writes Zone state, audit event, idem
 ## 8. Explicit non-effects
 
 This approval is limited to freezing the contract as the target for synthetic Emulator acceptance tests. It does not authorize runtime Functions/Rules implementation, Admin UI enablement, production provisioning, migration, Zone activation, deployment, PR merge, or changes to `main`. A separate Founder approval is required for implementation and again for any production deployment or merge.
-
