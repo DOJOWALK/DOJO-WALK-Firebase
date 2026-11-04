@@ -83,6 +83,8 @@ Coordinate validation:
 - Missing, null, malformed, out-of-range, or partial coordinate pairs fail closed.
 - Do not silently fall back to city, district, PIN code, radius, nearest Zone, or a client-supplied Zone ID.
 
+**Current Customer App data audit (2026-11-04):** `SavedAddress` currently persists only scalar `latitude` and `longitude` for location geometry; it has no building-footprint polygon or verified footprint reference. Therefore the current saved-address record cannot satisfy the majority-of-house rule by itself. Do not treat `flatHouse`, `buildingSociety`, a map pin, or customer-entered geometry as a verified footprint. A separate trusted footprint source and review workflow are required before majority resolution can be implemented.
+
 ### 4.2 Resolution outcome
 
 The Founder-approved rule is **majority of the verified house footprint**, not nearest Zone and not the pickup GPS point alone.
