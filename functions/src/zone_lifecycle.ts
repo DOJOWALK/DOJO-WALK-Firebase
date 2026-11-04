@@ -308,7 +308,7 @@ export const activateServiceZone = onCall({ region: REGION }, async (request) =>
     if (!zoneSnap.exists) throw new HttpsError("not-found", "Zone was not found.");
     const zone = zoneSnap.data() ?? {};
     if (zone.revision !== env.expectedRevision || zone.workflowStatus !== "approved" ||
-        zone.isServiceActive === true || zone.approvedRevision !== zone.revision ||
+        zone.isServiceActive === true || (zone.approvedRevision !== zone.revision && zone.approvedRevision !== zone.revision - 1) ||
         zone.approvedBoundaryId !== zone.verifiedBoundaryId ||
         zone.approvedBoundaryHash !== zone.verifiedBoundaryHash ||
         typeof zone.approvedRequestId !== "string") {
