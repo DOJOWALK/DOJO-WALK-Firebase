@@ -87,13 +87,14 @@ Coordinate validation:
 
 The Founder-approved rule is **majority of the verified house footprint**, not nearest Zone and not the pickup GPS point alone.
 
-1. If a trusted, verified building-footprint polygon is available, intersect it with all eligible Zone polygons.
-2. Eligible Zone polygons must not overlap each other within the evaluated footprint. If they do, return Admin review required.
-3. Calculate each Zone's intersection area as a share of the **entire** verified building footprint. Area outside eligible Zones counts as unserved; do not renormalize only across covered fragments.
+**When a trusted, verified building-footprint polygon exists:**
+1. Intersect the complete footprint with all currently eligible Zone polygons.
+2. If eligible Zone polygons overlap one another within the evaluated footprint, return Admin review required.
+3. Calculate each Zone's intersection area as a share of the **entire** verified building footprint. Any footprint area outside eligible Zones counts as unserved; do not renormalize only across covered fragments.
 4. Select a Zone only when exactly one eligible Zone contains **strictly more than 50%** of the total footprint area.
-5. If there is no strict majority, an exact tie, invalid/numerically indeterminate geometry, no verified footprint, or a boundary/overlap conflict, return Admin review required and do not confirm a booking or create a task.
+5. If there is no strict majority, an exact tie, invalid/numerically indeterminate geometry, or a boundary/overlap conflict, return Admin review required and do not confirm a booking or create a task.
 
-For ordinary addresses with no verified building footprint, point-in-polygon may be used only when the saved pickup point is strictly inside exactly one eligible Zone and is not on/near a boundary. If the point is on/near a shared boundary or intersects multiple eligible Zones, do not guess; require Admin review. This fallback does not claim to implement the majority-of-house rule.
+**Fallback when no trusted footprint exists:** point-in-polygon may be used only when the saved pickup point is strictly inside exactly one eligible Zone and is not on/near a boundary. If the point is on/near a shared boundary or intersects multiple eligible Zones, do not guess; require Admin review. This fallback does not claim to implement the majority-of-house rule.
 
 The building-footprint source, provenance, verification process, geometry precision/tolerance and audit evidence are still implementation gates. Never accept a footprint or Zone choice as trusted merely because the client supplied it. A point on an outer service boundary with no qualifying majority is not service coverage.
 
@@ -128,7 +129,7 @@ All tests must use synthetic data and a `demo-*` Firebase project. The harness m
 
 ### 6.1 Positive cases
 
-1. A valid saved pickup point inside exactly one active, verified, Founder-approved Zone resolves to that Zone.
+1. A valid saved pickup point strictly inside one eligible Zone and away from boundaries resolves to that Zone; if a verified footprint is used, the strict-majority rule determines the Zone.
 2. The resulting snapshot contains the server-derived Zone ID, Zone revision, verified Boundary ID/hash and server timestamp.
 3. A request cannot alter the resolved Zone snapshot by adding client-authored Zone fields.
 4. The selected Zone is revalidated before booking acceptance and the pinned revision/hash is unchanged.
