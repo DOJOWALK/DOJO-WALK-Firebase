@@ -215,7 +215,7 @@ export const reviewServiceZoneBoundary = onCall({ region: REGION }, async (reque
       ...(decision === "verified" ? { verifiedAt: timestamp } : {}),
     });
     tx.update(zoneRef, {
-      workflowStatus: nextStatus, revision: nextRevision, updatedBy: uid, updatedAt: timestamp,\n      ...(requestType === "routine_deactivation" && decision === "approved" ? { isServiceActive: false } : {}),\n      ...(requestType === "routine_deactivation" && decision !== "approved" ? { isServiceActive: true } : {}),
+      workflowStatus: nextStatus, revision: nextRevision, updatedBy: uid, updatedAt: timestamp,
       ...(decision === "verified" ? { verifiedBoundaryId: boundaryId, verifiedBoundaryRevision: boundary.revision, verifiedBoundaryHash: boundary.geometryHash ?? null } : {}),
     });
     audit(tx, zoneId, `boundary_${decision}`, { uid, authority: "boundary_reviewer" }, env.requestId,
@@ -268,13 +268,17 @@ export const decideServiceZoneFounderApproval = onCall({ region: REGION }, async
         zone.verifiedBoundaryId !== boundaryId || zone.verifiedBoundaryHash !== boundaryHash) {
       throw new HttpsError("failed-precondition", "Founder approval tuple is stale or does not match the current Zone and Boundary.");
     }
-    const nextStatus = decision === "approved"\n      ? (requestType === "activation" ? "approved" : requestType === "routine_deactivation" ? "inactive" : "reactivation_pending")\n      : (requestType === "activation" ? "boundary_verified" : requestType === "routine_deactivation" ? "active" : (zone.suspensionReason ? "suspended" : "inactive"));
+    const nextStatus = decision === "approved"
+      ? (requestType === "activation" ? "approved" : requestType === "routine_deactivation" ? "inactive" : "reactivation_pending")
+      : (requestType === "activation" ? "boundary_verified" : requestType === "routine_deactivation" ? "active" : (zone.suspensionReason ? "suspended" : "inactive"));
     const nextRevision = env.expectedRevision + 1;
     const timestamp = FieldValue.serverTimestamp();
     const response = success(env.requestId, zoneId, nextRevision, nextStatus, { approvalRequestId });
     tx.update(approvalRef, { status: decision, decision, decidedBy: uid, decidedAt: timestamp, notes, updatedAt: timestamp });
     tx.update(zoneRef, {
       workflowStatus: nextStatus, revision: nextRevision, updatedBy: uid, updatedAt: timestamp,
+      ...(requestType === "routine_deactivation" && decision === "approved" ? { isServiceActive: false } : {}),
+      ...(requestType === "routine_deactivation" && decision !== "approved" ? { isServiceActive: true } : {}),
       ...(decision === "approved" ? {
         approvedRevision: targetRevision, approvedBoundaryId: boundaryId,
         approvedBoundaryHash: boundaryHash, approvedRequestId: approvalRequestId,
