@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { polygonFromBoundary } from "./location_geometry";
+import { canonicalBoundary } from "./zone_lifecycle_boundary";
 
 const db = getFirestore();
 const REGION = "asia-south1";
@@ -203,8 +204,16 @@ export const reviewServiceZoneBoundary = onCall({ region: REGION }, async (reque
       throw new HttpsError("permission-denied", "Boundary review assignment is no longer active.");
     }
     if (decision === "verified") {
-      try { polygonFromBoundary(boundary as never); }
-      catch (error) { throw new HttpsError("failed-precondition", error instanceof Error ? error.message : "Boundary geometry is invalid."); }
+      try {
+        polygonFromBoundary(boundary as never);
+        const canonical = canonicalBoundary(boundary.points);
+        if (canonical.geometryHash !== boundary.geometryHash) {
+          throw new HttpsError("failed-precondition", "Stored Boundary geometry hash does not match its canonical coordinates.");
+        }
+      } catch (error) {
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError("failed-precondition", error instanceof Error ? error.message : "Boundary geometry is invalid.");
+      }
     }
     const nextRevision = env.expectedRevision + 1;
     const nextStatus = decision === "verified" ? "boundary_verified" : "draft";
