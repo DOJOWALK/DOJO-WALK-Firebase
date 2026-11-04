@@ -295,6 +295,83 @@ test("12 — Central submits only the exact verified Boundary and persists the F
   assert.equal((await db.collection("service_zone_audit").where("zoneId", "==", zoneId).get()).size, 1);
 });
 
+
+test("13 — Routine deactivation requires exact Founder approval and then disables new Zone service", async () => {
+  const zoneId = `${PREFIX}-zone-deactivate`, boundaryId = `${PREFIX}-boundary-deactivate`, boundaryHash = "1".repeat(64);
+  track(`service_zones/${zoneId}`);
+  await seed(`service_zones/${zoneId}`, { schemaVersion: 1, zoneId, cityId: `${PREFIX}-city-a`,
+    name: "Deactivation Zone", workflowStatus: "active", isServiceActive: true, revision: 10, createdBy: uid.central,
+    verifiedBoundaryId: boundaryId, verifiedBoundaryRevision: 2, verifiedBoundaryHash: boundaryHash });
+  const requested = await callAs("central", "requestServiceZoneDeactivation", {
+    requestId: "deactivation-request-13", expectedRevision: 10, zoneId, notes: "Synthetic routine deactivation"
+  });
+  assert.equal(requested.data.workflowStatus, "deactivation_pending");
+  track(`service_zone_approval_requests/${requested.data.approvalRequestId}`);
+  const decided = await callAs("founder", "decideServiceZoneFounderApproval", {
+    requestId: "deactivation-founder-13", expectedRevision: 11, approvalRequestId: requested.data.approvalRequestId,
+    zoneId, revision: 11, boundaryId, boundaryHash, requestType: "routine_deactivation",
+    decision: "approved", notes: "Approved in synthetic test"
+  });
+  assert.equal(decided.data.workflowStatus, "inactive");
+  const zone = await db.doc(`service_zones/${zoneId}`).get();
+  assert.equal(zone.get("workflowStatus"), "inactive");
+  assert.equal(zone.get("isServiceActive"), false);
+  assert.equal(zone.get("revision"), 12);
+});
+
+test("14 — Emergency suspension immediately blocks service and durably queues Founder notification", async () => {
+  const zoneId = `${PREFIX}-zone-emergency`, boundaryId = `${PREFIX}-boundary-emergency`;
+  track(`service_zones/${zoneId}`);
+  await seed(`service_zones/${zoneId}`, { schemaVersion: 1, zoneId, cityId: `${PREFIX}-city-a`,
+    name: "Emergency Zone", workflowStatus: "active", isServiceActive: true, revision: 20, createdBy: uid.central,
+    verifiedBoundaryId: boundaryId, verifiedBoundaryRevision: 1, verifiedBoundaryHash: "2".repeat(64) });
+  const result = await callAs("central", "suspendServiceZoneForEmergency", {
+    requestId: "emergency-suspend-14", expectedRevision: 20, zoneId,
+    reason: "Synthetic safety event", severity: "SEV-1"
+  });
+  assert.equal(result.data.workflowStatus, "suspended");
+  const zone = await db.doc(`service_zones/${zoneId}`).get();
+  assert.equal(zone.get("workflowStatus"), "suspended");
+  assert.equal(zone.get("isServiceActive"), false);
+  assert.equal(zone.get("revision"), 21);
+  const outboxPath = `service_zone_notification_outbox/${result.data.notificationId}`;
+  track(outboxPath);
+  const outbox = await db.doc(outboxPath).get();
+  assert.equal(outbox.get("recipientAuthority"), "founder");
+  assert.equal(outbox.get("status"), "pending");
+  assert.equal(outbox.get("attemptCount"), 0);
+  assert.deepEqual(outbox.get("retryScheduleMinutes"), [1, 5, 15, 60]);
+  assert.equal(outbox.get("escalationAfterFailures"), 5);
+});
+
+test("15 — Reactivation requires Founder approval of the exact request before Central commits it", async () => {
+  const zoneId = `${PREFIX}-zone-reactivate`, boundaryId = `${PREFIX}-boundary-reactivate`, boundaryHash = "3".repeat(64);
+  track(`service_zones/${zoneId}`);
+  await seed(`service_zones/${zoneId}`, { schemaVersion: 1, zoneId, cityId: `${PREFIX}-city-a`,
+    name: "Reactivation Zone", workflowStatus: "suspended", isServiceActive: false, revision: 30, createdBy: uid.central,
+    suspensionReason: "Synthetic suspension", suspensionSeverity: "SEV-2",
+    verifiedBoundaryId: boundaryId, verifiedBoundaryRevision: 3, verifiedBoundaryHash: boundaryHash });
+  const requested = await callAs("central", "requestServiceZoneReactivation", {
+    requestId: "reactivation-request-15", expectedRevision: 30, zoneId, reason: "Synthetic controls verified"
+  });
+  assert.equal(requested.data.workflowStatus, "reactivation_pending");
+  track(`service_zone_approval_requests/${requested.data.approvalRequestId}`);
+  await callAs("founder", "decideServiceZoneFounderApproval", {
+    requestId: "reactivation-founder-15", expectedRevision: 31, approvalRequestId: requested.data.approvalRequestId,
+    zoneId, revision: 31, boundaryId, boundaryHash, requestType: "reactivation",
+    decision: "approved", notes: "Synthetic reactivation approval"
+  });
+  const beforeCommit = await db.doc(`service_zones/${zoneId}`).get();
+  assert.equal(beforeCommit.get("workflowStatus"), "reactivation_pending");
+  assert.equal(beforeCommit.get("isServiceActive"), false);
+  const result = await callAs("central", "reactivateServiceZone", { requestId: "reactivation-commit-15", expectedRevision: 32, zoneId });
+  assert.equal(result.data.workflowStatus, "active");
+  const after = await db.doc(`service_zones/${zoneId}`).get();
+  assert.equal(after.get("workflowStatus"), "active");
+  assert.equal(after.get("isServiceActive"), true);
+  assert.equal(after.get("revision"), 33);
+});
+
 test.after(async () => {
   for (const client of clients.values()) await deleteApp(client.app).catch(() => {});
   if (db) {
