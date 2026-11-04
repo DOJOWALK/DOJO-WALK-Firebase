@@ -141,7 +141,7 @@ test("same idempotency key and payload returns one stable Booking", async () => 
   assert.equal(first.outcome, "confirmed");
   assert.equal(replay.outcome, "replayed");
   assert.equal(replay.bookingId, first.bookingId);
-  assert.equal((await db.collection(PREFIX + "_bookings").get()).size, 1);
+  assert.equal((await db.collection(PREFIX + "_bookings").where("zoneId", "==", "zone-idem").get()).size, 1);
 });
 
 test("same idempotency key with changed payload conflicts", async () => {
@@ -155,7 +155,7 @@ test("same idempotency key with changed payload conflicts", async () => {
     reserveReferenceBooking({ ...args, payloadHash: "tampered" }),
     /IDEMPOTENCY_PAYLOAD_CONFLICT/,
   );
-  assert.equal((await db.collection(PREFIX + "_bookings").get()).size, 1);
+  assert.equal((await db.collection(PREFIX + "_bookings").where("zoneId", "==", "zone-conflict").get()).size, 1);
 });
 
 test("concurrent requests cannot oversell the final capacity unit", async () => {
@@ -173,7 +173,7 @@ test("concurrent requests cannot oversell the final capacity unit", async () => 
   const confirmed = results.filter((r) => r.status === "fulfilled" && r.value.outcome === "confirmed");
   assert.equal(confirmed.length, 1);
   assert.equal((await db.collection(PREFIX + "_capacity").doc("slot-race").get()).get("remaining"), 0);
-  assert.equal((await db.collection(PREFIX + "_bookings").get()).size, 1);
+  assert.equal((await db.collection(PREFIX + "_bookings").where("zoneId", "==", "zone-race").get()).size, 1);
 });
 
 test("inactive Walker creates an exception instead of a false assignment", async () => {
