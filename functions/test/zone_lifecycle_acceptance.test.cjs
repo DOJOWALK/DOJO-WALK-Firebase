@@ -236,6 +236,65 @@ test("10 — concurrent activation attempts yield exactly one committed transiti
   assert.equal(audit.size, 1, "Only one activation audit event may commit.");
 });
 
+
+test("11 — Central creates a canonical pending Boundary draft and advances the Zone revision atomically", async () => {
+  const zoneId = `${PREFIX}-zone-boundary-create`;
+  await seed(`service_zones/${zoneId}`, { schemaVersion: 1, zoneId, stateId: "state-test", districtId: "district-test",
+    cityId: `${PREFIX}-city-a`, name: "Boundary Draft Zone", normalizedName: "boundary draft zone",
+    workflowStatus: "draft", isServiceActive: false, revision: 1 });
+  const result = await callAs("central", "createServiceZoneBoundaryDraft", {
+    requestId: "boundary-create-11", expectedRevision: 1, zoneId,
+    points: [{lat:28.5,lng:77.3},{lat:28.5,lng:77.4},{lat:28.6,lng:77.4},{lat:28.5,lng:77.3}],
+    sourceType: "manuallyDrawn", sourceName: "Synthetic test", sourceReference: "fixture:boundary-11"
+  });
+  assert.equal(result.data.ok, true);
+  assert.equal(result.data.workflowStatus, "boundary_review_pending");
+  assert.equal(result.data.revision, 2);
+  const zone = await db.doc(`service_zones/${zoneId}`).get();
+  assert.equal(zone.get("revision"), 2);
+  assert.equal(zone.get("currentBoundaryId"), result.data.boundaryId);
+  const boundaryPath = `service_location_boundaries/${result.data.boundaryId}`;
+  track(boundaryPath);
+  const boundary = await db.doc(boundaryPath).get();
+  assert.equal(boundary.get("verificationStatus"), "pending");
+  assert.equal(boundary.get("zoneRevision"), 2);
+  assert.equal(boundary.get("geometryCanonicalizationVersion"), 1);
+  assert.match(boundary.get("geometryHash"), /^[a-f0-9]{64}$/);
+  assert.equal((await db.collection("service_zone_audit").where("zoneId", "==", zoneId).get()).size, 1);
+});
+
+test("12 — Central submits only the exact verified Boundary and persists the Founder approval tuple", async () => {
+  const zoneId = `${PREFIX}-zone-submit`, boundaryId = `${PREFIX}-boundary-submit`;
+  const boundaryHash = "e".repeat(64);
+  track(`service_zones/${zoneId}`);
+  await seed(`service_zones/${zoneId}`, { schemaVersion: 1, zoneId, stateId: "state-test", districtId: "district-test",
+    cityId: `${PREFIX}-city-a`, name: "Submission Zone", normalizedName: "submission zone",
+    workflowStatus: "boundary_verified", isServiceActive: false, revision: 4, currentBoundaryId: boundaryId,
+    verifiedBoundaryId: boundaryId, verifiedBoundaryRevision: 1, verifiedBoundaryHash: boundaryHash });
+  track(`service_location_boundaries/${boundaryId}`);
+  await seed(`service_location_boundaries/${boundaryId}`, { locationType: "zone", locationId: zoneId, zoneId,
+    zoneRevision: 4, revision: 1, verificationStatus: "verified", geometryHash: boundaryHash,
+    submittedBy: uid.central });
+  const result = await callAs("central", "submitServiceZoneForFounderReview", {
+    requestId: "founder-submit-12", expectedRevision: 4, zoneId, boundaryId
+  });
+  assert.equal(result.data.ok, true);
+  assert.equal(result.data.workflowStatus, "founder_review_pending");
+  assert.equal(result.data.revision, 5);
+  const approvalPath = `service_zone_approval_requests/${result.data.approvalRequestId}`;
+  track(approvalPath);
+  const approval = await db.doc(approvalPath).get();
+  assert.equal(approval.get("zoneId"), zoneId);
+  assert.equal(approval.get("revision"), 5);
+  assert.equal(approval.get("boundaryId"), boundaryId);
+  assert.equal(approval.get("boundaryHash"), boundaryHash);
+  assert.equal(approval.get("requestType"), "activation");
+  assert.equal(approval.get("status"), "pending");
+  const zone = await db.doc(`service_zones/${zoneId}`).get();
+  assert.equal(zone.get("currentApprovalRequestId"), result.data.approvalRequestId);
+  assert.equal((await db.collection("service_zone_audit").where("zoneId", "==", zoneId).get()).size, 1);
+});
+
 test.after(async () => {
   for (const client of clients.values()) await deleteApp(client.app).catch(() => {});
   if (db) {
