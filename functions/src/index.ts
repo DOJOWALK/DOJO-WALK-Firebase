@@ -1620,7 +1620,8 @@ export const listVisibleServiceZones = onCall({ region: "asia-south1" }, async (
     const eligible: FirebaseFirestore.QueryDocumentSnapshot[] = [];
     let scanned = 0;
     while (eligible.length <= pageSize && scanned < 10000) {
-      let batchQuery = query.limit(200);
+      const batchLimit = Math.min(200, 10000 - scanned);
+      let batchQuery = query.limit(batchLimit);
       if (cursor) batchQuery = batchQuery.startAfter(cursor);
       const snapshot = await batchQuery.get();
       if (snapshot.empty) break;
@@ -1633,7 +1634,7 @@ export const listVisibleServiceZones = onCall({ region: "asia-south1" }, async (
           if (eligible.length > pageSize) break;
         }
       }
-      if (snapshot.size < 200 || eligible.length > pageSize) break;
+      if (snapshot.size < batchLimit || eligible.length > pageSize) break;
     }
     if (scanned >= 10000 && eligible.length <= pageSize) {
       throw new HttpsError("resource-exhausted", "Too many non-canonical Zone records to complete this page safely.");
