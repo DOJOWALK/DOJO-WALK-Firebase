@@ -1,9 +1,9 @@
 # DOJO WALK — Canonical Zone + Booking Integration Contract
 
-**Status:** Draft architecture contract; review required before implementation  
-**Branch:** `architecture/canonical-zone-booking-contract`  
-**Base:** Firebase `main` at `bdfea488990864c4f5670a98fb147eefd1453334`  
-**Scope:** Shared contract for Admin, Firebase, Partner, and Customer  
+**Status:** Draft architecture contract; review required before implementation\
+**Branch:** `architecture/canonical-zone-booking-contract`\
+**Base:** Firebase `main` at `bdfea488990864c4f5670a98fb147eefd1453334`\
+**Scope:** Shared contract for Admin, Firebase, Partner, and Customer\
 **Change boundary:** Documentation only. No runtime code, Firestore Rules, data, indexes, deployment, app behavior, or PR merge changed.
 
 ## 1. Purpose and governing decisions
