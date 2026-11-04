@@ -1,7 +1,7 @@
 # Automatic Booking — Authenticated Callable Integration Test Gate
 
-**Status:** BLOCKED — production Booking callable and Zone resolver do not yet exist on this branch.  
-**Purpose:** Freeze the real integration acceptance requirements before implementation.  
+**Status:** BLOCKED — production Booking callable and Zone resolver do not yet exist on this branch.\
+**Purpose:** Freeze the real integration acceptance requirements before implementation.\
 **Approved policy:** All eligible Active Zones must process ordinary bookings automatically without routine Central Admin approval.
 
 ## 1. Repository evidence checked
