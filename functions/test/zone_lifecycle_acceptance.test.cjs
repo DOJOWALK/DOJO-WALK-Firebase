@@ -325,6 +325,11 @@ test("14 — Emergency suspension immediately blocks service and durably queues 
   await seed(`service_zones/${zoneId}`, { schemaVersion: 1, zoneId, cityId: `${PREFIX}-city-a`,
     name: "Emergency Zone", workflowStatus: "active", isServiceActive: true, revision: 20, createdBy: uid.central,
     verifiedBoundaryId: boundaryId, verifiedBoundaryRevision: 1, verifiedBoundaryHash: "2".repeat(64) });
+  await expectCode("central-no-review", "suspendServiceZoneForEmergency", {
+    requestId: "emergency-suspend-denied-14", expectedRevision: 20, zoneId,
+    reason: "Actor lacks emergency permission", severity: "SEV-1"
+  }, "permission-denied");
+  await assertZoneUnchanged(zoneId, { workflowStatus: "active", revision: 20, isServiceActive: true });
   const result = await callAs("central", "suspendServiceZoneForEmergency", {
     requestId: "emergency-suspend-14", expectedRevision: 20, zoneId,
     reason: "Synthetic safety event", severity: "SEV-1"
