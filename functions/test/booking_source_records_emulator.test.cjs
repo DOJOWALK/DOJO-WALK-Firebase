@@ -123,4 +123,3 @@ test("does not pass another customer's source records into canonical request val
     /BOOKING_ADDRESS_NOT_FOUND/,
   );
 });
-
