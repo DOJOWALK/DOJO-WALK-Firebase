@@ -1,9 +1,9 @@
 # Zone → Booking Integration Contract V1 — Candidate
 
-**Status:** Draft / contract candidate  
-**Date:** 2026-11-04  
-**Scope:** Firebase backend contract only; no runtime implementation in this change.  
-**Depends on:** Zone Lifecycle PR #71 and Booking validation/ownership PRs #76–#79.  
+**Status:** Draft / contract candidate\
+**Date:** 2026-11-04\
+**Scope:** Firebase backend contract only; no runtime implementation in this change.\
+**Depends on:** Zone Lifecycle PR #71 and Booking validation/ownership PRs #76–#79.\
 **Safety:** No merge, deployment, production reads/writes, schema migration, Rules change, or Admin/Customer/Partner UI enablement is authorized by this document.
 
 ## 1. Purpose
