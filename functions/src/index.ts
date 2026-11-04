@@ -2065,3 +2065,4 @@ export {
   decideServiceZoneFounderApproval,
   activateServiceZone,
 } from "./zone_lifecycle";
+export { createServiceZoneBoundaryDraft, submitServiceZoneForFounderReview } from "./zone_lifecycle_boundary";
