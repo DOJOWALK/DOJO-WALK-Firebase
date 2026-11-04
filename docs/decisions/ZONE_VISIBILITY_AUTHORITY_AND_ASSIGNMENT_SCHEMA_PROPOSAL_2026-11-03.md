@@ -1,8 +1,8 @@
 # DOJO WALK — Founder/CEO and Operational Zone Assignment Schema Proposal
 
-**Status:** FOUNDER-APPROVED — synthetic Emulator acceptance tests first; runtime implementation remains gated on test evidence  
-**Date:** 2026-11-03  
-**Parent policy:** `docs/decisions/ZONE_BOUNDARY_GEOMETRY_READ_VISIBILITY_DECISION_2026-11-03.md`  
+**Status:** FOUNDER-APPROVED — synthetic Emulator acceptance tests first; runtime implementation remains gated on test evidence\
+**Date:** 2026-11-03\
+**Parent policy:** `docs/decisions/ZONE_BOUNDARY_GEOMETRY_READ_VISIBILITY_DECISION_2026-11-03.md`\
 **Source audit:** `docs/implementation/ZONE_VISIBILITY_SOURCE_SCHEMA_AUDIT_2026-11-03.md`
 
 ## 1. Purpose
