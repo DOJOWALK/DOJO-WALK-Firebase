@@ -149,7 +149,7 @@ test.before(async () => {
 
 test.after(async () => {
   if (db) {
-    for (const name of ["bookings", "walk_tasks"]) {
+    for (const name of ["bookings", "walk_tasks", "walkers"]) {
       const snap = await db.collection(PREFIX + "_" + name).get();
       if (!snap.empty) {
         const batch = db.batch();
