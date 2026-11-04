@@ -1907,7 +1907,7 @@ export const assignZoneSupervisor = onCall({ region: "asia-south1" }, async (req
   const targetRef = db.doc(`admin_users/${targetUid}`);
   const assignmentRef = db.doc(`admin_scope_assignments/${assignmentId}`);
   await db.runTransaction(async (tx) => {
-    const [target, existing, zone] = await Promise.all([
+    const [target, existing] = await Promise.all([
       tx.get(targetRef), tx.get(assignmentRef), requireActiveZoneWithVerifiedBoundary(tx, zoneId),
     ]);
     if (!target.exists || target.get("isActive") !== true || target.get("role") !== "zone_supervisor") {
@@ -1926,7 +1926,7 @@ export const assignZoneSupervisor = onCall({ region: "asia-south1" }, async (req
     });
     writeAssignmentAudit(tx, actorUid, "zone_supervisor_assigned", "admin_scope", assignmentId, targetUid, zoneId, reason);
   });
-  return { ok: true, assignmentId, zoneId: zone.zoneId ?? zoneId };
+  return { ok: true, assignmentId, zoneId };
 });
 
 export const assignWalkerToZone = onCall({ region: "asia-south1" }, async (request) => {
