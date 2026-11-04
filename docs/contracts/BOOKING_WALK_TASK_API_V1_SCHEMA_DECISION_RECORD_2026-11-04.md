@@ -240,6 +240,31 @@ This is not an unrestricted customer callable. It is invoked only after verified
 - Primary Walker timeout, backup timing, navigation-start detection and the existing 5–10 minute additional wait target must be implemented from the separately approved operations policy; this schema does not fabricate a timeout value.
 - A Zone suspended after payment blocks new assignment; already-running walks follow the emergency/handover policy.
 
+## 5.6 Partner App source audit and compatibility gate
+
+Source audit: `DOJOWALK/DOJO-WALK-Partner` default branch, inspected files `firestore.rules`, `lib/screens/auth/account_check_screen.dart`, `lib/screens/home/partner_home_screen.dart`, `lib/screens/home/working_schedule_screen.dart`, and `lib/features/onboarding/screens/work_location_screen.dart`.
+
+Verified existing Walker profile contract at `walkers/{walkerUid}`:
+- Account eligibility currently checks `isApproved == true`, `isActive == true`, and `status == "approved"`.
+- Admin Rules permit Walker status values `under_review`, `approved`, `rejected`, `suspended`, and `inactive`; `verificationStatus` values are `pending`, `verified`, and `rejected`.
+- The onboarding flow stores `zones` as a list of document IDs sourced from the legacy `zones` collection, plus display fields `zoneName` and `zoneNames`. This is not evidence of a `walker_zone_assignments` collection.
+- Working hours are stored in profile field `workingSchedule`, with `status: "active"` and `days.{monday..sunday}.{enabled,start,end}`. The UI validates end after start.
+- Partner Home currently queries `bookings` by `walkerId`, filters by legacy `date` and `startTime`, and treats `assigned`, `accepted`, `picked_up`, and `walking` as active statuses.
+- Partner Home uses device-local `DateTime.now()` for its Today filter. The new canonical Partner adapter must instead derive the service day from `scheduledAt` and trusted `timeZone` (India: `Asia/Kolkata`).
+- The Partner Firestore Rules shown in this repository have no `walk_tasks/{walkTaskId}` match. Default-deny therefore blocks Partner task reads/writes until explicit least-privilege task rules and query tests are added.
+- Current `bookings/{bookingId}` rules allow reads for Admin, owning Customer, or assigned Walker; client booking creation is denied. Walker progress updates currently target the Booking document and permit legacy fields including `walkSchedules`, `walkNotes`, `peeCount`, `poopCount`, `distance`, and `durationActual`. These must be mapped to a trusted task-progress API, not copied as unrestricted writes to the new task schema.
+- **Rules/UI mismatch found:** `working_schedule_screen.dart` writes `workingSchedule` on `walkers/{uid}`, but the Walker-owner profile update allowlist in this Partner repository's `firestore.rules` does not include `workingSchedule`. This write appears denied under the inspected Rules. Verify against the deployed Rules/version and add a focused Emulator test before relying on working hours for automatic assignment.
+
+Migration gates:
+1. Audit Admin and Firebase Rules/repositories for the authoritative source of Zone IDs; the Partner app's legacy `zones` IDs cannot be assumed to equal `service_zones` IDs.
+2. Add an explicit compatibility adapter from `walk_tasks` to Partner Today/Upcoming/Active screens; do not silently query parent `bookings` as if it were one task per walk.
+3. Define server-authorized progress callables/events for accept, pickup, start, complete, emergency handover and GPS evidence. Keep sensitive status and assignment fields server-owned.
+4. Resolve the workingSchedule Rules/UI mismatch and define how `availability` subcollection documents combine with `workingSchedule`; neither alone proves a free slot.
+5. Build Partner Emulator Rules tests for assigned-only task reads, exact Walker UID binding, forbidden assignment/status writes, and allowed progress transitions.
+6. Preserve legacy completed `walks/{walkId}` review history separately.
+
+No Walker assignment collection or canonical availability capacity schema is approved by this audit. The current Partner source proves only profile-level Zone ID list and weekly working hours; it does not prove atomic slot capacity, schedule conflict handling, task concurrency locks, or a trusted assignment API.
+
 ## 6. Zone and building-footprint evidence pinned to Booking
 
 Booking stores the resolution evidence so later Zone edits cannot silently rewrite history:
