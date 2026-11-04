@@ -131,10 +131,30 @@ export const createServiceZoneDraft = onCall({ region: REGION }, async (request)
   const zoneRef = db.collection("service_zones").doc();
   const auditRef = db.collection("service_zone_audit").doc();
 
+  const stateRef = db.doc(`service_states/${stateId}`);
+  const districtRef = db.doc(`service_districts/${districtId}`);
+  const cityRef = db.doc(`service_cities/${cityId}`);
+
   return db.runTransaction(async (tx) => {
-    const [idem, index] = await Promise.all([tx.get(idempotencyRef), tx.get(indexRef)]);
+    const [idem, index, stateSnap, districtSnap, citySnap] = await Promise.all([
+      tx.get(idempotencyRef), tx.get(indexRef), tx.get(stateRef), tx.get(districtRef), tx.get(cityRef),
+    ]);
     const replay = replayOrConflict(idem, payloadFingerprint);
     if (replay) return replay;
+    if (!stateSnap.exists || stateSnap.get("isActive") !== true) {
+      throw new HttpsError("failed-precondition", "Selected State must exist and be active.");
+    }
+    if (!districtSnap.exists || districtSnap.get("isServiceActive") !== true ||
+        districtSnap.get("stateId") !== stateId ||
+        districtSnap.get("countryId") !== stateSnap.get("countryId")) {
+      throw new HttpsError("failed-precondition", "Selected District must be active and belong to the selected State.");
+    }
+    if (!citySnap.exists || citySnap.get("isServiceActive") !== true ||
+        citySnap.get("stateId") !== stateId ||
+        citySnap.get("districtId") !== districtId ||
+        citySnap.get("countryId") !== stateSnap.get("countryId")) {
+      throw new HttpsError("failed-precondition", "Selected City must be active and belong to the selected District and State.");
+    }
     if (index.exists) throw new HttpsError("already-exists", "A Zone with this normalized name already exists in this City.");
     const timestamp = FieldValue.serverTimestamp();
     const response = success(env.requestId, zoneRef.id, 1, "draft");
@@ -274,6 +294,7 @@ export const decideServiceZoneFounderApproval = onCall({ region: REGION }, async
         approval.zoneId !== zoneId || approval.revision !== targetRevision ||
         approval.boundaryId !== boundaryId || approval.boundaryHash !== boundaryHash ||
         approval.requestType !== requestType || approval.status !== "pending" ||
+        zone.currentApprovalRequestId !== approvalRequestId ||
         zone.verifiedBoundaryId !== boundaryId || zone.verifiedBoundaryHash !== boundaryHash) {
       throw new HttpsError("failed-precondition", "Founder approval tuple is stale or does not match the current Zone and Boundary.");
     }
