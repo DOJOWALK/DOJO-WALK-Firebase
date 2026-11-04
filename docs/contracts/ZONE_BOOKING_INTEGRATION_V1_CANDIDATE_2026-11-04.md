@@ -85,15 +85,17 @@ Coordinate validation:
 
 ### 4.2 Resolution outcome
 
-Evaluate the trusted point against eligible Zone polygons and require **exactly one** match:
+The Founder-approved rule is **majority of the verified house footprint**, not nearest Zone and not the pickup GPS point alone.
 
-| Match count | Required outcome |
-|---:|---|
-| 0 | Reject as outside service coverage / no eligible Zone |
-| 1 | Continue with that Zone's trusted server snapshot |
-| 2 or more | Reject as ambiguous coverage; do not choose the first, smallest, nearest, or highest-priority Zone |
+1. If a trusted, verified building-footprint polygon is available, intersect it with all eligible Zone polygons.
+2. Eligible Zone polygons must not overlap each other within the evaluated footprint. If they do, return Admin review required.
+3. Calculate each Zone's intersection area as a share of the **entire** verified building footprint. Area outside eligible Zones counts as unserved; do not renormalize only across covered fragments.
+4. Select a Zone only when exactly one eligible Zone contains **strictly more than 50%** of the total footprint area.
+5. If there is no strict majority, an exact tie, invalid/numerically indeterminate geometry, no verified footprint, or a boundary/overlap conflict, return Admin review required and do not confirm a booking or create a task.
 
-A pickup GPS point alone cannot implement the Founder-approved majority-of-house rule: a point contains no information about the area/shape of the house. For a pickup on or near a shared Zone boundary, use a trusted, verified building-footprint polygon (not a user-asserted Zone ID) and calculate its area intersection with each eligible Zone polygon. Select the Zone containing strictly more than 50% of the verified footprint area. If a verified footprint is unavailable, invalid, intersects no eligible Zone, or produces an exact tie / numerically indeterminate result, do not guess: return an Admin-review-required outcome and do not confirm the booking. A point on an outer service boundary with no qualifying majority is also not service coverage. The footprint source, verification process, geometry precision/tolerance and audit evidence must be specified before implementation. Never approximate majority by choosing the Zone containing the saved GPS point.
+For ordinary addresses with no verified building footprint, point-in-polygon may be used only when the saved pickup point is strictly inside exactly one eligible Zone and is not on/near a boundary. If the point is on/near a shared boundary or intersects multiple eligible Zones, do not guess; require Admin review. This fallback does not claim to implement the majority-of-house rule.
+
+The building-footprint source, provenance, verification process, geometry precision/tolerance and audit evidence are still implementation gates. Never accept a footprint or Zone choice as trusted merely because the client supplied it. A point on an outer service boundary with no qualifying majority is not service coverage.
 
 The resolver must not use radius-only coverage. A geospatial candidate index may be used for performance only if it is server-maintained, complete for all eligible Zones, and followed by exact polygon evaluation. The index itself is not proof of coverage.
 
@@ -149,9 +151,9 @@ All tests must use synthetic data and a `demo-*` Firebase project. The harness m
 18. Saved address has no coordinates → reject.
 19. Saved address has only latitude or only longitude → reject.
 20. Coordinates are strings/booleans/NaN/infinite/out of range when not supported by the canonical saved-address schema → reject.
-21. Two eligible Zone polygons overlap at the pickup point → ambiguous; reject and create no booking/task.
+21. Two eligible Zone polygons overlap within the verified house footprint → ambiguous; Admin review required; no booking/task writes.
 22. Pickup is on/near a shared edge and no verified building footprint exists → Admin review required; no booking/task writes.
-23. Verified building footprint overlaps two eligible Zones and one contains strictly more than 50% of its area → resolve to that Zone; record the measured intersection ratios and footprint evidence.
+23. Verified building footprint spans adjacent, non-overlapping eligible Zones and one Zone contains strictly more than 50% of the entire footprint → resolve to that Zone; record measured area ratios and footprint evidence.
 24. Verified footprint is exactly 50/50, numerically indeterminate, invalid, or has no eligible majority → Admin review required; no booking/task writes.
 23. A Zone is suspended/deactivated after candidate discovery but before booking commit → commit rejected.
 24. Boundary is replaced or approval invalidated after candidate discovery but before booking commit → commit rejected.
