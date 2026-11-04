@@ -265,6 +265,13 @@ Migration gates:
 
 No Walker assignment collection or canonical availability capacity schema is approved by this audit. The current Partner source proves only profile-level Zone ID list and weekly working hours; it does not prove atomic slot capacity, schedule conflict handling, task concurrency locks, or a trusted assignment API.
 
+Additional cross-repository evidence from Admin `main`:
+- `docs/STEP_202_PARTNER_ELIGIBILITY_COVERAGE_AUDIT.md` records the stricter Admin assignment eligibility predicate: normalized `status == "approved"`, `verificationStatus == "verified"`, `isApproved == true`, and `isActive == true`. The Partner account gate inspected above does not itself check `verificationStatus`; automatic assignment must use the stricter server-side predicate and explicitly reject `suspended`, `inactive`, `rejected`, and `left`.
+- The same Admin audit records a Partner onboarding/Rules mismatch: onboarding initializes `status: "in_progress"`, while the inspected Partner Firestore Rules initial-create condition requires `status == "under_review"`. This may reject new profile creation when these revisions are deployed together; confirm the deployed Rules and add Emulator coverage before relying on onboarding data.
+- Admin `docs/STEP_197_BOOKING_LOCATION_MIGRATION_CONTRACT.md` confirms legacy `zones` IDs are not canonical Service Location IDs and must not be automatically mapped to Service Area IDs. Existing `serviceCityIds` / `serviceAreaIds` are proposals, not verified current profile fields.
+- Admin `docs/STEP_200_BOOKING_ASSIGNMENT_SECURITY_CONTRACT.md` says its bounded source search did not identify an authoritative booking-assignment writer. The actual assignment writer, any external/manual process, and final assignment transition remain unresolved. No existing automatic assignment implementation is proven by the reviewed source.
+- Therefore the proposed `walk_tasks` assignment contract must not assume the existing Partner `zones` list is equivalent to `service_zones`, and no automatic assignment should launch until an explicit reviewed mapping/assignment contract and tests exist.
+
 ## 6. Zone and building-footprint evidence pinned to Booking
 
 Booking stores the resolution evidence so later Zone edits cannot silently rewrite history:
