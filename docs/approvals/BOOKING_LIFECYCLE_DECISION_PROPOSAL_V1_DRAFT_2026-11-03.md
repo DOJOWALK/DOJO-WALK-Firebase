@@ -1,7 +1,7 @@
 # Booking Lifecycle Decision Proposal V1 — Founder Review Draft
 
-**Date:** 03 Nov 2026  
-**Status:** PROPOSAL ONLY — not an approved production contract  
+**Date:** 03 Nov 2026
+**Status:** PROPOSAL ONLY — not an approved production contract
 **Parent:** [Firebase PR #59 — Cross-app Booking Lifecycle Audit](https://github.com/DOJOWALK/DOJO-WALK-Firebase/pull/59)
 
 ## Decision principles
