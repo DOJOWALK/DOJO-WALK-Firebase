@@ -199,3 +199,61 @@ No unresolved decision above is silently assumed by this audit.
 - Admin repository: https://github.com/DOJOWALK/DOJO-WALK-Admin
 - Partner repository: https://github.com/DOJOWALK/DOJO-WALK-Partner
 - Customer repository: https://github.com/DOJOWALK/DOJO-WALK-Customer
+
+
+## 11. Fresh main-branch verification addendum — 2026-11-05
+
+The original source snapshots above have now been rechecked against the current default `main` branches. The following are the exact revisions inspected in this verification pass:
+
+| Repository | Current main source | Blob SHA |
+|---|---|---|
+| Firebase | `functions/src/index.ts` | `2b13994aff949f38e626e1929422e5de84755312` |
+| Firebase | `firestore.rules` | `9bac26b9e13a97d412a0154ec9af70629e82eb47` |
+| Admin | `lib/features/service_location/services/service_location_service.dart` | `c966597975a37a056e9ee27d8625caefc46a4101` |
+| Admin | `lib/features/service_location/screens/service_location_screen.dart` | `874e80238d2b9dd0c1f6d8db3a6243b892c5e7eb` |
+| Partner | `lib/features/onboarding/screens/work_location_screen.dart` | `9c5d5e12a3fd29785d2001fb20937a7bbb374df5` |
+| Partner | `lib/screens/home/partner_home_screen.dart` | `3a3a41e62617e2ccb6cb714c7be274a3cb25cb8d` |
+| Partner | `firestore.rules` | `7b02a8bfb4fe80ab04d72f59966e2e09c848ffd0` |
+| Customer | `lib/features/booking/screens/booking_confirmation_screen.dart` | `94d45b12c7873fc2d289e164df965c735c0c63cb` |
+| Customer | `lib/features/booking/screens/pickup_address_selection_screen.dart` | `48ed4e8d8655947618a9e5bfc809c241f5e19415` |
+| Customer | `lib/features/addresses/models/saved_address.dart` | `03c2f642141abcaae297bfd3b0b7f6ed51c045e8` |
+
+### 11.1 Firebase main is not yet the canonical Zone runtime
+
+- Current Firebase `main` exports no canonical Zone lifecycle/scoped-read/assignment callable names found in this source scan.
+- Current Firebase `main` `firestore.rules` has no `service_zones` or `walk_tasks` match.
+- It still exports the legacy `activateServiceLocation` City/Area callable.
+- Current Firebase `main` Rules still allow signed-in Customer direct `bookings` creation through `validBookingBase` plus legacy plan validators.
+- Therefore canonical Zone lifecycle and Booking integration currently exist as unmerged candidate work (notably PR #92), not as the current Firebase main runtime. PR #92 remains Draft and blocked; do not enable app integration against unmerged APIs.
+
+### 11.2 Admin main — legacy service-location UI remains
+
+- The service screen still exposes Countries, States, Districts, Cities, Areas/Sub-districts, Localities/Villages and Import History.
+- The service layer still reads/writes the legacy `service_areas` and `service_localities` collections and calls `activateServiceLocation` with `city` or `area`.
+- No canonical Zone callable integration was found in the inspected service file.
+- **Blocker:** Admin must not represent legacy Area activation as canonical Zone activation. The target hierarchy remains State/UT → District → City → Zone; the legacy Area/Locality controls need a reviewed migration/replacement plan before operator enablement.
+
+### 11.3 Partner main — legacy preferences and Booking feed remain
+
+- Work Location still queries `zones` where `isActive == true`, then writes `zoneName`, `zoneNames`, and `zones` to the Walker profile. These are preferences/legacy IDs, not trusted canonical assignment.
+- Partner Home still queries `bookings` by `walkerId == uid`; its display fallback reads `zoneName`. No `walk_tasks` read adapter was found in the inspected files.
+- Partner's checked-in `firestore.rules` has no `walk_tasks` match and defaults to deny for that collection. It explicitly denies client Booking create, while allowing a limited set of assigned-Walker Booking progress-field updates.
+- **Important rules-source caveat:** Partner's repository Rules file is a separate app copy. Do not assume it is the deployed Firebase project's Rules source. The current Firebase repository `main` Rules separately allow legacy Customer Booking create. Deployment configuration/source-of-truth must be confirmed before any Rules cutover.
+
+### 11.4 Customer main — legacy direct Booking write and pickup coordinates dropped
+
+- Booking Confirmation still allocates a client-side `bookings/{id}` document, constructs a legacy payload with client-side `status: pending` and `walkerId: null`, then calls `bookingRef.set(bookingData)`. The payload does not include canonical `zoneId`, `cityId`, availability token or quote token.
+- The saved-address model supports `latitude` and `longitude` and exposes them in `toBookingSnapshot()`.
+- However, the current Pickup Address Selection screen manually constructs `addressMap` and does not copy `latitude` or `longitude` into it before passing it to Booking Confirmation. Thus the current main flow drops saved GPS coordinates before Booking submission, despite the address model supporting them.
+- **Blocker:** preserve coordinates through the selected-address adapter, then resolve Zone/availability/quote on the server. Do not treat client coordinates or client price as authoritative.
+
+### 11.5 Current cross-app integration gate
+
+| App | Current-main status | Required before integration |
+|---|---|---|
+| Firebase | Legacy City/Area runtime; no canonical Zone/Walk Task API in main | Merge only after PR #92 production gaps are resolved and exact-head CI/review gates pass |
+| Admin | Legacy City/Area/Locality screens and callable | Canonical Zone API adapter, State/UT → District → City → Zone UI, scope/error/revision tests |
+| Partner | Legacy `zones` preferences + parent Booking feed | Canonical scoped Zone preferences, trusted assignment feed, Walk Task adapter and least-privilege Rules tests |
+| Customer | Direct parent Booking write; GPS coordinates omitted in selection adapter | Authenticated request/availability/quote/create contract, preserve saved coordinates, idempotency and Emulator tests |
+
+No app source, Firebase Rules/Functions runtime, production data, deployment, or merge was changed by this audit addendum. This addendum is evidence of current-main gaps only; it is not implementation or release approval.
