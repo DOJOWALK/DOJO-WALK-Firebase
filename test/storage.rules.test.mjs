@@ -153,6 +153,34 @@ describe('DOJO WALK Storage Security Rules', () => {
     ));
   });
 
+  it('denies overwriting an existing selfie or KYC evidence object', async () => {
+    const storage = testEnv.authenticatedContext('walker-1').storage();
+    const selfieRef = ref(storage, SELFIE_PATH);
+    const kycRef = ref(storage, KYC_PATH);
+
+    await assertSucceeds(uploadBytes(
+      selfieRef,
+      jpeg,
+      metadata('walker-1', 'selfie'),
+    ));
+    await assertFails(uploadBytes(
+      selfieRef,
+      jpeg,
+      metadata('walker-1', 'selfie'),
+    ));
+
+    await assertSucceeds(uploadBytes(
+      kycRef,
+      jpeg,
+      metadata('walker-1', 'aadhaar_front'),
+    ));
+    await assertFails(uploadBytes(
+      kycRef,
+      jpeg,
+      metadata('walker-1', 'aadhaar_front'),
+    ));
+  });
+
   it('denies client-side deletion of private KYC objects', async () => {
     const storage = testEnv.authenticatedContext('walker-1').storage();
     const objectRef = ref(storage, KYC_PATH);
