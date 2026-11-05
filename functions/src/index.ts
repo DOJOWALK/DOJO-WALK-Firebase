@@ -1,3 +1,4 @@
+import "./firebase_admin_init";
 import { initializeApp } from "firebase-admin/app";
 import { createHash } from "node:crypto";
 import { FieldPath, FieldValue, getFirestore } from "firebase-admin/firestore";
@@ -11,7 +12,6 @@ import {
 } from "./location_name_index";
 import { classifyDistrictIndexPair, type NameIndexSnapshot } from "./district_index_pair_preflight";
 
-initializeApp();
 const db = getFirestore();
 
 function asNameIndexSnapshot(snapshot: FirebaseFirestore.DocumentSnapshot): NameIndexSnapshot {
