@@ -1,0 +1,57 @@
+name: Service Location Callable Emulator Tests
+
+on:
+  pull_request:
+    paths:
+      - "functions/**"
+      - "firebase.json"
+      - ".github/workflows/service-location-callable-emulator.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "functions/**"
+      - "firebase.json"
+      - ".github/workflows/service-location-callable-emulator.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  service-location-callable-emulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
+      - name: Set up Java for Firebase emulators
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install Firebase CLI and root test dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Install Functions dependencies
+        run: npm --prefix functions install --no-audit --no-fund
+
+      - name: Build trusted Functions
+        run: npm --prefix functions run build
+
+      - name: Run Functions tests against Auth, Firestore, and Functions emulators
+        env:
+          GCLOUD_PROJECT: demo-dojo-rules-tests
+          FIREBASE_CONFIG: '{"projectId":"demo-dojo-rules-tests"}'
+        run: >-
+          npx firebase emulators:exec
+          --only auth,firestore,functions
+          --project demo-dojo-rules-tests
+          "npm --prefix functions test"
