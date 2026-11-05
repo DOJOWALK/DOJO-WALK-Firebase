@@ -26,6 +26,7 @@ service firebase.storage {
       allow read: if isOwner(uid);
 
       allow create: if isOwner(uid)
+        && resource == null
         && fileName.matches('selfie_[0-9]+[.]jpg')
         && isValidJpeg(10 * 1024 * 1024, uid, 'selfie');
 
@@ -39,6 +40,7 @@ service firebase.storage {
       allow read: if isOwner(uid);
 
       allow create: if isOwner(uid)
+        && resource == null
         && (
           fileName.matches('aadhaar_front_[0-9]+[.]jpg')
           || fileName.matches('aadhaar_back_[0-9]+[.]jpg')
