@@ -1,4 +1,4 @@
-import "./firebase_admin_init";
+import { initializeApp } from "firebase-admin/app";
 import { createHash } from "node:crypto";
 import { FieldPath, FieldValue, getFirestore } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
@@ -11,23 +11,7 @@ import {
 } from "./location_name_index";
 import { classifyDistrictIndexPair, type NameIndexSnapshot } from "./district_index_pair_preflight";
 
-export {
-  createServiceZoneDraft,
-  reviewServiceZoneBoundary,
-  decideServiceZoneFounderApproval,
-  activateServiceZone,
-} from "./zone_lifecycle";
-export {
-  createServiceZoneBoundaryDraft,
-  submitServiceZoneForFounderReview,
-} from "./zone_lifecycle_boundary";
-export {
-  requestServiceZoneDeactivation,
-  requestServiceZoneReactivation,
-  suspendServiceZoneForEmergency,
-  reactivateServiceZone,
-} from "./zone_lifecycle_operations";
-
+initializeApp();
 const db = getFirestore();
 
 function asNameIndexSnapshot(snapshot: FirebaseFirestore.DocumentSnapshot): NameIndexSnapshot {
