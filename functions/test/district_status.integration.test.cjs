@@ -137,6 +137,31 @@ test("District save and status callable enforce trusted ancestry and child guard
     assert.ok((await db.doc(`service_states/${ids.state}`).get()).get("activationGuardAt"));
   });
 
+  await t.test("State deactivation is blocked by an active District even before any active City or Area exists", async () => {
+    await expectCode(setServiceLocationStatus.run(request(ids.admin, {
+      locationType: "state", locationId: ids.state, isActive: false,
+    })), "failed-precondition");
+    assert.equal((await db.doc(`service_states/${ids.state}`).get()).get("isActive"), true);
+    assert.equal((await db.doc(`service_districts/${ids.district}`).get()).get("isServiceActive"), true);
+  });
+
+  await t.test("State deactivation is blocked by an active legacy City directly under State", async () => {
+    // Isolate the legacy City guard: deactivate the District first and omit districtId.
+    const districtResult = await status(ids.admin, ids.district, false);
+    assert.equal(districtResult.isActive, false);
+    const legacyCityId = `district-legacy-city-${suffix}`;
+    paths.push(`service_cities/${legacyCityId}`);
+    await db.doc(`service_cities/${legacyCityId}`).set({
+      countryId: ids.country,
+      stateId: ids.state,
+      isServiceActive: true,
+    });
+    await expectCode(setServiceLocationStatus.run(request(ids.admin, {
+      locationType: "state", locationId: ids.state, isActive: false,
+    })), "failed-precondition");
+    assert.equal((await db.doc(`service_states/${ids.state}`).get()).get("isActive"), true);
+  });
+
   await t.test("District-aware City save preserves District ancestry and blocks implicit migration", async () => {
     const name = `District Scoped City ${suffix}`;
     const cityIndexId = serviceLocationNameIndexId(
@@ -179,20 +204,84 @@ test("District save and status callable enforce trusted ancestry and child guard
     assert.equal((await db.doc(`service_cities/${ids.savedCity}`).get()).get("districtId"), ids.district);
   });
 
-  await t.test("District deactivation is blocked by active City or Area descendants", async () => {
+  await t.test("District deactivation is blocked by active City, Area and Locality descendants using canonical parent links", async () => {
+    // The preceding legacy-State test deactivated this District; restore its
+    // active state before testing its own descendant guard.
+    const activated = await status(ids.admin, ids.district, true);
+    assert.equal(activated.isActive, true);
     await db.doc(`service_cities/${ids.childCity}`).set({
       districtId: ids.district, countryId: ids.country, stateId: ids.state, isServiceActive: true,
     });
     await expectCode(status(ids.admin, ids.district, false), "failed-precondition");
+
+    // An active Area may not carry districtId; District ancestry is derived
+    // through its City. Keep the City inactive to exercise the descendant scan.
     await db.doc(`service_cities/${ids.childCity}`).update({ isServiceActive: false });
     await db.doc(`service_areas/${ids.childArea}`).set({
-      districtId: ids.district, countryId: ids.country, stateId: ids.state,
-      cityId: ids.childCity, isServiceActive: true,
+      countryId: ids.country, stateId: ids.state, cityId: ids.childCity, isServiceActive: true,
     });
     await expectCode(status(ids.admin, ids.district, false), "failed-precondition");
+
     await db.doc(`service_areas/${ids.childArea}`).update({ isServiceActive: false });
+    await db.doc(`service_localities/district-child-locality-${suffix}`).set({
+      countryId: ids.country, stateId: ids.state, cityId: ids.childCity,
+      areaId: ids.childArea, isServiceActive: true,
+    });
+    paths.push(`service_localities/district-child-locality-${suffix}`);
+    await expectCode(status(ids.admin, ids.district, false), "failed-precondition");
+
+    await db.doc(`service_localities/district-child-locality-${suffix}`).update({ isServiceActive: false });
     const result = await status(ids.admin, ids.district, false);
     assert.equal(result.isActive, false);
     assert.equal((await db.doc(`service_districts/${ids.district}`).get()).get("isServiceActive"), false);
   });
+});
+
+
+test("concurrent State deactivation and District activation cannot leave an active District under an inactive State", async (t) => {
+  const race = randomUUID().replace(/-/g, "").slice(0, 12);
+  const raceIds = {
+    admin: `district-race-admin-${race}`,
+    country: `district-race-country-${race}`,
+    state: `district-race-state-${race}`,
+    district: `district-race-district-${race}`,
+  };
+  const paths = [
+    `admin_users/${raceIds.admin}`,
+    `service_countries/${raceIds.country}`,
+    `service_states/${raceIds.state}`,
+    `service_districts/${raceIds.district}`,
+  ];
+  t.after(async () => {
+    await Promise.all(paths.map((p) => db.doc(p).delete().catch(() => undefined)));
+    const audits = await db.collection("service_location_status_audit")
+      .where("actorUid", "==", raceIds.admin).get();
+    await Promise.all(audits.docs.map((doc) => doc.ref.delete()));
+  });
+  await Promise.all([
+    db.doc(`admin_users/${raceIds.admin}`).set({ isActive: true, role: "super_admin" }),
+    db.doc(`service_countries/${raceIds.country}`).set({ isActive: true }),
+    db.doc(`service_states/${raceIds.state}`).set({ countryId: raceIds.country, isActive: true }),
+    db.doc(`service_districts/${raceIds.district}`).set({
+      countryId: raceIds.country, stateId: raceIds.state, isServiceActive: false,
+    }),
+  ]);
+  const transition = (locationType, locationId, isActive) =>
+    setServiceLocationStatus.run(request(raceIds.admin, { locationType, locationId, isActive }));
+  const results = await Promise.allSettled([
+    transition("state", raceIds.state, false),
+    transition("district", raceIds.district, true),
+  ]);
+  assert.equal(
+    results.filter((result) => result.status === "fulfilled").length,
+    1,
+    "exactly one competing State/District transition should succeed",
+  );
+  const state = await db.doc(`service_states/${raceIds.state}`).get();
+  const district = await db.doc(`service_districts/${raceIds.district}`).get();
+  if (district.get("isServiceActive") === true) {
+    assert.equal(state.get("isActive"), true, "active District must never have an inactive State");
+  } else {
+    assert.equal(state.get("isActive"), false, "if State deactivation wins, District must remain inactive");
+  }
 });
