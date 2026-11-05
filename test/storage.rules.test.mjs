@@ -101,7 +101,7 @@ describe('DOJO WALK Storage Security Rules', () => {
     ));
     await assertFails(getBytes(ref(otherStorage, OTHER_PARTNER_SELFIE_PATH)));
     await assertFails(uploadBytes(
-      ref(otherStorage, SELFIE_PATH),
+      ref(otherStorage, OTHER_PARTNER_SELFIE_PATH),
       jpeg,
       metadata('walker-2', 'selfie'),
     ));
