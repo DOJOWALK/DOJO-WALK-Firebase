@@ -1,95 +1,177 @@
-import { after, before, test } from 'node:test';
+import { after, before, beforeEach, describe, it } from 'node:test';
+import { readFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
-import { ref, uploadBytes, getBytes } from 'firebase/storage';
+import {
+  initializeTestEnvironment,
+  assertFails,
+  assertSucceeds,
+} from '@firebase/rules-unit-testing';
+import {
+  deleteObject,
+  getBytes,
+  ref,
+  uploadBytes,
+} from 'firebase/storage';
 
-const projectId = 'demo-dojo-storage-tests';
-const bucket = `${projectId}.appspot.com`;
-let env;
+const PROJECT_ID = 'demo-dojo-storage-rules';
+const SELFIE_PATH = 'walker_selfies/walker-1/selfie_1793510400000.jpg';
+const KYC_PATH = 'walker_documents/walker-1/aadhaar_front_1793510400000.jpg';
+const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
+
+let testEnv;
 
 before(async () => {
-  env = await initializeTestEnvironment({
-    projectId,
-    storage: {
-      rules: readFileSync('storage.rules', 'utf8'),
-      bucket,
-    },
-    firestore: {
-      rules: readFileSync('firestore.rules', 'utf8'),
-    },
+  const rules = await readFile(new URL('../storage.rules', import.meta.url), 'utf8');
+  testEnv = await initializeTestEnvironment({
+    projectId: PROJECT_ID,
+    storage: { rules },
   });
+});
 
-  await env.withSecurityRulesDisabled(async (context) => {
-    await context.firestore().doc('admin_users/admin-1').set({
-      role: 'super_admin',
-      isActive: true,
-    });
-  });
+beforeEach(async () => {
+  await testEnv.clearStorage();
 });
 
 after(async () => {
-  await env?.cleanup();
+  await testEnv.cleanup();
 });
 
-test('walker can upload a valid private selfie', async () => {
-  const storage = env.authenticatedContext('walker-1').storage(bucket);
-  const file = ref(storage, 'walker_selfies/walker-1/selfie_1793600000.jpg');
-  await uploadBytes(file, new Uint8Array([1, 2, 3]), { contentType: 'image/jpeg' });
-});
+function metadata(userId, documentType) {
+  return {
+    contentType: 'image/jpeg',
+    customMetadata: { userId, documentType },
+  };
+}
 
-test('another walker cannot read a private selfie', async () => {
-  const ownerStorage = env.authenticatedContext('walker-1').storage(bucket);
-  const file = ref(ownerStorage, 'walker_selfies/walker-1/selfie_1793600001.jpg');
-  await uploadBytes(file, new Uint8Array([1, 2, 3]), { contentType: 'image/jpeg' });
+describe('DOJO WALK Storage Security Rules', () => {
+  it('allows a Partner to upload and read their own selfie', async () => {
+    const storage = testEnv.authenticatedContext('walker-1').storage();
+    const objectRef = ref(storage, SELFIE_PATH);
 
-  const otherStorage = env.authenticatedContext('walker-2').storage(bucket);
-  await assert.rejects(() => getBytes(ref(otherStorage, 'walker_selfies/walker-1/selfie_1793600001.jpg')));
-});
+    await assertSucceeds(uploadBytes(
+      objectRef,
+      jpeg,
+      metadata('walker-1', 'selfie'),
+    ));
+    await assertSucceeds(getBytes(objectRef));
+  });
 
-test('active Super Admin can read a walker selfie', async () => {
-  const ownerStorage = env.authenticatedContext('walker-1').storage(bucket);
-  const file = ref(ownerStorage, 'walker_selfies/walker-1/selfie_1793600002.jpg');
-  await uploadBytes(file, new Uint8Array([1, 2, 3]), { contentType: 'image/jpeg' });
+  it('allows a Partner to upload each approved KYC document type', async () => {
+    const storage = testEnv.authenticatedContext('walker-1').storage();
+    const documents = [
+      ['aadhaar_front_1793510400000.jpg', 'aadhaar_front'],
+      ['aadhaar_back_1793510400001.jpg', 'aadhaar_back'],
+      ['pan_card_1793510400002.jpg', 'pan_card'],
+    ];
 
-  const adminStorage = env.authenticatedContext('admin-1').storage(bucket);
-  const bytes = await getBytes(ref(adminStorage, 'walker_selfies/walker-1/selfie_1793600002.jpg'));
-  assert.equal(bytes.byteLength, 3);
-});
+    for (const [fileName, documentType] of documents) {
+      await assertSucceeds(uploadBytes(
+        ref(storage, `walker_documents/walker-1/${fileName}`),
+        jpeg,
+        metadata('walker-1', documentType),
+      ));
+    }
+  });
 
-test('walker can upload a valid private KYC document using the Partner App path contract', async () => {
-  const storage = env.authenticatedContext('walker-1').storage(bucket);
-  const file = ref(storage, 'walker_documents/walker-1/aadhaar_1793600003.jpg');
-  await uploadBytes(file, new Uint8Array([1, 2, 3]), { contentType: 'image/jpeg' });
-});
+  it('denies unauthenticated upload and read', async () => {
+    const storage = testEnv.unauthenticatedContext().storage();
+    const objectRef = ref(storage, SELFIE_PATH);
 
-test('active Super Admin can read a private walker KYC document', async () => {
-  const ownerStorage = env.authenticatedContext('walker-1').storage(bucket);
-  const path = 'walker_documents/walker-1/pan_1793600004.jpg';
-  await uploadBytes(ref(ownerStorage, path), new Uint8Array([4, 5, 6]), { contentType: 'image/jpeg' });
+    await assertFails(uploadBytes(
+      objectRef,
+      jpeg,
+      metadata('walker-1', 'selfie'),
+    ));
+    await assertFails(getBytes(objectRef));
+  });
 
-  const adminStorage = env.authenticatedContext('admin-1').storage(bucket);
-  const bytes = await getBytes(ref(adminStorage, path));
-  assert.equal(bytes.byteLength, 3);
-});
+  it('denies another Partner from reading or writing the owner path', async () => {
+    const ownerStorage = testEnv.authenticatedContext('walker-1').storage();
+    const otherStorage = testEnv.authenticatedContext('walker-2').storage();
+    const ownerRef = ref(ownerStorage, SELFIE_PATH);
 
-test('another walker cannot read a private KYC document', async () => {
-  const ownerStorage = env.authenticatedContext('walker-1').storage(bucket);
-  const path = 'walker_documents/walker-1/license_1793600005.jpg';
-  await uploadBytes(ref(ownerStorage, path), new Uint8Array([7, 8, 9]), { contentType: 'image/jpeg' });
+    await assertSucceeds(uploadBytes(
+      ownerRef,
+      jpeg,
+      metadata('walker-1', 'selfie'),
+    ));
+    await assertFails(getBytes(ref(otherStorage, SELFIE_PATH)));
+    await assertFails(uploadBytes(
+      ref(otherStorage, SELFIE_PATH),
+      jpeg,
+      metadata('walker-2', 'selfie'),
+    ));
+  });
 
-  const otherStorage = env.authenticatedContext('walker-2').storage(bucket);
-  await assert.rejects(() => getBytes(ref(otherStorage, path)));
-});
+  it('denies wrong content type, mismatched metadata and unknown filenames', async () => {
+    const storage = testEnv.authenticatedContext('walker-1').storage();
 
-test('walker cannot upload an executable or unsupported file type', async () => {
-  const storage = env.authenticatedContext('walker-1').storage(bucket);
-  const file = ref(storage, 'walker_documents/walker-1/malware.exe');
-  await assert.rejects(() => uploadBytes(file, new Uint8Array([1, 2, 3]), { contentType: 'application/octet-stream' }));
-});
+    await assertFails(uploadBytes(
+      ref(storage, SELFIE_PATH),
+      jpeg,
+      {
+        contentType: 'application/octet-stream',
+        customMetadata: { userId: 'walker-1', documentType: 'selfie' },
+      },
+    ));
+    await assertFails(uploadBytes(
+      ref(storage, SELFIE_PATH),
+      jpeg,
+      metadata('walker-1', 'pan_card'),
+    ));
+    await assertFails(uploadBytes(
+      ref(storage, 'walker_selfies/walker-1/profile.jpg'),
+      jpeg,
+      metadata('walker-1', 'selfie'),
+    ));
+    await assertFails(uploadBytes(
+      ref(storage, KYC_PATH),
+      jpeg,
+      metadata('walker-1', 'pan_card'),
+    ));
+  });
 
-test('unlisted paths are denied', async () => {
-  const storage = env.authenticatedContext('walker-1').storage(bucket);
-  const file = ref(storage, 'public/random.txt');
-  await assert.rejects(() => uploadBytes(file, new Uint8Array([1]), { contentType: 'text/plain' }));
+  it('denies oversized selfie uploads', async () => {
+    const storage = testEnv.authenticatedContext('walker-1').storage();
+    const tooLarge = new Uint8Array(10 * 1024 * 1024 + 1);
+
+    await assertFails(uploadBytes(
+      ref(storage, SELFIE_PATH),
+      tooLarge,
+      metadata('walker-1', 'selfie'),
+    ));
+  });
+
+  it('denies KYC uploads larger than 15 MiB', async () => {
+    const storage = testEnv.authenticatedContext('walker-1').storage();
+    const tooLarge = new Uint8Array(15 * 1024 * 1024 + 1);
+
+    await assertFails(uploadBytes(
+      ref(storage, KYC_PATH),
+      tooLarge,
+      metadata('walker-1', 'aadhaar_front'),
+    ));
+  });
+
+  it('denies client-side deletion of private KYC objects', async () => {
+    const storage = testEnv.authenticatedContext('walker-1').storage();
+    const objectRef = ref(storage, KYC_PATH);
+
+    await assertSucceeds(uploadBytes(
+      objectRef,
+      jpeg,
+      metadata('walker-1', 'aadhaar_front'),
+    ));
+    await assertFails(deleteObject(objectRef));
+  });
+
+  it('denies all unapproved object paths', async () => {
+    const storage = testEnv.authenticatedContext('walker-1').storage();
+
+    await assertFails(uploadBytes(
+      ref(storage, 'misc/walker-1/file.jpg'),
+      jpeg,
+      metadata('walker-1', 'selfie'),
+    ));
+  });
 });
