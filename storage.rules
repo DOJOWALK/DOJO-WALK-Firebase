@@ -2,7 +2,6 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-
     function signedIn() {
       return request.auth != null;
     }
@@ -11,42 +10,68 @@ service firebase.storage {
       return signedIn() && request.auth.uid == uid;
     }
 
-    function isActiveSuperAdmin() {
-      return signedIn()
-        && firestore.exists(/databases/(default)/documents/admin_users/$(request.auth.uid))
-        && firestore.get(/databases/(default)/documents/admin_users/$(request.auth.uid)).data.isActive == true
-        && firestore.get(/databases/(default)/documents/admin_users/$(request.auth.uid)).data.role == 'super_admin';
+    function isValidJpeg(maxBytes, expectedUserId, expectedDocumentType) {
+      return request.resource != null
+        && request.resource.size > 0
+        && request.resource.size <= maxBytes
+        && request.resource.contentType == 'image/jpeg'
+        // Metadata is a consistency check only. Path + auth UID are the
+        // authorization boundary; client metadata is never trusted as identity.
+        && request.resource.metadata.userId == expectedUserId
+        && request.resource.metadata.documentType == expectedDocumentType;
     }
 
-    // Walker onboarding selfie: one image per timestamped object.
-    // Walker can upload/read their own files; active Super Admin can review.
+    // Partner App: LiveSelfieScreen uploads only timestamped JPEG selfies.
     match /walker_selfies/{uid}/{fileName} {
-      allow read: if isOwner(uid) || isActiveSuperAdmin();
+      allow read: if isOwner(uid);
 
       allow create: if isOwner(uid)
-        && fileName.matches('^selfie_[0-9]{10,17}\\.(jpg|jpeg|png|webp)$')
-        && request.resource.size > 0
-        && request.resource.size <= 5 * 1024 * 1024
-        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+        && resource == null
+        && fileName.matches('selfie_[0-9]+[.]jpg')
+        && isValidJpeg(10 * 1024 * 1024, uid, 'selfie');
 
-      // Submitted evidence is immutable from client SDKs.
-      allow update, delete: if false;
+      // Client-side deletion is intentionally denied. Retention/removal must
+      // use an explicitly authorized backend process.
+      allow delete: if false;
     }
 
-    // Walker KYC documents: private to the owning walker and active Super Admin.
+    // Partner App: KycDocumentsScreen uploads Aadhaar front/back and PAN JPEGs.
     match /walker_documents/{uid}/{fileName} {
-      allow read: if isOwner(uid) || isActiveSuperAdmin();
+      allow read: if isOwner(uid);
 
       allow create: if isOwner(uid)
-        && fileName.matches('^[A-Za-z0-9][A-Za-z0-9._-]{0,119}\\.(pdf|jpg|jpeg|png|webp)$')
+        && resource == null
+        && (
+          fileName.matches('aadhaar_front_[0-9]+[.]jpg')
+          || fileName.matches('aadhaar_back_[0-9]+[.]jpg')
+          || fileName.matches('pan_card_[0-9]+[.]jpg')
+        )
+        && request.resource != null
         && request.resource.size > 0
-        && request.resource.size <= 10 * 1024 * 1024
-        && request.resource.contentType.matches('(application/pdf|image/(jpeg|png|webp))');
+        && request.resource.size <= 15 * 1024 * 1024
+        && request.resource.contentType == 'image/jpeg'
+        && request.resource.metadata.userId == uid
+        && (
+          (
+            fileName.matches('aadhaar_front_[0-9]+[.]jpg')
+            && request.resource.metadata.documentType == 'aadhaar_front'
+          )
+          || (
+            fileName.matches('aadhaar_back_[0-9]+[.]jpg')
+            && request.resource.metadata.documentType == 'aadhaar_back'
+          )
+          || (
+            fileName.matches('pan_card_[0-9]+[.]jpg')
+            && request.resource.metadata.documentType == 'pan_card'
+          )
+        );
 
-      allow update, delete: if false;
+      // Client-side deletion is intentionally denied. Retention/removal must
+      // use an explicitly authorized backend process.
+      allow delete: if false;
     }
 
-    // No public access and no implicit access to unlisted paths.
+    // Default deny for every other object path, including public access.
     match /{allPaths=**} {
       allow read, write: if false;
     }

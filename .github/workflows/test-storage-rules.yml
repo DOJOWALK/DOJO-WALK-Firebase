@@ -1,0 +1,47 @@
+name: Test Firebase Storage Security Rules
+
+on:
+  pull_request:
+    paths:
+      - "storage.rules"
+      - "firebase.json"
+      - "package.json"
+      - "package-lock.json"
+      - "test/storage.rules.test.mjs"
+      - ".github/workflows/test-storage-rules.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "storage.rules"
+      - "firebase.json"
+      - "package.json"
+      - "package-lock.json"
+      - "test/storage.rules.test.mjs"
+      - ".github/workflows/test-storage-rules.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  storage-rules-emulator:
+    name: Storage Rules Emulator Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Set up Java for Firebase Emulator
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install test dependencies
+        run: npm install --no-audit --no-fund
+      - name: Run Storage Rules Emulator tests
+        run: npx firebase emulators:exec --only storage --project demo-dojo-storage-rules "node --test test/storage.rules.test.mjs"
