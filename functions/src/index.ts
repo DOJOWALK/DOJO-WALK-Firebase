@@ -1407,3 +1407,5 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
 
   throw new HttpsError("invalid-argument", "Action must be begin, inspect, recordPlan, reconcilePlan, or finalize.");
 });
+
+export { createAdminKycReadUrl } from "./admin_kyc_access";
