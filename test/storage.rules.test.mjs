@@ -15,6 +15,10 @@ import {
 
 const PROJECT_ID = 'demo-dojo-storage-rules';
 const SELFIE_PATH = 'walker_selfies/walker-1/selfie_1793510400000.jpg';
+const OTHER_PARTNER_SELFIE_PATH = 'walker_selfies/walker-1/selfie_1793510400001.jpg';
+const OVERWRITE_SELFIE_PATH = 'walker_selfies/walker-1/selfie_1793510400002.jpg';
+const OVERWRITE_KYC_PATH = 'walker_documents/walker-1/aadhaar_front_1793510400003.jpg';
+const DELETE_KYC_PATH = 'walker_documents/walker-1/aadhaar_front_1793510400004.jpg';
 const KYC_PATH = 'walker_documents/walker-1/aadhaar_front_1793510400000.jpg';
 const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
 
@@ -88,14 +92,14 @@ describe('DOJO WALK Storage Security Rules', () => {
   it('denies another Partner from reading or writing the owner path', async () => {
     const ownerStorage = testEnv.authenticatedContext('walker-1').storage();
     const otherStorage = testEnv.authenticatedContext('walker-2').storage();
-    const ownerRef = ref(ownerStorage, SELFIE_PATH);
+    const ownerRef = ref(ownerStorage, OTHER_PARTNER_SELFIE_PATH);
 
     await assertSucceeds(uploadBytes(
       ownerRef,
       jpeg,
       metadata('walker-1', 'selfie'),
     ));
-    await assertFails(getBytes(ref(otherStorage, SELFIE_PATH)));
+    await assertFails(getBytes(ref(otherStorage, OTHER_PARTNER_SELFIE_PATH)));
     await assertFails(uploadBytes(
       ref(otherStorage, SELFIE_PATH),
       jpeg,
@@ -155,8 +159,8 @@ describe('DOJO WALK Storage Security Rules', () => {
 
   it('denies overwriting an existing selfie or KYC evidence object', async () => {
     const storage = testEnv.authenticatedContext('walker-1').storage();
-    const selfieRef = ref(storage, SELFIE_PATH);
-    const kycRef = ref(storage, KYC_PATH);
+    const selfieRef = ref(storage, OVERWRITE_SELFIE_PATH);
+    const kycRef = ref(storage, OVERWRITE_KYC_PATH);
 
     await assertSucceeds(uploadBytes(
       selfieRef,
@@ -183,7 +187,7 @@ describe('DOJO WALK Storage Security Rules', () => {
 
   it('denies client-side deletion of private KYC objects', async () => {
     const storage = testEnv.authenticatedContext('walker-1').storage();
-    const objectRef = ref(storage, KYC_PATH);
+    const objectRef = ref(storage, DELETE_KYC_PATH);
 
     await assertSucceeds(uploadBytes(
       objectRef,
