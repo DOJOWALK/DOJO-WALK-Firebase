@@ -1,0 +1,32 @@
+name: Subscription Early Termination Synthetic Emulator Tests
+
+on:
+  pull_request:
+    paths:
+      - "functions/test/subscription_early_termination_emulator.test.cjs"
+      - ".github/workflows/subscription-early-termination-emulator-tests.yml"
+      - "functions/package.json"
+      - "package.json"
+      - "firebase.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: subscription-early-termination-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  subscription-early-termination:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm install --no-package-lock --no-audit --no-fund
+      - run: npm --prefix functions install --no-package-lock --no-audit --no-fund
+      - name: Run synthetic Firestore Emulator tests
+        env:
+          GCLOUD_PROJECT: demo-dojo-subscription-termination
+        run: npx firebase emulators:exec --only firestore --project demo-dojo-subscription-termination "node --test --test-concurrency=1 functions/test/subscription_early_termination_emulator.test.cjs"

@@ -192,22 +192,20 @@ service cloud.firestore {
 
       allow create, delete: if false;
 
+      // Role, active status, and permissions are server-owned. A legacy
+      // super_admin cannot grant or alter operational Zone visibility through
+      // a direct client write to another Admin membership document.
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data)
           .affectedKeys()
           .hasOnly([
             'name',
             'email',
-            'role',
-            'isActive',
             'updatedAt'
           ])
-        && request.resource.data.get('role', '') in [
-          'super_admin',
-          'admin',
-          'support'
-        ]
-        && request.resource.data.isActive is bool;
+        && request.resource.data.get('role', null) == resource.data.get('role', null)
+        && request.resource.data.get('isActive', null) == resource.data.get('isActive', null)
+        && request.resource.data.get('permissions', null) == resource.data.get('permissions', null);
     }
 
     // =====================================================
@@ -1271,17 +1269,62 @@ service cloud.firestore {
     }
 
     match /service_location_boundaries/{boundaryId} {
-      allow get, list: if isAdmin();
+      // Canonical Zone geometry is never read directly by client SDKs. Zone
+      // geometry is returned only by trusted, scope-checked Functions callables.
+      // Preserve legacy City/Area boundary reads for existing workflows.
+      allow get, list: if isAdmin()
+        && resource.data.locationType != 'zone';
 
-      allow create: if validBoundaryCreate();
+      // The legacy client boundary workflow remains limited to non-Zone types.
+      // Canonical Zone boundary creation/review is owned by trusted Functions.
+      allow create: if request.resource.data.locationType != 'zone'
+        && validBoundaryCreate();
 
-      // Verification/rejection transitions are performed only by the trusted
-      // callable using the Admin SDK. Client writes may edit eligible drafts only.
-      allow update: if validBoundaryDraftUpdate();
+      // Zone boundary drafts and verified evidence are server-owned.
+      allow update: if resource.data.locationType != 'zone'
+        && request.resource.data.locationType != 'zone'
+        && validBoundaryDraftUpdate();
 
-      // Verified boundary records cannot be deleted.
+      // Zone boundary evidence cannot be deleted by client SDKs.
       allow delete: if isAdmin()
+        && resource.data.locationType != 'zone'
         && resource.data.verificationStatus != 'verified';
+    }
+
+    // Founder authority and operational assignment records are server-owned.
+    // Admin SDK callables resolve these records on every request; clients cannot
+    // list, inspect, forge, or mutate authority/scope documents.
+    match /founder_users/{uid} {
+      allow read, write: if false;
+    }
+
+    match /admin_scope_assignments/{assignmentId} {
+      allow read, write: if false;
+    }
+
+    match /walker_zone_assignments/{assignmentId} {
+      allow read, write: if false;
+    }
+
+    match /zone_boundary_review_assignments/{assignmentId} {
+      allow read, write: if false;
+    }
+
+    // Zone aggregate metadata is also delivered through scoped callables only.
+    match /service_zones/{zoneId} {
+      allow read, write: if false;
+    }
+
+    match /service_zone_approval_requests/{requestId} {
+      allow read, write: if false;
+    }
+
+    match /service_zone_name_indexes/{indexId} {
+      allow read, write: if false;
+    }
+
+    match /service_zone_audit/{eventId} {
+      allow read, write: if false;
     }
 
     // =====================================================

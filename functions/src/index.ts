@@ -1,6 +1,6 @@
-import { initializeApp } from "firebase-admin/app";
+import "./firebase_admin_init";
 import { createHash } from "node:crypto";
-import { FieldValue, getFirestore } from "firebase-admin/firestore";
+import { FieldPath, FieldValue, getFirestore } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { assertAreaCoveredByCity, polygonFromBoundary, type BoundaryDoc } from "./location_geometry";
 import {
@@ -11,7 +11,6 @@ import {
 } from "./location_name_index";
 import { classifyDistrictIndexPair, type NameIndexSnapshot } from "./district_index_pair_preflight";
 
-initializeApp();
 const db = getFirestore();
 
 function asNameIndexSnapshot(snapshot: FirebaseFirestore.DocumentSnapshot): NameIndexSnapshot {
@@ -1407,3 +1406,664 @@ export const manageServiceLocationImportRun = onCall({ region: "asia-south1" }, 
 
   throw new HttpsError("invalid-argument", "Action must be begin, inspect, recordPlan, reconcilePlan, or finalize.");
 });
+
+
+// -----------------------------------------------------------------------------
+// Founder-approved Zone geometry visibility — read-only callable API.
+// These callables deliberately resolve current authority and assignments from
+// Firestore on every request. They do not trust role claims or caller scope IDs.
+// -----------------------------------------------------------------------------
+
+type ZoneReadActor =
+  | { uid: string; kind: "founder" }
+  | { uid: string; kind: "central_admin" }
+  | { uid: string; kind: "city_manager"; cityId: string }
+  | { uid: string; kind: "zone_supervisor"; zoneIds: string[] }
+  | { uid: string; kind: "walker"; zoneIds: string[] };
+
+function permissionMap(data: FirebaseFirestore.DocumentData | undefined): Record<string, unknown> {
+  const value = data?.permissions;
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function timestampMillis(value: unknown): number | null {
+  if (value instanceof Date) return value.getTime();
+  if (value && typeof value === "object") {
+    const candidate = value as { toMillis?: unknown; toDate?: unknown };
+    if (typeof candidate.toMillis === "function") {
+      try {
+        const result = candidate.toMillis.call(value);
+        return typeof result === "number" && Number.isFinite(result) ? result : null;
+      } catch {
+        return null;
+      }
+    }
+    if (typeof candidate.toDate === "function") {
+      try {
+        const date = candidate.toDate.call(value);
+        return date instanceof Date && Number.isFinite(date.getTime()) ? date.getTime() : null;
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+function assignmentIsCurrent(
+  data: FirebaseFirestore.DocumentData,
+  expectedStatus: "active" | "assigned",
+  now = Date.now(),
+): boolean {
+  const statusMatches = expectedStatus === "active"
+    ? (typeof data.isActive === "boolean" ? data.isActive === true : data.status === "active")
+    : data.status === "assigned" && (typeof data.isActive !== "boolean" || data.isActive === true);
+  if (!statusMatches || data.revokedAt != null) return false;
+  const start = timestampMillis(data.effectiveFrom);
+  const end = timestampMillis(data.effectiveTo);
+  if (start != null && start > now) return false;
+  if (end != null && end <= now) return false;
+  return true;
+}
+
+async function activeAssignments(
+  collectionName: string,
+  uidField: string,
+  uid: string,
+  expectedStatus: "active" | "assigned",
+): Promise<FirebaseFirestore.QueryDocumentSnapshot[]> {
+  const snapshot = await db.collection(collectionName).where(uidField, "==", uid).get();
+  return snapshot.docs.filter((doc) => assignmentIsCurrent(doc.data(), expectedStatus));
+}
+
+async function resolveZoneReadActor(uid: string): Promise<ZoneReadActor | null> {
+  const founder = await db.doc(`founder_users/${uid}`).get();
+  if (founder.exists && founder.get("isActive") === true &&
+      founder.get("authorityType") === "founder_ceo" &&
+      permissionMap(founder.data()).zoneGeometryReadAll === true) {
+    return { uid, kind: "founder" };
+  }
+
+  const admin = await db.doc(`admin_users/${uid}`).get();
+  if (admin.exists) {
+    // An Admin membership is authoritative for this identity. Inactive or
+    // unrecognized legacy roles cannot fall through into another role path.
+    if (admin.get("isActive") !== true) return null;
+    const role = admin.get("role");
+    const permissions = permissionMap(admin.data());
+
+    if (role === "central_admin") {
+      return permissions.zoneGeometryReadAll === true ? { uid, kind: "central_admin" } : null;
+    }
+
+    if (role === "city_manager") {
+      const assignments = (await activeAssignments("admin_scope_assignments", "adminUid", uid, "active"))
+        .filter((doc) => doc.get("role") === "city_manager" &&
+          doc.get("scopeType") === "city" &&
+          typeof doc.get("scopeId") === "string");
+      if (assignments.length !== 1) return null;
+      return { uid, kind: "city_manager", cityId: String(assignments[0].get("scopeId")) };
+    }
+
+    if (role === "zone_supervisor") {
+      const assignments = (await activeAssignments("admin_scope_assignments", "adminUid", uid, "active"))
+        .filter((doc) => doc.get("role") === "zone_supervisor" &&
+          doc.get("scopeType") === "zone" &&
+          typeof doc.get("scopeId") === "string");
+      const zoneIds = [...new Set(assignments.map((doc) => String(doc.get("scopeId"))))];
+      if (zoneIds.length === 0) return null;
+      return { uid, kind: "zone_supervisor", zoneIds };
+    }
+
+    // Includes legacy super_admin, admin, and support without explicit scoped
+    // authority. None of these roles is implicitly upgraded to Zone visibility.
+    return null;
+  }
+
+  const walker = await db.doc(`walkers/${uid}`).get();
+  if (walker.exists && walker.get("isActive") === true && walker.get("isApproved") === true) {
+    const assignments = (await activeAssignments("walker_zone_assignments", "walkerUid", uid, "active"))
+      .filter((doc) => typeof doc.get("zoneId") === "string");
+    const zoneIds = [...new Set(assignments.map((doc) => String(doc.get("zoneId"))))];
+    if (zoneIds.length > 0) return { uid, kind: "walker", zoneIds };
+  }
+
+  return null;
+}
+
+function isCanonicalZone(data: FirebaseFirestore.DocumentData | undefined): boolean {
+  return data?.schemaVersion === 1 &&
+    typeof data.name === "string" &&
+    typeof data.countryId === "string" &&
+    typeof data.stateId === "string" &&
+    typeof data.districtId === "string" &&
+    typeof data.cityId === "string" &&
+    typeof data.status === "string" &&
+    Number.isInteger(data.revision);
+}
+
+function zoneSummary(
+  snapshot: FirebaseFirestore.QueryDocumentSnapshot | FirebaseFirestore.DocumentSnapshot,
+): Record<string, unknown> {
+  const data = snapshot.data() ?? {};
+  return {
+    zoneId: snapshot.id,
+    name: data.name,
+    stateId: data.stateId,
+    districtId: data.districtId,
+    cityId: data.cityId,
+    status: data.status,
+    isServiceActive: data.isServiceActive === true,
+    revision: data.revision,
+  };
+}
+
+function zoneAllowedForActor(actor: ZoneReadActor, zone: FirebaseFirestore.DocumentData, zoneId: string): boolean {
+  if (actor.kind === "founder" || actor.kind === "central_admin") return true;
+  if (actor.kind === "city_manager") return zone.cityId === actor.cityId;
+  if (actor.kind === "zone_supervisor") return actor.zoneIds.includes(zoneId);
+  return actor.zoneIds.includes(zoneId) && zone.status === "active" && zone.isServiceActive === true;
+}
+
+function parsePageSize(value: unknown): number {
+  if (value === undefined) return 50;
+  if (!Number.isInteger(value) || Number(value) < 1 || Number(value) > 100) {
+    throw new HttpsError("invalid-argument", "pageSize must be an integer from 1 to 100.");
+  }
+  return Number(value);
+}
+
+function parsePageToken(value: unknown): string | null {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value !== "string" || value.length > 128 || value.includes("/")) {
+    throw new HttpsError("invalid-argument", "pageToken is invalid.");
+  }
+  return value;
+}
+
+export const listVisibleServiceZones = onCall({ region: "asia-south1" }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign-in is required.");
+
+  const actor = await resolveZoneReadActor(uid);
+  if (!actor) throw new HttpsError("permission-denied", "No active Zone visibility assignment is available.");
+
+  const pageSize = parsePageSize(request.data?.pageSize);
+  const pageToken = parsePageToken(request.data?.pageToken);
+  let zones: Record<string, unknown>[] = [];
+  let hasMore = false;
+
+  if (actor.kind === "founder" || actor.kind === "central_admin" || actor.kind === "city_manager") {
+    let query: FirebaseFirestore.Query = db.collection("service_zones")
+      .orderBy(FieldPath.documentId());
+    if (actor.kind === "city_manager") {
+      query = query.where("cityId", "==", actor.cityId);
+    } else {
+      query = query.where("schemaVersion", "==", 1);
+    }
+    // Scan the ordered raw collection in bounded batches until we have enough
+    // canonical, visible Zones to fill this page plus one look-ahead record.
+    // A fixed raw limit (for example 501) can hide valid Zones behind legacy or
+    // malformed documents and incorrectly report that pagination has ended.
+    let cursor: FirebaseFirestore.QueryDocumentSnapshot | undefined;
+    if (pageToken) {
+      const tokenSnapshot = await db.collection("service_zones").doc(pageToken).get();
+      if (!tokenSnapshot.exists || !isCanonicalZone(tokenSnapshot.data()) ||
+          (actor.kind === "city_manager" && tokenSnapshot.get("cityId") !== actor.cityId)) {
+        throw new HttpsError("invalid-argument", "pageToken is no longer valid.");
+      }
+      cursor = tokenSnapshot as FirebaseFirestore.QueryDocumentSnapshot;
+    }
+    const eligible: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+    let scanned = 0;
+    while (eligible.length <= pageSize && scanned < 10000) {
+      const batchLimit = Math.min(200, 10000 - scanned);
+      let batchQuery = query.limit(batchLimit);
+      if (cursor) batchQuery = batchQuery.startAfter(cursor);
+      const snapshot = await batchQuery.get();
+      if (snapshot.empty) break;
+      for (const doc of snapshot.docs) {
+        scanned += 1;
+        cursor = doc;
+        if (isCanonicalZone(doc.data()) &&
+            (actor.kind !== "city_manager" || doc.get("cityId") === actor.cityId)) {
+          eligible.push(doc);
+          if (eligible.length > pageSize) break;
+        }
+      }
+      if (snapshot.size < batchLimit || eligible.length > pageSize) break;
+    }
+    // If the scan reached its hard cap exactly, probe one document beyond the
+    // cursor. This distinguishes an exhausted collection from a collection
+    // that still has unseen records without scanning past the configured cap.
+    if (scanned >= 10000 && eligible.length <= pageSize) {
+      const probe = await query.startAfter(cursor!).limit(1).get();
+      if (!probe.empty) {
+        throw new HttpsError("resource-exhausted", "Too many non-canonical Zone records to complete this page safely.");
+      }
+    }
+    hasMore = eligible.length > pageSize;
+    zones = eligible.slice(0, pageSize).map(zoneSummary);
+  } else {
+    const snapshots = await Promise.all(actor.zoneIds.map((zoneId) => db.doc(`service_zones/${zoneId}`).get()));
+    const visible = snapshots
+      .filter((snapshot) => snapshot.exists && isCanonicalZone(snapshot.data()) &&
+        zoneAllowedForActor(actor, snapshot.data() ?? {}, snapshot.id))
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .filter((snapshot) => !pageToken || snapshot.id > pageToken);
+    hasMore = visible.length > pageSize;
+    zones = visible.slice(0, pageSize).map(zoneSummary);
+  }
+
+  const nextPageToken = hasMore && zones.length > 0 ? String(zones[zones.length - 1].zoneId) : null;
+  return { zones, nextPageToken };
+});
+
+async function recordZoneGeometryRead(
+  uid: string,
+  actorRole: string,
+  zoneId: string,
+  boundaryId: string,
+  boundaryHash: string | null,
+  accessType: "zone_geometry_read" | "assigned_review_boundary_read" | "own_draft_boundary_read",
+): Promise<void> {
+  await db.collection("service_zone_audit").add({
+    actorUid: uid,
+    actorRole,
+    action: accessType,
+    zoneId,
+    boundaryId,
+    boundaryHash,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+}
+
+function boundaryResponse(
+  zoneId: string,
+  boundaryId: string,
+  boundary: FirebaseFirestore.DocumentData,
+  zoneRevision: number | null,
+): Record<string, unknown> {
+  return {
+    zoneId,
+    boundaryId,
+    zoneRevision: zoneRevision ?? boundary.zoneRevision ?? null,
+    geometryHash: typeof boundary.geometryHash === "string" ? boundary.geometryHash : null,
+    verificationStatus: boundary.verificationStatus,
+    points: boundary.points,
+    sourceType: boundary.sourceType,
+    sourceName: boundary.sourceName,
+    sourceReference: boundary.sourceReference,
+    verifiedBy: boundary.verifiedBy ?? null,
+    verifiedAt: boundary.verifiedAt ?? null,
+  };
+}
+
+export const getVisibleServiceZoneBoundary = onCall({ region: "asia-south1" }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign-in is required.");
+
+  const zoneId = request.data?.zoneId;
+  const boundaryId = request.data?.boundaryId;
+  if ((typeof zoneId === "string") === (typeof boundaryId === "string")) {
+    throw new HttpsError("invalid-argument", "Provide exactly one of zoneId or boundaryId.");
+  }
+
+  if (typeof zoneId === "string") {
+    if (!zoneId.trim() || zoneId.includes("/")) throw new HttpsError("invalid-argument", "zoneId is invalid.");
+    const actor = await resolveZoneReadActor(uid);
+    if (!actor) throw new HttpsError("permission-denied", "Zone geometry access is not authorized.");
+
+    const zoneSnapshot = await db.doc(`service_zones/${zoneId}`).get();
+    if (!zoneSnapshot.exists) throw new HttpsError("not-found", "Zone was not found.");
+    const zone = zoneSnapshot.data() ?? {};
+    if (!isCanonicalZone(zone)) throw new HttpsError("not-found", "Zone was not found.");
+    if (!zoneAllowedForActor(actor, zone, zoneId)) {
+      throw new HttpsError("permission-denied", "Zone is outside the actor's current assigned scope.");
+    }
+
+    const verifiedBoundaryId = zone.verifiedBoundaryId;
+    if (typeof verifiedBoundaryId !== "string" || !verifiedBoundaryId.trim()) {
+      throw new HttpsError("failed-precondition", "The Zone has no current verified boundary.");
+    }
+    const boundarySnapshot = await db.doc(`service_location_boundaries/${verifiedBoundaryId}`).get();
+    if (!boundarySnapshot.exists) throw new HttpsError("failed-precondition", "The verified Zone boundary is missing.");
+    const boundary = boundarySnapshot.data() ?? {};
+    if (boundary.locationType !== "zone" || boundary.locationId !== zoneId ||
+        boundary.verificationStatus !== "verified" ||
+        boundary.zoneRevision !== zone.verifiedBoundaryRevision ||
+        boundary.geometryHash !== zone.boundaryHash) {
+      throw new HttpsError("failed-precondition", "The verified Zone boundary does not match the current Zone revision and hash.");
+    }
+
+    await recordZoneGeometryRead(uid, actor.kind, zoneId, verifiedBoundaryId,
+      typeof zone.boundaryHash === "string" ? zone.boundaryHash : null, "zone_geometry_read");
+    return boundaryResponse(zoneId, verifiedBoundaryId, boundary,
+      Number.isInteger(zone.verifiedBoundaryRevision) ? Number(zone.verifiedBoundaryRevision) : null);
+  }
+
+  if (typeof boundaryId !== "string" || !boundaryId.trim() || boundaryId.includes("/")) {
+    throw new HttpsError("invalid-argument", "boundaryId is invalid.");
+  }
+  const boundarySnapshot = await db.doc(`service_location_boundaries/${boundaryId}`).get();
+  if (!boundarySnapshot.exists) throw new HttpsError("not-found", "Boundary was not found.");
+  const boundary = boundarySnapshot.data() ?? {};
+  if (boundary.locationType !== "zone" || typeof boundary.locationId !== "string") {
+    throw new HttpsError("not-found", "Zone boundary was not found.");
+  }
+  const zoneIdForBoundary = boundary.locationId;
+  const zoneSnapshot = await db.doc(`service_zones/${zoneIdForBoundary}`).get();
+  if (!zoneSnapshot.exists) throw new HttpsError("not-found", "Zone was not found.");
+  const zone = zoneSnapshot.data() ?? {};
+  if (!isCanonicalZone(zone)) throw new HttpsError("not-found", "Zone was not found.");
+
+  const admin = await db.doc(`admin_users/${uid}`).get();
+  const reviewerPermission = admin.exists && admin.get("isActive") === true &&
+    permissionMap(admin.data()).zoneBoundaryReview === true;
+  if (reviewerPermission) {
+    const assignments = (await activeAssignments("zone_boundary_review_assignments", "reviewerUid", uid, "assigned"))
+      .filter((doc) => doc.get("boundaryId") === boundaryId && doc.get("zoneId") === zoneIdForBoundary);
+    const isOwnSubmission = boundary.createdBy === uid || boundary.submittedBy === uid;
+    if (assignments.length > 0 && !isOwnSubmission) {
+      await recordZoneGeometryRead(uid, "boundary_reviewer", zoneIdForBoundary, boundaryId,
+        typeof boundary.geometryHash === "string" ? boundary.geometryHash : null, "assigned_review_boundary_read");
+      return boundaryResponse(zoneIdForBoundary, boundaryId, boundary,
+        Number.isInteger(boundary.zoneRevision) ? Number(boundary.zoneRevision) : null);
+    }
+  }
+
+  const isOwnDraft = (boundary.createdBy === uid || boundary.submittedBy === uid) &&
+    boundary.submitted === false &&
+    boundary.verificationStatus === "draft" &&
+    boundary.verifiedBy == null && boundary.verifiedAt == null;
+  if (isOwnDraft) {
+    await recordZoneGeometryRead(uid, "draft_submitter", zoneIdForBoundary, boundaryId,
+      typeof boundary.geometryHash === "string" ? boundary.geometryHash : null, "own_draft_boundary_read");
+    return boundaryResponse(zoneIdForBoundary, boundaryId, boundary,
+      Number.isInteger(boundary.zoneRevision) ? Number(boundary.zoneRevision) : null);
+  }
+
+  throw new HttpsError("permission-denied", "Boundary is outside the actor's current review or draft scope.");
+});
+
+
+// -----------------------------------------------------------------------------
+// Trusted Zone assignment writers — callable-only mutations.
+// Founder/Central Admin authority is resolved from server-side membership docs;
+// client role claims, onboarding preferences and legacy super_admin are ignored.
+// -----------------------------------------------------------------------------
+
+function requireSafeId(value: unknown, field: string): string {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(value)) {
+    throw new HttpsError("invalid-argument", `${field} is invalid.`);
+  }
+  return value;
+}
+
+function requireReason(value: unknown): string {
+  if (typeof value !== "string" || value.trim().length < 3 || value.trim().length > 500) {
+    throw new HttpsError("invalid-argument", "A reason between 3 and 500 characters is required.");
+  }
+  return value.trim();
+}
+
+async function requireCentralZoneOperator(uid: string): Promise<void> {
+  const snap = await db.doc(`admin_users/${uid}`).get();
+  if (!snap.exists || snap.get("isActive") !== true || snap.get("role") !== "central_admin" ||
+      permissionMap(snap.data()).zoneOperations !== true) {
+    throw new HttpsError("permission-denied", "Active Central Admin Zone Operations permission is required.");
+  }
+}
+
+async function requireFounderAppointmentAuthority(uid: string): Promise<void> {
+  const snap = await db.doc(`founder_users/${uid}`).get();
+  if (!snap.exists || snap.get("isActive") !== true || snap.get("authorityType") !== "founder_ceo" ||
+      permissionMap(snap.data()).cityManagerAppointmentApproval !== true) {
+    throw new HttpsError("permission-denied", "Founder appointment approval authority is required.");
+  }
+}
+
+async function requireActiveZoneWithVerifiedBoundary(tx: FirebaseFirestore.Transaction, zoneId: string): Promise<FirebaseFirestore.DocumentData> {
+  const zoneRef = db.doc(`service_zones/${zoneId}`);
+  const zoneSnap = await tx.get(zoneRef);
+  if (!zoneSnap.exists) throw new HttpsError("not-found", "Zone was not found.");
+  const zone = zoneSnap.data() ?? {};
+  if (!isCanonicalZone(zone) || zone.status !== "active" || zone.isServiceActive !== true ||
+      typeof zone.verifiedBoundaryId !== "string" || !zone.verifiedBoundaryId ||
+      !Number.isInteger(zone.verifiedBoundaryRevision) || typeof zone.boundaryHash !== "string") {
+    throw new HttpsError("failed-precondition", "Zone must be canonical, active and service-enabled with a verified boundary.");
+  }
+  const boundarySnap = await tx.get(db.doc(`service_location_boundaries/${zone.verifiedBoundaryId}`));
+  const boundary = boundarySnap.data() ?? {};
+  if (!boundarySnap.exists || boundary.locationType !== "zone" || boundary.locationId !== zoneId ||
+      boundary.verificationStatus !== "verified" ||
+      boundary.zoneRevision !== zone.verifiedBoundaryRevision ||
+      boundary.geometryHash !== zone.boundaryHash) {
+    throw new HttpsError("failed-precondition", "Zone verified boundary revision/hash is not current.");
+  }
+  return zone;
+}
+
+function writeAssignmentAudit(
+  tx: FirebaseFirestore.Transaction,
+  actorUid: string,
+  action: string,
+  assignmentType: string,
+  assignmentId: string,
+  targetUid: string,
+  scopeId: string,
+  reason: string,
+): void {
+  const auditRef = db.collection("service_zone_assignment_audit").doc();
+  tx.create(auditRef, {
+    actorUid, action, assignmentType, assignmentId, targetUid, scopeId, reason,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+}
+
+export const approveCityManagerAppointment = onCall({ region: "asia-south1" }, async (request) => {
+  const actorUid = request.auth?.uid;
+  if (!actorUid) throw new HttpsError("unauthenticated", "Sign-in is required.");
+  const targetUid = requireSafeId(request.data?.targetUid, "targetUid");
+  const cityId = requireSafeId(request.data?.cityId, "cityId");
+  const approvalId = requireSafeId(request.data?.approvalId, "approvalId");
+  const reason = requireReason(request.data?.reason);
+  if (targetUid === actorUid) throw new HttpsError("permission-denied", "Self-appointment is forbidden.");
+  await requireFounderAppointmentAuthority(actorUid);
+  const target = await db.doc(`admin_users/${targetUid}`).get();
+  if (!target.exists || target.get("isActive") !== true || target.get("role") !== "city_manager") {
+    throw new HttpsError("failed-precondition", "Target must be an active City Manager membership.");
+  }
+  const ref = db.doc(`founder_appointment_approvals/${approvalId}`);
+  await db.runTransaction(async (tx) => {
+    const existing = await tx.get(ref);
+    if (existing.exists) throw new HttpsError("already-exists", "Approval ID already exists.");
+    tx.create(ref, {
+      approvalId, targetUid, cityId, approvedBy: actorUid, reason,
+      status: "approved", consumed: false,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+  });
+  return { ok: true, approvalId };
+});
+
+export const assignCityManager = onCall({ region: "asia-south1" }, async (request) => {
+  const actorUid = request.auth?.uid;
+  if (!actorUid) throw new HttpsError("unauthenticated", "Sign-in is required.");
+  const targetUid = requireSafeId(request.data?.targetUid, "targetUid");
+  const cityId = requireSafeId(request.data?.cityId, "cityId");
+  const approvalId = requireSafeId(request.data?.approvalId, "approvalId");
+  const assignmentId = requireSafeId(request.data?.assignmentId, "assignmentId");
+  const reason = requireReason(request.data?.reason);
+  if (targetUid === actorUid) throw new HttpsError("permission-denied", "Self-assignment is forbidden.");
+  await requireCentralZoneOperator(actorUid);
+  const approvalRef = db.doc(`founder_appointment_approvals/${approvalId}`);
+  const targetRef = db.doc(`admin_users/${targetUid}`);
+  const assignmentRef = db.doc(`admin_scope_assignments/${assignmentId}`);
+  await db.runTransaction(async (tx) => {
+    const [approval, target, existing, byCity, byManager] = await Promise.all([
+      tx.get(approvalRef), tx.get(targetRef), tx.get(assignmentRef),
+      tx.get(db.collection("admin_scope_assignments").where("role", "==", "city_manager").where("scopeType", "==", "city").where("scopeId", "==", cityId)),
+      tx.get(db.collection("admin_scope_assignments").where("adminUid", "==", targetUid).where("role", "==", "city_manager").where("scopeType", "==", "city")),
+    ]);
+    if (!approval.exists || approval.get("status") !== "approved" || approval.get("consumed") === true ||
+        approval.get("targetUid") !== targetUid || approval.get("cityId") !== cityId) {
+      throw new HttpsError("failed-precondition", "A matching unused Founder approval is required.");
+    }
+    if (!target.exists || target.get("isActive") !== true || target.get("role") !== "city_manager") {
+      throw new HttpsError("failed-precondition", "Target must be an active City Manager.");
+    }
+    if (existing.exists) throw new HttpsError("already-exists", "Assignment ID already exists.");
+    const activeCity = byCity.docs.filter((d) => assignmentIsCurrent(d.data(), "active"));
+    const activeManager = byManager.docs.filter((d) => assignmentIsCurrent(d.data(), "active"));
+    if (activeCity.length || activeManager.length) throw new HttpsError("already-exists", "City or Manager already has an active City Manager assignment.");
+    tx.update(approvalRef, { consumed: true, consumedBy: actorUid, consumedAt: FieldValue.serverTimestamp(), assignmentId });
+    tx.create(assignmentRef, {
+      adminUid: targetUid, role: "city_manager", scopeType: "city", scopeId: cityId,
+      status: "active", isActive: true, reason, createdBy: actorUid,
+      createdAt: FieldValue.serverTimestamp(), effectiveFrom: FieldValue.serverTimestamp(),
+    });
+    writeAssignmentAudit(tx, actorUid, "city_manager_assigned", "admin_scope", assignmentId, targetUid, cityId, reason);
+  });
+  return { ok: true, assignmentId };
+});
+
+export const assignZoneSupervisor = onCall({ region: "asia-south1" }, async (request) => {
+  const actorUid = request.auth?.uid;
+  if (!actorUid) throw new HttpsError("unauthenticated", "Sign-in is required.");
+  const targetUid = requireSafeId(request.data?.targetUid, "targetUid");
+  const zoneId = requireSafeId(request.data?.zoneId, "zoneId");
+  const assignmentId = requireSafeId(request.data?.assignmentId, "assignmentId");
+  const reason = requireReason(request.data?.reason);
+  if (targetUid === actorUid) throw new HttpsError("permission-denied", "Self-assignment is forbidden.");
+  await requireCentralZoneOperator(actorUid);
+  const targetRef = db.doc(`admin_users/${targetUid}`);
+  const assignmentRef = db.doc(`admin_scope_assignments/${assignmentId}`);
+  await db.runTransaction(async (tx) => {
+    const [target, existing] = await Promise.all([
+      tx.get(targetRef), tx.get(assignmentRef), requireActiveZoneWithVerifiedBoundary(tx, zoneId),
+    ]);
+    if (!target.exists || target.get("isActive") !== true || target.get("role") !== "zone_supervisor") {
+      throw new HttpsError("failed-precondition", "Target must be an active Zone Supervisor.");
+    }
+    if (existing.exists) throw new HttpsError("already-exists", "Assignment ID already exists.");
+    const current = await tx.get(db.collection("admin_scope_assignments")
+      .where("role", "==", "zone_supervisor").where("scopeType", "==", "zone").where("scopeId", "==", zoneId));
+    if (current.docs.some((d) => assignmentIsCurrent(d.data(), "active"))) {
+      throw new HttpsError("already-exists", "This Zone already has a primary Supervisor.");
+    }
+    tx.create(assignmentRef, {
+      adminUid: targetUid, role: "zone_supervisor", scopeType: "zone", scopeId: zoneId,
+      status: "active", isActive: true, reason, createdBy: actorUid,
+      createdAt: FieldValue.serverTimestamp(), effectiveFrom: FieldValue.serverTimestamp(),
+    });
+    writeAssignmentAudit(tx, actorUid, "zone_supervisor_assigned", "admin_scope", assignmentId, targetUid, zoneId, reason);
+  });
+  return { ok: true, assignmentId, zoneId };
+});
+
+export const assignWalkerToZone = onCall({ region: "asia-south1" }, async (request) => {
+  const actorUid = request.auth?.uid;
+  if (!actorUid) throw new HttpsError("unauthenticated", "Sign-in is required.");
+  const targetUid = requireSafeId(request.data?.targetUid, "targetUid");
+  const zoneId = requireSafeId(request.data?.zoneId, "zoneId");
+  const assignmentId = requireSafeId(request.data?.assignmentId, "assignmentId");
+  const reason = requireReason(request.data?.reason);
+  if (targetUid === actorUid) throw new HttpsError("permission-denied", "Self-assignment is forbidden.");
+  await requireCentralZoneOperator(actorUid);
+  const walkerRef = db.doc(`walkers/${targetUid}`);
+  const assignmentRef = db.doc(`walker_zone_assignments/${assignmentId}`);
+  await db.runTransaction(async (tx) => {
+    const [walker, existing] = await Promise.all([tx.get(walkerRef), tx.get(assignmentRef)]);
+    await requireActiveZoneWithVerifiedBoundary(tx, zoneId);
+    if (!walker.exists || walker.get("isApproved") !== true || walker.get("isActive") !== true || walker.get("status") !== "approved") {
+      throw new HttpsError("failed-precondition", "Walker must be Approved and Active.");
+    }
+    if (existing.exists) throw new HttpsError("already-exists", "Assignment ID already exists.");
+    tx.create(assignmentRef, {
+      walkerUid: targetUid, zoneId, status: "active", isActive: true,
+      reason, createdBy: actorUid, createdAt: FieldValue.serverTimestamp(),
+      effectiveFrom: FieldValue.serverTimestamp(),
+    });
+    writeAssignmentAudit(tx, actorUid, "walker_zone_assigned", "walker_zone", assignmentId, targetUid, zoneId, reason);
+  });
+  return { ok: true, assignmentId, zoneId };
+});
+
+export const assignBoundaryReviewer = onCall({ region: "asia-south1" }, async (request) => {
+  const actorUid = request.auth?.uid;
+  if (!actorUid) throw new HttpsError("unauthenticated", "Sign-in is required.");
+  const reviewerUid = requireSafeId(request.data?.reviewerUid, "reviewerUid");
+  const boundaryId = requireSafeId(request.data?.boundaryId, "boundaryId");
+  const assignmentId = requireSafeId(request.data?.assignmentId, "assignmentId");
+  const reason = requireReason(request.data?.reason);
+  if (reviewerUid === actorUid) throw new HttpsError("permission-denied", "Self-assignment is forbidden.");
+  await requireCentralZoneOperator(actorUid);
+  const reviewerRef = db.doc(`admin_users/${reviewerUid}`);
+  const boundaryRef = db.doc(`service_location_boundaries/${boundaryId}`);
+  const assignmentRef = db.doc(`zone_boundary_review_assignments/${assignmentId}`);
+  await db.runTransaction(async (tx) => {
+    const [reviewer, boundary, existing] = await Promise.all([tx.get(reviewerRef), tx.get(boundaryRef), tx.get(assignmentRef)]);
+    if (!reviewer.exists || reviewer.get("isActive") !== true || permissionMap(reviewer.data()).zoneBoundaryReview !== true) {
+      throw new HttpsError("failed-precondition", "Reviewer must be active and explicitly permitted.");
+    }
+    if (!boundary.exists || boundary.get("locationType") !== "zone" || typeof boundary.get("locationId") !== "string") {
+      throw new HttpsError("not-found", "Zone boundary was not found.");
+    }
+    if (boundary.get("createdBy") === reviewerUid || boundary.get("submittedBy") === reviewerUid) {
+      throw new HttpsError("permission-denied", "A submitter cannot review their own boundary.");
+    }
+    if (existing.exists) throw new HttpsError("already-exists", "Review assignment ID already exists.");
+    tx.create(assignmentRef, {
+      reviewerUid, zoneId: boundary.get("locationId"), boundaryId,
+      status: "assigned", isActive: true, reason, createdBy: actorUid,
+      createdAt: FieldValue.serverTimestamp(), effectiveFrom: FieldValue.serverTimestamp(),
+    });
+    writeAssignmentAudit(tx, actorUid, "boundary_reviewer_assigned", "zone_boundary_review", assignmentId, reviewerUid, boundary.get("locationId"), reason);
+  });
+  return { ok: true, assignmentId, boundaryId };
+});
+
+export const revokeZoneAssignment = onCall({ region: "asia-south1" }, async (request) => {
+  const actorUid = request.auth?.uid;
+  if (!actorUid) throw new HttpsError("unauthenticated", "Sign-in is required.");
+  const assignmentType = request.data?.assignmentType;
+  const assignmentId = requireSafeId(request.data?.assignmentId, "assignmentId");
+  const reason = requireReason(request.data?.reason);
+  const collection = assignmentType === "walker_zone" ? "walker_zone_assignments"
+    : assignmentType === "admin_scope" ? "admin_scope_assignments"
+    : assignmentType === "zone_boundary_review" ? "zone_boundary_review_assignments" : null;
+  if (!collection) throw new HttpsError("invalid-argument", "assignmentType is invalid.");
+  await requireCentralZoneOperator(actorUid);
+  const ref = db.doc(`${collection}/${assignmentId}`);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new HttpsError("not-found", "Assignment was not found.");
+    if (!assignmentIsCurrent(snap.data() ?? {}, collection === "zone_boundary_review_assignments" ? "assigned" : "active")) {
+      throw new HttpsError("failed-precondition", "Assignment is not active.");
+    }
+    const data = snap.data() ?? {};
+    const targetUid = String(data.walkerUid ?? data.adminUid ?? data.reviewerUid ?? "");
+    const scopeId = String(data.zoneId ?? data.scopeId ?? data.boundaryId ?? "");
+    tx.update(ref, {
+      status: "revoked", isActive: false, revokedAt: FieldValue.serverTimestamp(),
+      revokedBy: actorUid, revokeReason: reason, updatedAt: FieldValue.serverTimestamp(),
+    });
+    writeAssignmentAudit(tx, actorUid, "zone_assignment_revoked", assignmentType, assignmentId, targetUid, scopeId, reason);
+  });
+  return { ok: true, assignmentId, status: "revoked" };
+});
+
+
+// Canonical Zone lifecycle callables (separate from legacy City/Area workflows).
+export {
+  createServiceZoneDraft,
+  reviewServiceZoneBoundary,
+  decideServiceZoneFounderApproval,
+  activateServiceZone,
+} from "./zone_lifecycle";
+export { createServiceZoneBoundaryDraft, submitServiceZoneForFounderReview } from "./zone_lifecycle_boundary";
+
+export { requestServiceZoneDeactivation, suspendServiceZoneForEmergency, requestServiceZoneReactivation, reactivateServiceZone } from "./zone_lifecycle_operations";

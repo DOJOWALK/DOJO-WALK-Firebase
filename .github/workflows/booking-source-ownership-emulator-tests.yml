@@ -1,0 +1,45 @@
+name: Booking Source Ownership Emulator Tests
+
+on:
+  pull_request:
+    paths:
+      - "functions/src/booking_source_records.ts"
+      - "functions/test/booking_source_records_emulator.test.cjs"
+      - "functions/package.json"
+      - "functions/tsconfig.json"
+      - "firebase.json"
+      - ".github/workflows/booking-source-ownership-emulator-tests.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: booking-source-ownership-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-ownership-emulator:
+    name: Firestore Emulator source ownership acceptance tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact PR revision
+        uses: actions/checkout@v5
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Install root Firebase CLI dependencies
+        run: npm install --no-package-lock --no-audit --no-fund
+      - name: Install Functions dependencies
+        working-directory: functions
+        run: npm install --no-package-lock --no-audit --no-fund
+      - name: Build Functions
+        working-directory: functions
+        run: npm run build
+      - name: Run synthetic Firestore Emulator ownership tests
+        env:
+          GCLOUD_PROJECT: demo-dojo-booking-source-ownership
+        run: |
+          npx firebase emulators:exec --only firestore --project demo-dojo-booking-source-ownership "node --test --test-concurrency=1 functions/test/booking_source_records_emulator.test.cjs"
+
+# PR #81 also imports the Automatic Booking reference-model suite through the existing test entrypoint.

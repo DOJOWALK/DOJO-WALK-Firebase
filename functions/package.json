@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "npm run build && node --test test/*.test.cjs",
+    "test": "npm run build && node --test --test-concurrency=1 test/*.test.cjs",
     "emulate": "npm run build && firebase emulators:start --only functions,firestore"
   },
   "dependencies": {
