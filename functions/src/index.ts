@@ -1,5 +1,4 @@
 import "./firebase_admin_init";
-import { initializeApp } from "firebase-admin/app";
 import { createHash } from "node:crypto";
 import { FieldPath, FieldValue, getFirestore } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
