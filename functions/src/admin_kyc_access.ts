@@ -2,7 +2,6 @@ import { HttpsError, onCall, type CallableRequest } from "firebase-functions/v2/
 import { FieldValue, Timestamp, getFirestore } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
 
-const db = getFirestore();
 const READ_URL_TTL_MS = 5 * 60 * 1000;
 
 export interface AdminKycReadRequest {
@@ -91,10 +90,12 @@ export function buildAdminKycReadUrlHandler(deps: AdminKycDependencies) {
 
 const handler = buildAdminKycReadUrlHandler({
   getAdmin: async (uid) => {
+    const db = getFirestore();
     const snapshot = await db.doc(`admin_users/${uid}`).get();
     return snapshot.exists ? snapshot.data() ?? null : null;
   },
   getWalker: async (uid) => {
+    const db = getFirestore();
     const snapshot = await db.doc(`walkers/${uid}`).get();
     return snapshot.exists ? snapshot.data() ?? null : null;
   },
@@ -107,6 +108,7 @@ const handler = buildAdminKycReadUrlHandler({
     return url;
   },
   writeAudit: async ({ actorUid, walkerUid, storagePath, expiresAtMs }) => {
+    const db = getFirestore();
     await db.collection("walker_documents_access_audit").add({
       actorUid,
       actorRole: "super_admin",
