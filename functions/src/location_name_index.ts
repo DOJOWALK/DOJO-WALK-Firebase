@@ -7,6 +7,7 @@ export const SERVICE_LOCATION_COLLECTIONS = {
   city: "service_cities",
   area: "service_areas",
   locality: "service_localities",
+  zone: "service_zones",
 } as const;
 
 export type ServiceLocationType = keyof typeof SERVICE_LOCATION_COLLECTIONS;
@@ -44,6 +45,7 @@ export function serviceLocationNameIndexId(
     service_cities: [2, 3],
     service_areas: [3, 4],
     service_localities: [4, 5],
+    service_zones: 3,
   };
   const allowedParentCounts = expectedParentCount[collectionPath];
   if (Array.isArray(allowedParentCounts)
@@ -62,6 +64,7 @@ export const SERVICE_LOCATION_ALLOWED_FIELDS: Record<ServiceLocationType, readon
   city: ["countryId", "stateId", "districtId", "name", "boundary", "boundarySource", "boundaryVerified", "verifiedBoundaryId", "isServiceActive"],
   area: ["countryId", "stateId", "cityId", "name", "boundary", "boundarySource", "boundaryVerified", "verifiedBoundaryId", "isServiceActive"],
   locality: ["countryId", "stateId", "cityId", "areaId", "name", "pincode", "boundary", "boundarySource", "boundaryVerified", "isServiceActive"],
+  zone: ["stateId", "districtId", "cityId", "name", "timeZone"],
 };
 
 /**
@@ -96,8 +99,25 @@ export function validateServiceLocationPayload(
     city: record.districtId === undefined ? ["countryId", "stateId"] : ["countryId", "stateId", "districtId"],
     area: ["countryId", "stateId", "cityId"],
     locality: ["countryId", "stateId", "cityId", "areaId"],
+    zone: ["stateId", "districtId", "cityId"],
   };
   const normalizedRecord: Record<string, unknown> = { ...record, name };
+  if (type === "zone") {
+    if (typeof record.timeZone !== "string" || !record.timeZone.trim()) {
+      throw new Error("LOCATION_TIME_ZONE_REQUIRED");
+    }
+    const timeZone = record.timeZone.trim();
+    // Require a region/city-style IANA identifier; reject abbreviations and raw UTC offsets.
+    if (!/^[A-Za-z_+-]+\/[A-Za-z0-9_+\-/]+$/.test(timeZone)) {
+      throw new Error("LOCATION_TIME_ZONE_INVALID");
+    }
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone }).format(0);
+    } catch {
+      throw new Error("LOCATION_TIME_ZONE_INVALID");
+    }
+    normalizedRecord.timeZone = timeZone;
+  }
   if (type === "country") normalizedRecord.code = (record.code as string).trim();
   for (const field of parentFields[type]) {
     const value = record[field];
