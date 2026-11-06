@@ -275,7 +275,7 @@ This section records the controlling Notion evidence checked after the initial d
 
 ### 13.4 Evidence paths inspected
 
-- Firebase: `functions/src/index.ts` (blob `d11f3a621c5f4552053107cff4b4631437890000`); `firestore.rules` (blob `67284dba473b3d5c87f201ba4115714bc0`).
+- Firebase: `functions/src/index.ts` (blob `d11f3a621c5f4552053107cff4b4631437890000`); `firestore.rules` (blob `67284dba473b3d5c87f201ba411571c79edc91ff`). Partner checked-in `firestore.rules` (blob `7b02a8bfb4fe80ab04d72f59966e2e09c848ffd0`).
 - Customer: `lib/features/booking/screens/booking_confirmation_screen.dart` (blob `e7f122e3195e07f7bb5b7edebc6cacae14600e0b`); `lib/features/booking/screens/choose_walk_screen.dart` (blob `bb9c13cbe79b92fe878ceba73795218ed3b89975`).
 - Partner: `lib/features/live_walk/screens/live_walk_screen.dart` (blob `9b56a1c96ab5a90c63b4870e3249f52e4d4420f2`); `lib/screens/home/walk_details_screen.dart` (blob `9a872d66a59b8d04e14cb4053a68160f3349721e`).
 - Admin: `lib/screens/bookings/booking_data_source.dart` (blob `ccd357363b246120efe1777d205b15939aeddde1`); `lib/screens/live/live_operations_screen.dart` (blob `b97c8ea6e521ca8873ebdaa013c1ab8693d3d515`); `lib/features/finance/screens/finance_operations_screen.dart` (blob `d7337f33171b5d3555d5f3b614afb659e9035734`).
