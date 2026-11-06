@@ -281,3 +281,76 @@ This section records the controlling Notion evidence checked after the initial d
 - Admin: `lib/screens/bookings/booking_data_source.dart` (blob `ccd357363b246120efe1777d205b15939aeddde1`); `lib/screens/live/live_operations_screen.dart` (blob `b97c8ea6e521ca8873ebdaa013c1ab8693d3d515`); `lib/features/finance/screens/finance_operations_screen.dart` (blob `d7337f33171b5d3555d5f3b614afb659e9035734`).
 
 **Audit disposition:** Cross-app runtime compatibility is **BLOCKED** for live GPS, Walk history writes under current Rules, server-owned Booking/Task/Assignment lifecycle, and Payment integration. This is a source inspection, not emulator/device execution. No app code, Functions, Rules, indexes, data, migrations, production deployment or `main` branch changes were made. PR #96 remains documentation-only Draft.
+
+
+## 14. Founder decision reconciliation — AP / TF readiness (Notion re-check, 2026-11-06)
+
+**Classification rule:** “Approved direction” means the operating/architecture direction is recorded in Notion. It does not mean exact schema, code, Rules, migration, release or production deployment is approved. “Partial” means some governing business direction is decided but material implementation parameters remain open.
+
+### 14.1 Controlling source status
+
+| Notion source | Current recorded status | What it controls | Boundary |
+|---|---|---|---|
+| [Booking API Contract & Callable Implementation Gate](https://app.notion.com/p/40a756abedb98148a671eacf2248fa8a) | Working draft; not approved for production implementation; updated 3 Nov | Parent Booking / Walk Task architecture direction and AP-01…AP-12 decision sheet | Lists and DTO remain proposals; implementation gate is blocked |
+| [Cross-App Live Tracking & Booking Data Contract — Readiness](https://app.notion.com/p/409756abedb9811bad58c5aea088be62) | Draft technical contract; Founder workflow approval recorded 3 Nov | Approved Live Walk operating workflow, GPS operating thresholds and technical freeze checklist | Exact schema, API, roles/claims, accuracy, offline, retention and release mechanics remain to freeze |
+| [POL-007 — Live Walk & Safe Handover](https://app.notion.com/p/404756abedb981e39c4fce3b3cb47457) | Founder Approved for operating workflow, 3 Nov | Assigned Walker, pickup checks/handover, server-authoritative start/complete, stable Walk ID, GPS thresholds, area-scoped access | Does not approve exact storage schema, role IDs, API names, retention, production migration/deployment |
+| [POL-006 — Customer Booking & Eligibility](https://app.notion.com/p/404756abedb9816d8856d4f4c2de203b) | Draft — Founder approval required | Server-authoritative eligibility, service-area, price, booking state and confirmation principles | Booking/eligibility policy is not yet approved |
+| [POL-005 — Booking & Walker Assignment](https://app.notion.com/p/404756abedb981768393f7a9e823ee10) and [POL-026 — Walker Availability / Assignment / Replacement](https://app.notion.com/p/404756abedb981028befeae66ec00f81) | Draft — Founder approval required | Sequential single-Walker offer and safe replacement design direction | Exact timeout, attempt count, ranking, buffers and escalation parameters remain open |
+| [POL-029 — Cancellation, Rescheduling, No-Show & Refund](https://app.notion.com/p/404756abedb9814289e8d0ed99298b52) | Business decisions approved; synthetic policy suite recorded 22/22; production implementation and legal review pending | Approved 12-hour occurrence refund split, subscription cancellation, company failure remedy, refund authority and manual renewal | Does not establish provider integration, legal review or production execution; no-show grace periods remain open |
+| [POL-016 — Incident & Emergency Management](https://app.notion.com/p/404756abedb98161a588f93ec13740c5) | Draft — not approved, implemented or tested | Incident severity framework and safety response requirements | Named lead/backup, contact tree, response targets, restart authority and drills remain open |
+| [POL-021 — Access Control](https://app.notion.com/p/404756abedb98114ad39e1db6c03d444) | Draft — not approved, implemented or tested | Proposed Founder / Super Admin / Central / City / Zone / Support / Finance role separation | Exact claims, action matrix, geographic resolver, break-glass and tests remain open |
+| [POL-014 — Privacy & Data Access](https://app.notion.com/p/404756abedb981bb98c0c7587203ebf6) and [POL-020 — Data Privacy, Retention & Deletion](https://app.notion.com/p/404756abedb981cc81f1dff14c72bc48) | Draft — not approved, implemented or tested | Least-privilege location access and data minimization | Category-specific retention, deletion, backup expiry, legal hold and privacy owner remain open |
+
+### 14.2 AP decision register
+
+| Gate | Classification | Decision evidence / remaining blocker |
+|---|---|---|
+| **AP-01 Parent Booking states + legacy mapping** | **OPEN — blocked** | Candidate states exist, but no final canonical enum or complete mapping from legacy `pending/confirmed/assigned/accepted/picked_up/walking/completed/cancelled`. Admin labels are not backend enums. |
+| **AP-02 Walk Task states + transition matrix** | **PARTIAL — blocked** | Parent Booking + child `walk_tasks` model and logical Walk lifecycle are selected directions. Exact from→to matrix, actor permissions, terminal/exception states and event-vs-state mapping remain open. |
+| **AP-03 Sequential assignment parameters** | **PARTIAL — blocked** | Hybrid one-Walker-at-a-time offer with manual Operations fallback is established direction. Timeout, max attempts, ranking/tie-breakers, pause/retry, widening, travel buffers and notification timing remain open. |
+| **AP-04 Regular recurrence / generation** | **PARTIAL — blocked** | Rolling 7-day task-generation direction is selected; generator must be idempotent and stop on cancellation/expiry. Exact recurrence, end-date, horizon extension/exhaustion and renewal behavior are not fully frozen. POL-029 separately records manual renewal/no automatic debit for launch; this does not settle recurrence bounds. |
+| **AP-05 Capacity / reservation expiry** | **PARTIAL — blocked** | Availability and capacity must be checked before quote/payment; reserve the offered slot atomically is the selected direction. Exact capacity source, reservation TTL, release on timeout/payment failure and concurrency semantics remain open. |
+| **AP-06 Payment / confirmation order** | **PARTIAL — blocked** | Direction: availability → authoritative quote → payment initiation → trusted provider verification → booking confirmation → eligible task creation → assignment. POL-029 records full advance payment for Regular/Subscription after availability and quote, with manual renewal. Provider, webhook signature, payment timeout, reconciliation, refund API and atomic recovery remain open. |
+| **AP-07 Idempotency / IDs** | **PARTIAL — blocked** | Opaque client idempotency key bound to authenticated customer + normalized request hash; same key/same payload returns original outcome; same key/different payload rejects; deterministic task ID per booking occurrence are selected directions. Exact key format, retention, ID encoding and duplicate webhook handling remain open. Walk ID must be backend-created/stable per actual Walk under POL-007. |
+| **AP-08 Pickup/address authority** | **PARTIAL — blocked** | Server-side ownership/eligibility checks and saved-address source verification are required; POL-007 requires pickup verification and authorized handover before Start. Exact snapshot provenance, coordinate precedence, null-coordinate legacy behavior, accuracy threshold and permitted start-time pickup change remain open. |
+| **AP-09 Role / read-write scope** | **PARTIAL — blocked** | Semantic boundary is established: Customer own booking; assigned Walker only; City/Zone scope; Central authorized cross-zone; Founder oversight/major escalation; Super Admin separate technical privilege. POL-021 remains Draft; exact role claims, action × resource matrix, Admin query scope, audit and break-glass remain open. |
+| **AP-10 Cancellation / active-walk replacement** | **PARTIAL — blocked** | POL-029 business rules are approved: individual walk cancellation ≥12h (including exactly 12h) = 100% eligible allocated paid amount; <12h = 50%; after Start no automatic ordinary refund; company/Walker failure without backup offers reschedule or 100% affected-walk refund; refund approval ≤₹2,000 Central, >₹2,000 Founder/CEO; manual renewal. POL-007 requires safe handover and server validation. Exact lifecycle transitions, occurrence ledger integration, provider reversal, no-show grace periods and legal review remain open. |
+| **AP-11 Daily walk limit** | **OPEN — blocked** | Customer UI maximum 3/day conflicts with normalizer/test coverage up to 4. Product owner must select one limit and align UI, callable, Rules and tests. |
+| **AP-12 Immediate / ASAP** | **OPEN — blocked** | Current candidate normalizer routes ASAP to operations confirmation; no final approved definition of service window, availability semantics, task creation or customer wording. |
+
+### 14.3 TF technical freeze register
+
+| Gate | Classification | Decision evidence / remaining blocker |
+|---|---|---|
+| **TF-01 Collections / fields / indexes** | **PARTIAL — blocked** | Logical entities are selected: Parent Booking, Walk Task, actual Walk, live location sample, Walk event and Incident. Exact collection paths/fields/indexes are not frozen. Preserve existing `walks` completed-history; do not repurpose it. |
+| **TF-02 Lifecycle + commands** | **PARTIAL — blocked** | POL-007 approves server-authoritative lifecycle, pickup/final handover and logical operations (arrival, pickup handover, Start, location append, incident, completion request, final handover, resolve, operations intervention). Exact callable names/DTOs and actor × state transition matrix remain open. |
+| **TF-03 Stable IDs / idempotency** | **PARTIAL — blocked** | Stable backend-created Walk ID and idempotent commands approved as direction. Exact key storage, ID format, transaction boundary, replay/conflict and retention rules remain open. |
+| **TF-04 API request/response/error contracts** | **OPEN — blocked** | Logical operation labels are not deployed endpoints. Callable/HTTP names, DTOs, error codes, authorization envelope and versioning remain to freeze. |
+| **TF-05 GPS quality / offline / rate** | **PARTIAL — blocked** | Founder-approved operating values: 10s target cadence; stale after 30s without accepted update; >~150m deviation for 3m only with adequate accuracy; active-Walk-only sharing; offline samples are not live. Minimum accuracy, max accepted age, rate limits, out-of-order rules, backfill, deviation algorithm and battery/network retry remain open. |
+| **TF-06 Recipient verification / handover fallback** | **PARTIAL — blocked** | Assigned Walker must verify dog and pickup; authorized recipient acknowledgement before Start; final handover before completion. Exact recipient verification method, Customer/network-unavailable fallback, alternate recipient authorization and evidence format remain open. |
+| **TF-07 Roles / geographic enforcement** | **PARTIAL — blocked** | Semantic geography is approved direction: City Manager city-scoped, Zone Supervisor zone-scoped, Central authorized cross-zone, Founder oversight, assigned Walker only. Role IDs/claims, scope resolver, exact Admin reader constraints and negative tests remain open under Draft POL-021. |
+| **TF-08 Incident / emergency escalation** | **OPEN — blocked** | POL-016 is Draft. Named incident lead/backup, local emergency/veterinary contacts, acknowledgement/response targets, out-of-hours route, restart authority, drills and incident access scope remain open. |
+| **TF-09 Retention / deletion / legal hold** | **OPEN — blocked** | POL-014 and POL-020 remain Draft. No GPS/history duration, backup expiry, deletion SLA, legal-hold owner or export rule may be inferred. |
+| **TF-10 Rules / Emulator / release control** | **OPEN — blocked** | Authoritative Rules source, exact allowed/denied matrix, emulator project/config, indexes, CI evidence, staged rollout and rollback plan remain to freeze. No production release authorized. |
+| **TF-11 Policy dependency reconciliation** | **PARTIAL — blocked** | POL-007 workflow approved; POL-006 booking eligibility, POL-008 safety, POL-016 incident, POL-014 privacy and POL-020 retention remain separate approval dependencies. POL-029 cancellation business decisions approved but legal/production implementation pending. |
+| **TF-12 Device/background GPS verification** | **OPEN — blocked** | Android background/foreground permission, battery optimization, app suspension, GPS loss, network recovery and device matrix need actual device tests with SHA/log evidence. |
+
+### 14.4 Approved values that must not be reopened as undecided
+
+1. `Asia/Kolkata` service timezone; authoritative timestamps UTC; retain service-local date/time context on each Walk Task.
+2. Parent Booking + child Walk Task model; preserve existing `walks` completed-history.
+3. Sequential single-Walker offer; no simultaneous active offers for one task; authorized manual Operations fallback.
+4. Request receipt is not availability confirmation, quote finalization, payment verification, booking confirmation, assignment or walk start.
+5. POL-007 approved Walk operating workflow: assigned Walker, pickup checks and authorized handover before Start; backend validates Start/Complete; stable separate Walk ID; no client-authoritative lifecycle writes.
+6. POL-007 approved GPS operating values: 10s target; 30s stale alert; >~150m for 3m with adequate accuracy; active-Walk-only customer sharing; no fabricated live point.
+7. POL-029 approved cancellation/refund business decisions described in AP-10; no automatic debit at launch; renewal requires explicit customer action, fresh availability, quote and payment.
+
+### 14.5 Decision and implementation boundary
+
+- AP/TF entries classified OPEN or PARTIAL remain implementation blockers for their respective scope; do not invent defaults to clear them.
+- This register does not record new Founder approvals. Only decisions explicitly present in the linked Notion pages are classified as approved direction/business decisions.
+- Notion connector search for separate Slack/Drive/email decision evidence is unavailable under the current workspace entitlement; this reconciliation uses the accessible Notion policy/contract pages and the exact GitHub source snapshots already audited. No claim of exhaustive discussion-history search is made.
+- Permitted next work: prepare a decision capture sheet for the remaining OPEN/PARTIAL values and refine non-production DTO/test fixtures without changing runtime behavior. Do not implement or deploy production schema/Rules/Functions or switch app readers/writers until the corresponding decision and technical freeze are recorded.
+- No production deployment, production migration, `main` merge or release is authorized by this register.
+
+**Readiness outcome:** Architecture and several business operating directions are approved, but the cross-app contract is **NOT FROZEN**. PR #96 must remain Draft; no implementation or release gate is cleared by this reconciliation.
