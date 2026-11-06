@@ -26,11 +26,11 @@ It does not silently approve candidate collection paths, field names, enums, cal
 |---|---|---|---|
 | Booking | `bookings/{bookingId}` | Customer's commercial/service request; may contain multiple scheduled occurrences | Trusted backend for authoritative status, quote/payment gates and assignment linkage |
 | Scheduled Walk Task | `walk_tasks/{walkTaskId}` | One bounded, scheduled occurrence generated from a Booking | Trusted backend creates and owns lifecycle |
-| Live Walk execution | **Path/identity BLOCKED**; PR #93 proposes `walks/{walkId}` | Runtime execution session for one started occurrence; may hold state, accepted GPS feed and events | Trusted backend |
-| Location sample | Candidate `walks/{walkId}/locations/{sampleId}` | A submitted point and its server acceptance decision | Trusted ingestion only |
-| Lifecycle event | Candidate `walks/{walkId}/events/{eventId}` | Append-only command/state evidence | Trusted backend |
-| Incident | Candidate `walk_incidents/{incidentId}` | Restricted safety/operational incident | Trusted backend |
-| Customer-safe Walker projection | Candidate `walker_public_profiles/{walkerUid}` | Minimal profile data visible after valid assignment | Trusted backend |
+| Live Walk execution | **Path BLOCKED**; stable server-created Walk identity per approved occurrence; existing `walks` history must be preserved | Runtime lifecycle for one approved Walk Task; exact live record/path remains a technical-freeze decision | Trusted backend |
+| Location sample / accepted live feed | **Path BLOCKED**; current Admin reads `walk_locations`, while inspected Partner writer does not populate it | Server-accepted live marker/route feed consumed by Customer and Admin; exact feed/history split remains open | Trusted ingestion only |
+| Assignment / Offer | **Path BLOCKED** | Separate sequential offer, acceptance, decline, expiry and reassignment domain | Trusted backend |\n| Payment | **Path BLOCKED** | Separate payment, refund, reversal and reconciliation domain | Trusted payment integration / backend |\n| Lifecycle event | **Path BLOCKED** | Append-only command/state evidence; exact event store and naming remain open | Trusted backend |
+| Incident | **Path BLOCKED**; PR #93 candidate only | Restricted safety/operational incident under POL-016 | Trusted backend |
+| Customer-safe Walker projection | **Path BLOCKED**; PR #93 candidate only | Minimal profile data visible only during approved stage | Trusted backend |
 
 ### 2.1 Non-negotiable identity separation
 
@@ -63,7 +63,7 @@ Do not write new aliases `petName`, `petDetails`, `dog`, or `type`. Legacy compa
 
 ## 3. Command and transaction model
 
-All commands below are conceptual responsibilities; callable names and DTOs are not frozen.
+All commands below are conceptual responsibilities; callable names and DTOs are not frozen. The architecture direction recorded in Notion separates Parent Booking, Walk Task, Assignment/Offer and Payment.
 
 ### Create Booking / resolve availability
 Backend must authenticate the Customer, load source Pet and Address records from trusted paths, validate the selected Zone is active and boundary-verified, normalize service-local schedule inputs, calculate the authoritative quote, and verify availability before payment is enabled. The backend must not trust client-supplied customer UID, dog/address snapshots, Zone ancestry, price, payment status or availability result.
@@ -93,7 +93,7 @@ There are at least three state domains and they must not share one ambiguous `st
 2. **Walk Task state** — scheduled occurrence, dispatch/assignment, eligibility to start and terminal outcome.
 3. **Live execution state** — start/tracking, active/stale tracking, handover, completion/stop and incident hold.
 
-Exact enum strings, allowed transitions, terminal-state rules, reschedule/reassignment behavior, partial multi-task Booking aggregation and state ownership are BLOCKED until the transition matrix is reconciled with POL-005/POL-007 and approved.
+Exact enum strings, allowed transitions, terminal-state rules, reschedule/reassignment behavior, partial multi-task Booking aggregation and state ownership are BLOCKED until the transition matrix is reconciled with POL-005/POL-006/POL-007 and approved. LIFE-01 and LIFE-02 are Founder-received approval candidates, not final implementation approval; their architecture direction and candidate task states must not be mistaken for a frozen enum/transition matrix.
 
 ## 5. Idempotency, concurrency and audit
 
@@ -172,3 +172,46 @@ This source audit does not establish deployed Firebase state or exhaustively ins
 8. Obtain separate Founder GO before any production deployment or data migration.
 
 **Current decision: DOCUMENTATION REVIEW ONLY. No implementation, merge to main, deployment or release is authorized.**
+
+
+## 12. Notion policy reconciliation — review findings (6 November 2026)
+
+This section records the controlling Notion evidence checked after the initial draft. It supersedes any inconsistent candidate assumption in Sections 2–10 above. These Notion pages themselves remain Draft or Approval Candidate where noted; they are not silently promoted to final policy.
+
+| Source | Evidence found | Contract disposition |
+|---|---|---|
+| [Booking API Contract & Callable Implementation Gate](https://app.notion.com/p/40a756abedb98148a671eacf2248fa8a) | LIFE-01 architecture direction received from Founder on 3 Nov as APPROVAL CANDIDATE; four separate domains: Parent Booking, Walk Task, Assignment/Offer, Payment. Explicitly not implementation authorization. | Reflect four domains; retain formal contract approval and implementation gate as BLOCKED. |
+| Same API Gate | Parent Booking with child Walk Tasks; preserve existing `walks` completed-history/review collection; do not repurpose it as scheduled tasks. One stable backend-created Walk identity per approved occurrence. | PR #93's `walks/{walkId}` live-session path remains unapproved. Freeze exact execution path and history split before code. |
+| Same API Gate | Regular V1 direction: rolling 7-day task generation; idempotent generator stops after cancellation/expiry. Exact recurrence/end-date constraints remain open. | Do not label the entire Regular horizon as undecided; record rolling 7-day generation as selected direction, with recurrence/renewal limits still BLOCKED. |
+| Same API Gate | India service timezone `Asia/Kolkata`; authoritative timestamps UTC plus service-local date/time on each Walk Task. | Use this as the timezone direction; final DTO and date-only semantics still require freeze. |
+| [POL-005 Booking & Walker Assignment](https://app.notion.com/p/404756abedb981768393f7a9e823ee10) and [POL-026 Walker Availability & Replacement](https://app.notion.com/p/404756abedb981028befeae66ec00f81) | Sequential hybrid offer to one eligible Walker at a time; no simultaneous active offers. Offer timeout, max attempts, ranking, travel buffers and fallback parameters remain approval decisions. | Keep sequential single-active-offer invariant; do not invent timeout/ranking constants. |
+| [POL-006 Customer Booking & Eligibility](https://app.notion.com/p/404756abedb9816d8856d4f4c2de203b) | Draft / Founder approval required. Server authoritative for eligibility, service area, price, booking state and confirmation. | No client-authoritative booking creation/price/status; final customer/commercial gates remain blocked. |
+| [POL-012 Payment, Refund & Reconciliation](https://app.notion.com/p/404756abedb981859037eaf00f986267) | Draft specification; digital cashless payments; provider confirmation or authorized reconciliation required; client screenshot/client success message cannot mark payment verified. | Payment is separate domain; gateway, payment timing, refund authority and reconciliation still need Founder/Finance decisions. |
+| [POL-029 Cancellation, Rescheduling, No-Show & Refund](https://app.notion.com/p/404756abedb9814289e8d0ed99298b52) | Current draft test cases specify 100% eligible refund at/over 12 hours and 50% at 11h59m; post-start ordinary cancellation is not an automatic refund. Policy approval status must be checked before implementation. | Treat as policy test proposal, not frozen commercial behavior, until approver metadata is verified. |
+| [POL-016 Incident & Emergency](https://app.notion.com/p/404756abedb98161a588f93ec13740c5) | Draft / awaiting review; incident lead, backup, response targets, local contacts, restart authority, retention/legal hold and drills remain decisions. | Safety handover principles apply; do not invent SEV response deadlines or mark incident workflow approved. |
+| [POL-021 Access Control](https://app.notion.com/p/404756abedb98114ad39e1db6c03d444) and [POL-037 City–Zone Operating Structure](https://app.notion.com/p/404756abedb981da9cd3d8c06277333b) | Role model is proposed: Founder, separate Super Admin, Central Operations, City Manager, Zone Supervisor, Walker, Support, Finance and location roles. Geographic scope and separation of duties are required; exact claims/action matrix remains to freeze. | Preserve Founder ≠ Super Admin ≠ Central Operations; City Manager is City-scoped; Zone Supervisor is Zone-scoped. Do not infer these roles are implemented. |
+| [Cross-App Live Tracking & Booking Data Contract — Readiness](https://app.notion.com/p/409756abedb9811bad58c5aea088be62) | Founder-approved operating workflow values: 10s target cadence, stale after 30s, deviation >~150m for 3m with adequate accuracy; customer sharing active-Walk-only; Admin geographically scoped. Exact schema/API/roles/accuracy/offline/retention freeze pending. | Preserve approved operating values; keep feed collection, quality thresholds, backfill and retention blocked. |
+
+### 12.1 Confirmed conflicts / corrections required in source proposals
+
+1. PR #93 candidate `walks/{walkId}` execution path conflicts with Notion's instruction to preserve existing `walks` completed-history/review records. No collection switch is approved.
+2. Admin reads `walk_locations`; inspected Partner source stores route in memory and writes a compacted `walks.route` only at completion. This does not establish an end-to-end live feed. Canonical feed must be selected before changing either reader or writer.
+3. Booking and Walk Task are not the only domains. Assignment/Offer and Payment must remain separately modeled and audited.
+4. Initial draft treated Regular generation horizon as wholly open; Notion has selected rolling 7-day V1 generation direction. Exact recurrence/end-date/renewal behavior remains open.
+5. Initial draft did not state the service timezone direction; add `Asia/Kolkata` with UTC storage and service-local task context.
+6. Founder-received LIFE-01/LIFE-02 and live GPS operating workflow approvals are approval candidates/direction only; they do not approve exact fields, enums, collection paths, callables, Rules, migrations, merge or production deployment.
+
+### 12.2 Notion decision gates still required
+
+- **AP-01/AP-02:** final Parent Booking and Walk Task enums, complete transition matrix and legacy mappings.
+- **AP-03:** sequential offer timeout, attempt limit, ranking/tie-breakers, pause/retry and widening rules.
+- **AP-04:** Regular recurrence/end date, rolling-window extension, renewal and horizon exhaustion.
+- **AP-05/AP-06:** capacity reservation/expiry and payment provider, trusted verification, payment/confirmation order, reversal/refund.
+- **AP-07:** idempotency key format, retention, request binding, deterministic Task/Walk IDs and duplicate webhook behavior.
+- **AP-08:** authoritative pickup source, snapshot rules, coordinate precedence, null-coordinate legacy behavior and allowed pickup change.
+- **AP-09:** cross-app field visibility, exact role claims, City/Zone scope, break-glass and audit matrix.
+- **AP-10:** cancellation/refund/payment reversal and active-walk replacement only after safe handover.
+- **AP-11/AP-12:** daily walk-count limit (Customer UI 3 vs normalizer tests up to 4) and Immediate/ASAP semantics.
+- **TF-01–TF-12:** exact live record/feed/history path, lifecycle transitions, command API, IDs/idempotency, GPS quality/offline, recipient verification, role/geography, incident, retention and Rules/Emulator/release control.
+
+**Review disposition:** PR #96 remains documentation-only Draft. Notion evidence has refined the architecture direction but has not cleared the full contract freeze. No Functions, Rules, app code, schema, migration, merge to `main`, deployment or device testing is authorized by this review.
