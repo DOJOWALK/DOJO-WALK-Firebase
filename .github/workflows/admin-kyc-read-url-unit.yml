@@ -1,0 +1,52 @@
+name: Admin KYC Read URL Unit Tests
+
+on:
+  push:
+    branches:
+      - working
+    paths:
+      - "functions/src/admin_kyc_access.ts"
+      - "functions/test/admin_kyc_access.test.cjs"
+      - "functions/src/index.ts"
+      - "functions/package.json"
+      - "functions/tsconfig.json"
+      - ".github/workflows/admin-kyc-read-url-unit.yml"
+  pull_request:
+    paths:
+      - "functions/src/admin_kyc_access.ts"
+      - "functions/test/admin_kyc_access.test.cjs"
+      - "functions/src/index.ts"
+      - "functions/package.json"
+      - "functions/tsconfig.json"
+      - ".github/workflows/admin-kyc-read-url-unit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: admin-kyc-read-url-unit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  admin-kyc-read-url:
+    name: Build Functions + Admin KYC authorization tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
+      - name: Install Functions dependencies
+        run: npm --prefix functions install --no-audit --no-fund
+
+      - name: Build all Functions TypeScript
+        run: npm --prefix functions run build
+
+      - name: Run Admin KYC authorization and audit tests
+        run: node --test --test-concurrency=1 functions/test/admin_kyc_access.test.cjs
