@@ -2330,3 +2330,6 @@ export {
 export { createServiceZoneBoundaryDraft, submitServiceZoneForFounderReview } from "./zone_lifecycle_boundary";
 
 export { requestServiceZoneDeactivation, suspendServiceZoneForEmergency, requestServiceZoneReactivation, reactivateServiceZone } from "./zone_lifecycle_operations";
+
+// Audited, short-lived Admin access to registered private Walker KYC documents.
+export { createAdminKycReadUrl } from "./admin_kyc_access";
