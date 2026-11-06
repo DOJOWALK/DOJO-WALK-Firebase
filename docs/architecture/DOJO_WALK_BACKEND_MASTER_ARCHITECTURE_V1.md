@@ -97,3 +97,29 @@ Repository: `DOJOWALK/DOJO-WALK-Firebase`; default branch is `main`; the existin
 5. Produce API catalogue, data dictionary, event catalogue, RBAC matrix and migration/rollback plan.
 
 **Current status:** Architecture baseline prepared; repository-level Firebase inspection partially complete; cross-repository and live-cloud audit remains in progress. No source code, rules, live data, branch, merge or production deployment was changed by this document.
+
+
+## 8. Cross-repository branch and integration preflight — 06 Nov 2026
+
+The existing `working` branch was confirmed in all five repositories. GitHub compare results against `main`:
+
+| Repository | Working ahead | Behind main | Changed files in compare |
+|---|---:|---:|---:|
+| Firebase | 16 commits | 0 | 84 |
+| Admin | 5 commits | 0 | 167 |
+| Customer | 3 commits | 0 | 85 |
+| Partner | 9 commits | 0 | 15 |
+| Website | 2 commits | 0 | 2 |
+
+All five working branches are ahead of main and none is behind at the time checked. Do not merge any repository based on this comparison alone; each changed-file set, exact-head CI, open PR/review state, cross-app contract and security gate must be inspected.
+
+App-level technology evidence:
+- Admin Flutter app depends on Firebase Core/Auth/Firestore/Functions/Storage and uses HTTP for networking.
+- Partner Flutter app depends on Firebase Core/Auth/Firestore/Storage, Geolocator and Google Maps; its root Firebase config declares Functions source and Node.js 22.
+- Website is static HTML/CSS/vanilla JavaScript according to its README; its Firebase config is Hosting-only.
+- Website README explicitly states booking, payment, contact submissions, login and live tracking require real backend integration and are not simulated as live.
+- Customer is Flutter; the working-vs-main compare includes booking flow, schedule validation, idempotency audit and shared booking contract artifacts. Exact source/reader mapping remains to be reviewed file-by-file.
+
+## 9. Audit boundaries
+
+This is a GitHub source/branch comparison, not a live deployment audit. Open-PR query results from the connected account are not a complete repository-wide PR inventory. No CI workflow run was executed or certified in this step. The next gate is a full diff and workflow run review for each repository, followed by live GCP/Firebase resource inventory.
