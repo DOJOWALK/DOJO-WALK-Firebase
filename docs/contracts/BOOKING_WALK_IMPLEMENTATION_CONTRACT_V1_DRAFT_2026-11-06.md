@@ -28,17 +28,20 @@ It does not silently approve candidate collection paths, field names, enums, cal
 | Scheduled Walk Task | `walk_tasks/{walkTaskId}` | One bounded, scheduled occurrence generated from a Booking | Trusted backend creates and owns lifecycle |
 | Live Walk execution | **Path BLOCKED**; stable server-created Walk identity per approved occurrence; existing `walks` history must be preserved | Runtime lifecycle for one approved Walk Task; exact live record/path remains a technical-freeze decision | Trusted backend |
 | Location sample / accepted live feed | **Path BLOCKED**; current Admin reads `walk_locations`, while inspected Partner writer does not populate it | Server-accepted live marker/route feed consumed by Customer and Admin; exact feed/history split remains open | Trusted ingestion only |
-| Assignment / Offer | **Path BLOCKED** | Separate sequential offer, acceptance, decline, expiry and reassignment domain | Trusted backend |\n| Payment | **Path BLOCKED** | Separate payment, refund, reversal and reconciliation domain | Trusted payment integration / backend |\n| Lifecycle event | **Path BLOCKED** | Append-only command/state evidence; exact event store and naming remain open | Trusted backend |
+| Assignment / Offer | **Path BLOCKED** | Separate sequential offer, acceptance, decline, expiry and reassignment domain | Trusted backend |
+| Payment | **Path BLOCKED** | Separate payment, refund, reversal and reconciliation domain | Trusted payment integration / backend |
+| Lifecycle event | **Path BLOCKED** | Append-only command/state evidence; exact event store and naming remain open | Trusted backend |
 | Incident | **Path BLOCKED**; PR #93 candidate only | Restricted safety/operational incident under POL-016 | Trusted backend |
 | Customer-safe Walker projection | **Path BLOCKED**; PR #93 candidate only | Minimal profile data visible only during approved stage | Trusted backend |
 
 ### 2.1 Non-negotiable identity separation
 
 - `bookingId` identifies the parent customer/commercial request.
-- `walkTaskId` identifies one scheduled occurrence that can be assigned and executed.
-- `walkId` is a proposed runtime execution identity. It is **not** an alias for `walkTaskId`.
-- The mapping must be explicit and stable: one Walk Task may have zero or one successful live execution, subject to retry/recovery design. A second execution must not be silently created by retrying Start.
-- Whether `walkId` is a separate document ID or whether the Walk Task itself becomes the runtime aggregate is **BLOCKED**. Do not implement either interpretation until a decision is recorded in Notion and the migration/read-write map is approved.
+- `walkTaskId` identifies one scheduled occurrence.
+- Notion's Founder-received architecture direction is one stable, backend-created Walk identity per approved occurrence. `walkId` is distinct from `bookingId` and `walkTaskId`; exact collection/path and runtime record model remain **BLOCKED**.
+- Assignment/Offer and Payment are separate logical domains, not fields folded into one ambiguous Booking/Walk status.
+- Notion explicitly requires preserving the existing `walks` completed-history/review collection and not repurposing it as scheduled tasks. PR #93's candidate `walks/{walkId}` live-execution path cannot be adopted without an explicit migration decision.
+- Retries of Start must return the same committed execution identity/result; they must not create a second Walk.
 
 ### 2.2 Scheduled occurrence contract — PR #73 vocabulary
 
@@ -80,20 +83,32 @@ Assignment must be backend-authoritative and transactionally re-check Walker app
 Require authenticated active/approved assigned Walker, current assignment, valid task/execution relationship, allowed state, pickup validation and required handover evidence. Server timestamp and immutable event are authoritative. A retry with the same idempotency key returns the original committed result. Partner must not directly mutate trusted lifecycle state.
 
 ### GPS ingestion
-Require authenticated assigned Walker and active execution. Validate coordinate ranges, plausible capture time, accuracy, ordering/sequence, cadence, payload size and rate. Store capture time separately from server receive time. Only accepted samples may update the live marker. Delayed/offline/backfilled points must never move the live marker backwards or be shown as current. Quality thresholds, sequence model, offline policy, sampling and retention require explicit freeze.
+
+Require authenticated assigned Walker and active execution. Validate coordinate ranges, plausible capture time, accuracy, ordering/sequence, cadence, payload size and rate. Store capture time separately from server receive time. Only accepted samples may update the live marker. Delayed/offline/backfilled points must never move the live marker backwards or be shown as current.
+
+Founder-approved operating targets recorded in Notion:
+- Target sample cadence: 10 seconds during an active Walk, subject to OS/network limitations.
+- Stale alert: 30 seconds without an accepted update; label delayed/stale, never live.
+- Route deviation: greater than approximately 150 metres for 3 minutes, only when GPS accuracy is adequate; this is a review alert, not proof of misconduct.
+- Customer sharing window: active Walk only; stop after successful completion or approved safety handoff/exception.
+
+Still BLOCKED: minimum accuracy rule, accepted sample age, out-of-order tolerance, rate limits, offline/backfill behavior, canonical feed collection, historical route access, retention/deletion/legal hold and exact event model. Current Admin `walk_locations` reader and Partner completion-only `walks.route` writer do not form a functioning live feed; do not switch either side until the cross-app migration map and rollback are approved.
 
 ### Complete / stop / incident
 Completion must require verified final handover and safe dog custody. A running walk cannot be cancelled as an ordinary Booking cancellation. Dog emergency requires safe handover before stop; incident workflow and authorized resolution take precedence over ordinary completion. Completion, task aggregate state, execution state, event and audit evidence must commit atomically where the chosen data model permits. POL-016 controls severity, response, escalation and closure; unresolved items remain BLOCKED.
 
 ## 4. Lifecycle and state-machine boundaries
 
-There are at least three state domains and they must not share one ambiguous `status` field:
+There are four logical state domains and they must not share one ambiguous `status` field:
 
-1. **Booking aggregate state** — commercial/customer request, availability, payment, cancellation/refund and aggregate occurrence outcome.
-2. **Walk Task state** — scheduled occurrence, dispatch/assignment, eligibility to start and terminal outcome.
-3. **Live execution state** — start/tracking, active/stale tracking, handover, completion/stop and incident hold.
+1. **Parent Booking state** — customer order/request and aggregate occurrence outcome.
+2. **Walk Task state** — one scheduled occurrence, readiness and service outcome.
+3. **Assignment/Offer state** — candidate offer, active offer, accept/decline/expiry and reassignment history.
+4. **Payment state** — provider processing, verification, refund/reversal and reconciliation.
 
-Exact enum strings, allowed transitions, terminal-state rules, reschedule/reassignment behavior, partial multi-task Booking aggregation and state ownership are BLOCKED until the transition matrix is reconciled with POL-005/POL-006/POL-007 and approved. LIFE-01 and LIFE-02 are Founder-received approval candidates, not final implementation approval; their architecture direction and candidate task states must not be mistaken for a frozen enum/transition matrix.
+Live GPS/session freshness and incident state are additional operational concerns; they must not be collapsed into Parent Booking or Payment status.
+
+Exact enum strings, allowed transitions, terminal-state rules, reschedule/reassignment behavior, partial multi-task Booking aggregation and state ownership are BLOCKED until the complete actor × from-state × to-state matrix is reconciled with POL-005/POL-006/POL-007 and approved. LIFE-01 and LIFE-02 are Founder-received approval candidates, not final implementation approval; their architecture direction and candidate task states must not be mistaken for a frozen enum/transition matrix.
 
 ## 5. Idempotency, concurrency and audit
 
