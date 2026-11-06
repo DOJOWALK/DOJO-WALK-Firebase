@@ -230,3 +230,54 @@ This section records the controlling Notion evidence checked after the initial d
 - **TF-01–TF-12:** exact live record/feed/history path, lifecycle transitions, command API, IDs/idempotency, GPS quality/offline, recipient verification, role/geography, incident, retention and Rules/Emulator/release control.
 
 **Review disposition:** PR #96 remains documentation-only Draft. Notion evidence has refined the architecture direction but has not cleared the full contract freeze. No Functions, Rules, app code, schema, migration, merge to `main`, deployment or device testing is authorized by this review.
+
+
+## 13. Cross-app source compatibility audit (2026-11-06)
+
+**Audit boundary:** read-only inspection of the exact `working` snapshots below. This section records current source behavior; it does not approve a replacement schema or authorize app/Rules/Functions changes.
+
+| Repository | Audited `working` commit |
+|---|---|
+| `DOJOWALK/DOJO-WALK-Firebase` | `4bf1cd7e1fc0c04deaf58a2d3178a2c85bbeda78` |
+| `DOJOWALK/DOJO-WALK-Customer` | `f7e82bf4183c0e0fd84fc0fdf92df6139da81b02` |
+| `DOJOWALK/DOJO-WALK-Partner` | `19fe99b7b8194214868f252294f0fcfd986c1645` |
+| `DOJOWALK/DOJO-WALK-Admin` | `af7913e52f0b1c42694938743225800555709507` |
+
+### 13.1 Current reader/writer map
+
+| Domain | Current writer / source | Current reader / consumer | Compatibility result |
+|---|---|---|---|
+| Parent Booking | Customer `booking_confirmation_screen.dart` directly creates `bookings/{bookingId}` with `bookingRef.set(bookingData)`. Legacy fields include `petName`, `petDetails`, `pickupAddress`, `scheduledAt`, string `duration`, `walkSchedules`, `status=pending`, `walkerId=null`. | Customer booking screens; Partner loads `bookings/{bookingId}`; Admin `FirestoreBookingsDataSource` streams the entire `bookings` collection; Admin Walker service also reads all bookings or filters by `walkerId`. | Existing legacy shape is in use. Do not replace fields without a dual-read/compatibility plan. |
+| Booking validation | Firebase contains normalizer, validator, trusted snapshot loader and legacy adapter modules. | No production booking callable is exported from current `functions/src/index.ts`; Customer screen writes directly rather than invoking this server pipeline. | Helpers are not an end-to-end production booking path. The legacy adapter is pure and requires a service-timezone resolver. |
+| Walk Task | No production task materializer/writer identified in audited Functions entry point or inspected app flows. Customer stores schedules inside the Parent Booking document. | Partner currently receives a Booking ID and booking-level schedule/details; no child Walk Task read path was identified in inspected Partner flow. | Parent Booking and occurrence-level task are not yet separated at runtime. |
+| Assignment / Offer | Customer creates with `walkerId=null`; no booking/offer callable exported from audited Functions entry point. | Admin queries bookings by `walkerId`; Partner opens a booking passed into its detail flow and changes its status to `accepted`. | No sequential offer/acceptance service or server-owned assignment workflow is connected in this snapshot. |
+| Walk execution / history | Partner generates a client-side `walks` document ID when the live screen is initialized. On completion it writes `walks/{walkId}` with `bookingId`, walker, timestamps, metrics and compacted `route`; then separately updates the Parent Booking to `completed`. | Existing completed-history/review consumers are not repurposed by this audit. Admin booking summary reads selected Booking fields and supports a `walkId` display field. | Walk ID is not backend-created. Completion is two separate client writes, not one atomic server transition. Preserve existing `walks` history; do not treat it as the scheduled-task collection. |
+| Live GPS | Inspected Partner live-walk screen validates GPS locally and appends positions to an in-memory `_route`; it does not write a per-fix feed to Firestore. | Admin Live Operations reads Walker markers from `walkers` (`isOnline=true`, `currentLocation`) and loads route points from `walk_locations` by `walkerId` and `timestamp`. | No connected live-feed writer was found in the inspected Partner live-walk path. Admin's `walk_locations` reader and Partner's completion-only `walks.route` writer are incompatible as a live feed. |
+| Payments / refunds / payouts | No Customer payment collection write or gateway integration was found in the audited booking confirmation flow. Firebase `payments` Rules allow create/update/delete only to Admin. | Admin Finance screen explicitly labels its rows as examples and the module as UI prototype only; it states no gateway, settlement, refund API or payout provider is connected. | Payment domain is not operationally integrated. Never infer paid status from the booking request or client UI. |
+
+### 13.2 Firestore Rules compatibility findings
+
+1. Firebase `firestore.rules` on the audited `working` commit has a Booking create rule that accepts the current legacy Customer shape, and permits assigned Walker updates to a limited set of Booking progress fields. The same rules do not define a `match /walks/{...}` or `match /walk_locations/{...}` block; the final recursive rule is default deny. Consequently, the inspected Partner write to `walks/{walkId}` and Admin read from `walk_locations` are not authorized by these Rules.
+2. The separate Partner repository's checked-in `firestore.rules` is not a substitute for the Firebase repository's deployed Rules. It also has no `walks` or `walk_locations` rule, and its Booking create rule is explicitly false. Confirm the single authoritative Rules deployment source before any release.
+3. Firebase Rules permit Admin writes to `payments`, but that is not a payment-provider verification workflow. A trusted server reconciliation and audit path is still required.
+
+### 13.3 Schema and lifecycle deltas to resolve before implementation
+
+- **Booking DTO:** Customer currently writes a legacy Firestore document. The server validator expects an identifier-only request (`bookingPlan`, `dogId`, `pickupAddressId`, `schedule`) and trusted server-loaded source records. Wire the server path before disabling direct Customer create; retain an explicit adapter for legacy records.
+- **Schedule semantics:** Customer UI validates at most 3 walks per day. The Normalizer/Notion decision gate records a 3-vs-4 discrepancy; resolve AP-11/AP-12 before widening or narrowing limits. Immediate/ASAP and Regular currently return an operations-confirmation outcome in the candidate normalizer, not a generated task.
+- **Pickup snapshot:** Customer writes a copied `pickupAddress` map; Partner reads that map first, then falls back to top-level coordinates or legacy `location` GeoPoint. Freeze coordinate precedence, address snapshot provenance and null-coordinate behavior before canonicalization.
+- **Start/complete events:** Partner detail flow directly sets Booking status to `accepted` before navigation. The inspected live screen starts its local timer/GPS but does not issue a server start command. Completion writes the `walks` history record and then updates Booking status separately. Define server-owned start/complete commands, idempotency and recovery behavior.
+- **Walk identity:** Partner currently generates the `walks` document ID on the client. Replace only after a backend-created stable Walk identity and the existing history-preservation mapping are approved.
+- **Live GPS:** Decide canonical live feed/session path, write cadence, timestamp/accuracy fields, active-Walk authorization, Admin geographic scope, offline/backfill, stale detection and retention before connecting the Admin reader. Do not simply point Admin at `walks.route`.
+- **Assignment:** Keep Parent Booking, Walk Task and Assignment/Offer separate. Define eligible Walker selection, sequential offer timeout/attempts, acceptance, expiration and backup rules before exposing Partner status changes as assignment.
+- **Payment:** Keep payment status/provider references server-owned. Freeze provider confirmation, reconciliation, idempotency, refund and payout ledgers before enabling payment UI or booking confirmation.
+- **Admin read scope:** Current Admin Booking source streams all Booking documents; Walker service can stream all bookings. This is broader than the proposed City/Zone operating scope and must be reconciled with AP-09 before role expansion.
+
+### 13.4 Evidence paths inspected
+
+- Firebase: `functions/src/index.ts` (blob `d11f3a621c5f4552053107cff4b4631437890000`); `firestore.rules` (blob `67284dba473b3d5c87f201ba4115714bc0`).
+- Customer: `lib/features/booking/screens/booking_confirmation_screen.dart` (blob `e7f122e3195e07f7bb5b7edebc6cacae14600e0b`); `lib/features/booking/screens/choose_walk_screen.dart` (blob `bb9c13cbe79b92fe878ceba73795218ed3b89975`).
+- Partner: `lib/features/live_walk/screens/live_walk_screen.dart` (blob `9b56a1c96ab5a90c63b4870e3249f52e4d4420f2`); `lib/screens/home/walk_details_screen.dart` (blob `9a872d66a59b8d04e14cb4053a68160f3349721e`).
+- Admin: `lib/screens/bookings/booking_data_source.dart` (blob `ccd357363b246120efe1777d205b15939aeddde1`); `lib/screens/live/live_operations_screen.dart` (blob `b97c8ea6e521ca8873ebdaa013c1ab8693d3d515`); `lib/features/finance/screens/finance_operations_screen.dart` (blob `d7337f33171b5d3555d5f3b614afb659e9035734`).
+
+**Audit disposition:** Cross-app runtime compatibility is **BLOCKED** for live GPS, Walk history writes under current Rules, server-owned Booking/Task/Assignment lifecycle, and Payment integration. This is a source inspection, not emulator/device execution. No app code, Functions, Rules, indexes, data, migrations, production deployment or `main` branch changes were made. PR #96 remains documentation-only Draft.
